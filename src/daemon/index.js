@@ -461,7 +461,7 @@ app.post('/api/games/:gameId/launch', async (req, res) => {
       if (global.openExternalUrl) {
         await global.openExternalUrl(`steam://run/${game.appId}`);
       } else {
-        const cmd = process.platform === 'win32' ? 'start' : 'open';
+        const cmd = process.platform === 'win32' ? 'start' : (process.platform === 'darwin' ? 'open' : 'xdg-open');
         spawn(cmd, [`steam://run/${game.appId}`], { shell: true, detached: true });
       }
       return res.json({ success: true, method: 'steam' });

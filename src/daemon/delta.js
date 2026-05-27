@@ -323,12 +323,24 @@ export function translatePathToLocal(remotePath) {
   if (!remotePath) return remotePath;
   
   const normalizedRemote = path.normalize(remotePath);
-  const prefix = 'c:\\users\\';
-  if (normalizedRemote.toLowerCase().startsWith(prefix)) {
-    const afterUsers = normalizedRemote.substring(prefix.length);
+  
+  // 1. Windows to Local (Linux/Windows)
+  const winPrefix = 'c:\\users\\';
+  if (normalizedRemote.toLowerCase().startsWith(winPrefix)) {
+    const afterUsers = normalizedRemote.substring(winPrefix.length);
     const firstSlashIndex = afterUsers.indexOf(path.sep);
     if (firstSlashIndex !== -1) {
       const subPath = afterUsers.substring(firstSlashIndex + 1);
+      return path.join(os.homedir(), subPath);
+    }
+  }
+  
+  // 2. Linux to Local (Windows/Linux)
+  const normalizedLower = normalizedRemote.toLowerCase().replace(/\\/g, '/');
+  if (normalizedLower.startsWith('/home/')) {
+    const parts = normalizedLower.split('/');
+    if (parts.length > 3) {
+      const subPath = remotePath.replace(/\\/g, '/').split('/').slice(3).join(path.sep);
       return path.join(os.homedir(), subPath);
     }
   }
