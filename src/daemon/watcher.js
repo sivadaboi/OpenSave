@@ -43,16 +43,16 @@ class WatcherEngine {
     const watcher = chokidar.watch(savePath, {
       ignored: /(^|[\/\\])\../, // ignore dotfiles
       persistent: true,
-      ignoreInitial: true,
-      awaitWriteFinish: {
-        stabilityThreshold: 1000,
-        pollInterval: 100
-      }
+      ignoreInitial: true
     });
 
     watcher.on('all', (event, filePath) => {
       log('info', `File ${event} in "${game.name}"`, path.basename(filePath));
       this.handleChange(game.id);
+    });
+
+    watcher.on('error', (err) => {
+      log('error', `Watcher error for "${game.name}"`, err.message);
     });
 
     this.watchers[game.id] = watcher;
@@ -82,17 +82,35 @@ class WatcherEngine {
     this.debounceTimers[gameId] = setTimeout(async () => {
       delete this.debounceTimers[gameId];
       log('event', 'Detected changes', `Settle timer expired for "${game.name}". Triggering auto-snapshot.`);
-      try {
-        // Create new auto-snapshot
-        const snap = createSnapshot(gameId, 'Auto-backup (save file changed)', true);
-        
-        // Notify the P2P engine to synchronize changes
-        if (this.onChangeCallback) {
-          this.onChangeCallback(gameId, snap);
+      
+      let attempts = 0;
+      const maxAttempts = 5;
+      const delayMs = 1500;
+
+      const performSnapshot = async () => {
+        try {
+          // Create new auto-snapshot
+          const snap = createSnapshot(gameId, 'Auto-backup (save file changed)', true);
+          
+          // Notify the P2P engine to synchronize changes
+          if (this.onChangeCallback) {
+            this.onChangeCallback(gameId, snap);
+          }
+          log('success', `Auto-snapshot and sync triggered for "${game.name}"`);
+        } catch (err) {
+          attempts++;
+          const isLockError = err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES' || err.message.includes('busy') || err.message.includes('locked');
+          
+          if (isLockError && attempts < maxAttempts) {
+            log('warn', `Auto-snapshot failed due to locked/busy files (attempt ${attempts}/${maxAttempts}) for "${game.name}". Retrying in ${delayMs}ms...`);
+            setTimeout(performSnapshot, delayMs);
+          } else {
+            log('error', `Auto-snapshot failed for "${game.name}" after ${attempts} attempt(s)`, err.message);
+          }
         }
-      } catch (err) {
-        log('error', `Auto-snapshot failed for "${game.name}"`, err.message);
-      }
+      };
+
+      performSnapshot();
     }, 2000); // 2 seconds debounce
   }
 
