@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import os from 'os';
+import db from './db.js';
 
 const BLOCK_SIZE = 64 * 1024; // 64KB block size
 
@@ -54,21 +55,84 @@ export function getAllDirs(dirPath, baseDir = dirPath) {
 }
 
 /**
- * Splits a file into chunks and calculates hashes for each chunk.
+ /**
+ * Computes overall SHA-256 hash of a file progressively in 64KB blocks to prevent memory spikes.
  */
-export function getFileBlocks(filePath, size) {
-  const blocks = [];
+export function computeFileHash(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return crypto.createHash('sha256').digest('hex');
+  }
+  const overallHashObj = crypto.createHash('sha256');
   const fd = fs.openSync(filePath, 'r');
   const buffer = Buffer.alloc(BLOCK_SIZE);
+  let bytesRead = 0;
+  let offset = 0;
+  try {
+    while (true) {
+      bytesRead = fs.readSync(fd, buffer, 0, BLOCK_SIZE, offset);
+      if (bytesRead === 0) break;
+      overallHashObj.update(buffer.subarray(0, bytesRead));
+      offset += bytesRead;
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return overallHashObj.digest('hex');
+}
+
+/**
+ * Resolves a game's local save file path correctly regardless of whether it's a folder or a single file.
+ */
+export function resolveLocalSaveFilePath(savePath, relPath) {
+  if (!savePath) return '';
+  const normalized = path.normalize(savePath);
+  try {
+    if (fs.existsSync(normalized) && fs.statSync(normalized).isFile()) {
+      return normalized;
+    }
+  } catch (e) {}
+
+  // If savePath does not exist, check if it has a file extension
+  const ext = path.extname(normalized);
+  if (ext && ext.length > 1) {
+    return normalized;
+  }
+
+  return path.join(savePath, relPath);
+}
+
+export function getBlockSizeForFile(fileSize) {
+  if (fileSize > 100 * 1024 * 1024) return 2 * 1024 * 1024; // 2MB for > 100MB
+  if (fileSize > 20 * 1024 * 1024) return 512 * 1024;       // 512KB for > 20MB
+  return 64 * 1024;                                         // 64KB default
+}
+
+/**
+ * Splits a file into chunks and calculates hashes for each chunk. Also computes the overall file hash.
+ */
+export function getFileBlocks(filePath, size, fileBlockSize = BLOCK_SIZE) {
+  const blocks = [];
+  const overallHashObj = crypto.createHash('sha256');
+  if (size === 0) {
+    return {
+      blocks: [],
+      fileHash: hashBuffer(Buffer.alloc(0))
+    };
+  }
+
+  const fd = fs.openSync(filePath, 'r');
+  const buffer = Buffer.alloc(fileBlockSize);
   let bytesRead = 0;
   let index = 0;
 
   try {
     while (true) {
-      bytesRead = fs.readSync(fd, buffer, 0, BLOCK_SIZE, index * BLOCK_SIZE);
+      bytesRead = fs.readSync(fd, buffer, 0, fileBlockSize, index * fileBlockSize);
       if (bytesRead === 0) break;
       
       const blockBuffer = buffer.subarray(0, bytesRead);
+      overallHashObj.update(blockBuffer);
+      
       const hash = hashBuffer(blockBuffer);
       blocks.push({
         index,
@@ -77,13 +141,16 @@ export function getFileBlocks(filePath, size) {
       });
 
       index++;
-      if (bytesRead < BLOCK_SIZE) break;
+      if (bytesRead < fileBlockSize) break;
     }
   } finally {
     fs.closeSync(fd);
   }
 
-  return blocks;
+  return {
+    blocks,
+    fileHash: overallHashObj.digest('hex')
+  };
 }
 
 const manifestCache = new Map();
@@ -112,16 +179,19 @@ export function getFolderManifest(dirPath) {
     };
   }
 
-  const relPaths = getAllFiles(dirPath);
+  const stat = fs.statSync(dirPath);
+  const isFile = stat.isFile();
+
+  const relPaths = isFile ? [path.basename(dirPath)] : getAllFiles(dirPath);
   let maxMtime = 0;
   const cacheKeyParts = [];
   const statsList = [];
 
   for (const relPath of relPaths) {
-    const fullPath = path.join(dirPath, relPath);
-    const stat = fs.statSync(fullPath);
-    const size = stat.size;
-    const mtimeMs = stat.mtimeMs || 0;
+    const fullPath = isFile ? dirPath : path.join(dirPath, relPath);
+    const fileStat = isFile ? stat : fs.statSync(fullPath);
+    const size = fileStat.size;
+    const mtimeMs = fileStat.mtimeMs || 0;
     if (mtimeMs > maxMtime) maxMtime = mtimeMs;
     cacheKeyParts.push(`${relPath}:${size}:${mtimeMs}`);
     statsList.push({ relPath, fullPath, size, mtimeMs });
@@ -137,20 +207,18 @@ export function getFolderManifest(dirPath) {
     timestamp: new Date().toISOString(),
     latestMtime: maxMtime,
     files: {},
-    dirs: getAllDirs(dirPath)
+    dirs: isFile ? [] : getAllDirs(dirPath)
   };
 
   for (const { relPath, fullPath, size, mtimeMs } of statsList) {
     let hash = '';
     let blocks = [];
+    const fBlockSize = getBlockSizeForFile(size);
 
     if (size > 0) {
-      // Calculate overall file hash
-      const fileData = fs.readFileSync(fullPath);
-      hash = hashBuffer(fileData);
-
-      // For files, compute block-level hashes
-      blocks = getFileBlocks(fullPath, size);
+      const res = getFileBlocks(fullPath, size, fBlockSize);
+      hash = res.fileHash;
+      blocks = res.blocks;
     } else {
       hash = hashBuffer(Buffer.alloc(0));
     }
@@ -159,6 +227,7 @@ export function getFolderManifest(dirPath) {
       size,
       hash,
       blocks,
+      blockSize: fBlockSize,
       mtime: mtimeMs
     };
   }
@@ -227,16 +296,17 @@ export function diffManifests(localManifest, remoteManifest) {
 /**
  * Reads specific blocks from a file and returns them as base64-encoded strings (or buffer array).
  */
-export function readBlocks(filePath, blockIndices) {
+export function readBlocks(filePath, blockIndices, fileBlockSize) {
   const chunks = [];
   if (!fs.existsSync(filePath)) return chunks;
 
+  const resolvedBlockSize = Number(fileBlockSize) || BLOCK_SIZE;
   const fd = fs.openSync(filePath, 'r');
-  const buffer = Buffer.alloc(BLOCK_SIZE);
+  const buffer = Buffer.alloc(resolvedBlockSize);
 
   try {
     for (const index of blockIndices) {
-      const bytesRead = fs.readSync(fd, buffer, 0, BLOCK_SIZE, index * BLOCK_SIZE);
+      const bytesRead = fs.readSync(fd, buffer, 0, resolvedBlockSize, index * resolvedBlockSize);
       if (bytesRead > 0) {
         chunks.push({
           index,
@@ -271,7 +341,8 @@ export function patchFile(filePath, blockChunks, remoteManifestFile) {
     fdRead = fs.openSync(filePath, 'r');
   }
 
-  const readBuffer = Buffer.alloc(BLOCK_SIZE);
+  const fileBlockSize = remoteManifestFile.blockSize || BLOCK_SIZE;
+  const readBuffer = Buffer.alloc(fileBlockSize);
   const chunkMap = new Map(blockChunks.map(c => [c.index, c]));
 
   try {
@@ -284,12 +355,12 @@ export function patchFile(filePath, blockChunks, remoteManifestFile) {
       if (chunk) {
         // Use updated block chunk received from peer
         const blockBuffer = Buffer.from(chunk.data, 'base64');
-        fs.writeSync(fdWrite, blockBuffer, 0, blockBuffer.length, i * BLOCK_SIZE);
+        fs.writeSync(fdWrite, blockBuffer, 0, blockBuffer.length, i * fileBlockSize);
       } else if (fdRead) {
         // Read unchanged block from the existing local file
-        const bytesRead = fs.readSync(fdRead, readBuffer, 0, remoteBlock.length, i * BLOCK_SIZE);
+        const bytesRead = fs.readSync(fdRead, readBuffer, 0, remoteBlock.length, i * fileBlockSize);
         if (bytesRead > 0) {
-          fs.writeSync(fdWrite, readBuffer, 0, bytesRead, i * BLOCK_SIZE);
+          fs.writeSync(fdWrite, readBuffer, 0, bytesRead, i * fileBlockSize);
         }
       } else {
         throw new Error(`Missing block ${i} for file reconstruction: No local file and no remote chunk provided.`);
@@ -301,8 +372,7 @@ export function patchFile(filePath, blockChunks, remoteManifestFile) {
   }
 
   // Double check integrity of new file
-  const fileData = fs.readFileSync(tempFilePath);
-  const computedHash = hashBuffer(fileData);
+  const computedHash = computeFileHash(tempFilePath);
 
   if (computedHash !== remoteManifestFile.hash) {
     fs.unlinkSync(tempFilePath);
@@ -316,11 +386,38 @@ export function patchFile(filePath, blockChunks, remoteManifestFile) {
   fs.renameSync(tempFilePath, filePath);
 }
 
+function matchAndTranslate(pathStr, patternPrefix, targetPrefix) {
+  const normPath = pathStr.replace(/\\/g, '/').toLowerCase();
+  const normPattern = patternPrefix.replace(/\\/g, '/').toLowerCase();
+  
+  if (normPath === normPattern) {
+    return targetPrefix;
+  }
+  if (normPath.startsWith(normPattern + '/')) {
+    const sub = pathStr.substring(normPattern.length + 1);
+    return path.join(targetPrefix, sub);
+  }
+  return null;
+}
+
 /**
  * Translates a remote path to a local path by replacing the remote home directory with the local home directory if it resides in C:\Users.
  */
 export function translatePathToLocal(remotePath) {
   if (!remotePath) return remotePath;
+
+  const settings = db.getSettings();
+  if (settings && settings.pathTranslations && Array.isArray(settings.pathTranslations)) {
+    for (const rule of settings.pathTranslations) {
+      if (!rule.fromPattern || !rule.toPattern) continue;
+      
+      const toLocal = matchAndTranslate(remotePath, rule.fromPattern, rule.toPattern);
+      if (toLocal) return toLocal;
+      
+      const toRemote = matchAndTranslate(remotePath, rule.toPattern, rule.fromPattern);
+      if (toRemote) return toRemote;
+    }
+  }
   
   const normalizedRemote = path.normalize(remotePath);
   
@@ -354,9 +451,16 @@ export function translatePathToLocal(remotePath) {
  */
 export function isSafePath(baseDir, relativePath) {
   if (!baseDir || !relativePath) return false;
+  
+  let resolvedBase = path.resolve(baseDir);
+  try {
+    if (fs.existsSync(resolvedBase) && fs.statSync(resolvedBase).isFile()) {
+      resolvedBase = path.dirname(resolvedBase);
+    }
+  } catch (e) {}
+
   // Resolve path to handle any '..' or '.' segments
-  const resolvedPath = path.resolve(path.join(baseDir, relativePath));
-  const resolvedBase = path.resolve(baseDir);
+  const resolvedPath = path.resolve(path.join(resolvedBase, relativePath));
   
   // Ensure the resolved path starts with the resolved base directory path
   // plus the path separator, or matches it exactly.

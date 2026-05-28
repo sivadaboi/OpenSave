@@ -18,6 +18,7 @@ let discoveredSavesList = [];
 let activeConflictData = null;
 let pendingRollbackSnapId = null;
 let localCustomScanPaths = [];
+let localPathTranslations = [];
 
 // ============================================================
 // DOM REFS
@@ -81,10 +82,16 @@ const relayPortConfigContainer  = document.getElementById('relay-port-config-con
 const relayIpsConfigContainer   = document.getElementById('relay-ips-config-container');
 const settingsLocalIps   = document.getElementById('settings-local-ips');
 const settingsPublicIp   = document.getElementById('settings-public-ip');
+const settingsLocalSyncPin = document.getElementById('settings-local-sync-pin');
+const localSyncPinVal     = document.getElementById('local-sync-pin-val');
 const settingsSyncBackupsDir    = document.getElementById('settings-sync-backups-dir');
 const settingsAutoDeleteBackups = document.getElementById('settings-auto-delete-backups');
 const settingsAutoDeleteDays    = document.getElementById('settings-auto-delete-days');
 const autoDeleteDaysContainer   = document.getElementById('auto-delete-days-container');
+const pathTranslationsList = document.getElementById('path-translations-list');
+const formAddTranslation = document.getElementById('form-add-translation');
+const translationFromInput = document.getElementById('translation-from-input');
+const translationToInput = document.getElementById('translation-to-input');
 
 const btnBrowseFolder    = document.getElementById('btn-browse-folder');
 const settingsAutoSyncOnTrack   = document.getElementById('settings-auto-sync-on-track');
@@ -211,6 +218,8 @@ function navigateTo(viewId) {
     if (settingsAutoSyncOnTrack) settingsAutoSyncOnTrack.checked = appState.settings.autoSyncOnTrack !== false;
     localCustomScanPaths = [...(appState.settings.customScanPaths || [])];
     renderCustomScanPaths();
+    localPathTranslations = [...(appState.settings.pathTranslations || [])];
+    renderPathTranslations();
     syncWanControls();
     toggleRelayContainers(settingsHostRelay.checked);
     loadRelayIps();
@@ -406,6 +415,8 @@ function setupEventListeners() {
       closeModal(createBranchModal);
       closeModal(rollbackConfirmModal);
       closeModal(snapshotCommentModal);
+      const bModal = document.getElementById('snapshot-browser-modal');
+      if (bModal) closeModal(bModal);
     });
   });
 
@@ -468,7 +479,8 @@ function setupEventListeners() {
       autoDeleteBackups,
       autoDeleteDays,
       autoSyncOnTrack,
-      customScanPaths: localCustomScanPaths
+      customScanPaths: localCustomScanPaths,
+      pathTranslations: localPathTranslations
     });
     await loadRelayIps();
   });
@@ -516,6 +528,29 @@ function setupEventListeners() {
       }
       inputNewScanPath.value = '';
     }
+  });
+
+  formAddTranslation?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fromPattern = translationFromInput.value.trim();
+    const toPattern = translationToInput.value.trim();
+    if (!fromPattern || !toPattern) return;
+
+    const exists = localPathTranslations.some(
+      r => r.fromPattern.toLowerCase() === fromPattern.toLowerCase() && r.toPattern.toLowerCase() === toPattern.toLowerCase()
+    );
+    if (exists) {
+      showToast('This translation rule already exists.', 'error');
+      return;
+    }
+
+    localPathTranslations.push({ fromPattern, toPattern });
+    renderPathTranslations();
+
+    await saveSettings({ pathTranslations: localPathTranslations }, '🔄 Path translation rule added!');
+
+    translationFromInput.value = '';
+    translationToInput.value = '';
   });
 
   // Scanner
@@ -614,8 +649,25 @@ function setupEventListeners() {
   // Manual Add Peer
   formAddPeer.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const address = peerAddressInput.value.trim();
-    const port    = parseInt(peerPortInput.value.trim(), 10);
+    let address = peerAddressInput.value.trim();
+    let port = parseInt(peerPortInput.value.trim(), 10);
+    if (isNaN(port)) port = 8383;
+
+    if (address.toUpperCase().startsWith('SS-LAN-') || /^[A-Z0-9]{6}$/i.test(address)) {
+      let pin = address;
+      if (!pin.toUpperCase().startsWith('SS-LAN-')) {
+        pin = 'SS-LAN-' + pin;
+      }
+      const decoded = decodePin(pin);
+      if (decoded) {
+        address = decoded.ip;
+        port = decoded.port;
+      } else {
+        showToast('Invalid PIN Code format.', 'error');
+        return;
+      }
+    }
+
     try {
       const probe = await probePeerAddress(address, port);
       if (!probe) return;
@@ -638,12 +690,30 @@ function setupEventListeners() {
   });
 
   const probeOnInput = debounce(async () => {
-    const address = peerAddressInput.value.trim();
-    const port = parseInt(peerPortInput.value.trim(), 10);
-    if (!address || !port) {
+    let address = peerAddressInput.value.trim();
+    let port = parseInt(peerPortInput.value.trim(), 10);
+    if (isNaN(port)) port = 8383;
+
+    if (!address) {
       setPeerProbeStatus('', '');
       return;
     }
+
+    if (address.toUpperCase().startsWith('SS-LAN-') || /^[A-Z0-9]{6}$/i.test(address)) {
+      let pin = address;
+      if (!pin.toUpperCase().startsWith('SS-LAN-')) {
+        pin = 'SS-LAN-' + pin;
+      }
+      const decoded = decodePin(pin);
+      if (decoded) {
+        address = decoded.ip;
+        port = decoded.port;
+      } else {
+        setPeerProbeStatus('Invalid PIN Code', 'error');
+        return;
+      }
+    }
+
     await probePeerAddress(address, port, { quiet: true });
   }, 700);
 
@@ -1104,9 +1174,80 @@ function toggleAutoDeleteDays(enabled) {
   autoDeleteDaysContainer?.classList.toggle('hidden', !enabled);
 }
 
+function encodePin(ip, port) {
+  if (!ip) return null;
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4) return null;
+  const [a, b, c, d] = parts;
+
+  let classType = 3;
+  let ipData = 0;
+
+  if (a === 192 && b === 168) {
+    classType = 0;
+    ipData = (c << 8) | d;
+  } else if (a === 10) {
+    classType = 1;
+    ipData = (b << 16) | (c << 8) | d;
+  } else if (a === 172 && b >= 16 && b <= 31) {
+    classType = 2;
+    ipData = ((b - 16) << 16) | (c << 8) | d;
+  } else {
+    return null; // unsupported for PIN
+  }
+
+  let portOffset = port - 8380;
+  if (portOffset < 0 || portOffset > 31) {
+    portOffset = 3; // default offset for 8383
+  }
+
+  const val = (classType * 536870912) + (ipData * 32) + portOffset;
+  const pinCode = val.toString(36).toUpperCase().padStart(6, '0');
+  return `SS-LAN-${pinCode}`;
+}
+
+function decodePin(pin) {
+  if (!pin) return null;
+  const cleaned = pin.trim().toUpperCase();
+  if (!cleaned.startsWith('SS-LAN-')) return null;
+  const pinCode = cleaned.replace(/^SS-LAN-/, '');
+  if (!/^[A-Z0-9]{6}$/.test(pinCode)) return null;
+
+  const val = parseInt(pinCode.toLowerCase(), 36);
+  if (isNaN(val)) return null;
+
+  const classType = Math.floor(val / 536870912) & 0x03;
+  const ipData = Math.floor((val % 536870912) / 32) & 0xFFFFFF;
+  const portOffset = val % 32;
+
+  let ip = null;
+  if (classType === 0) {
+    const c = (ipData >> 8) & 0xFF;
+    const d = ipData & 0xFF;
+    ip = `192.168.${c}.${d}`;
+  } else if (classType === 1) {
+    const b = (ipData >> 16) & 0xFF;
+    const c = (ipData >> 8) & 0xFF;
+    const d = ipData & 0xFF;
+    ip = `10.${b}.${c}.${d}`;
+  } else if (classType === 2) {
+    const b = ((ipData >> 16) & 0xFF) + 16;
+    const c = (ipData >> 8) & 0xFF;
+    const d = ipData & 0xFF;
+    ip = `172.${b}.${c}.${d}`;
+  } else {
+    return null;
+  }
+
+  const port = 8380 + portOffset;
+  return { ip, port };
+}
+
 async function loadRelayIps() {
   if (settingsLocalIps) settingsLocalIps.textContent = 'Loading...';
   if (settingsPublicIp) settingsPublicIp.textContent = 'Loading...';
+  if (settingsLocalSyncPin) settingsLocalSyncPin.textContent = 'Loading...';
+  if (localSyncPinVal) localSyncPinVal.textContent = 'Loading...';
   if (wanLocalIps) wanLocalIps.textContent = 'Loading...';
   if (wanPublicIp) wanPublicIp.textContent = 'Loading...';
   try {
@@ -1120,10 +1261,29 @@ async function loadRelayIps() {
       if (settingsPublicIp) settingsPublicIp.textContent = data.publicIp || 'Unavailable';
       if (wanLocalIps) wanLocalIps.textContent = lanUrls;
       if (wanPublicIp) wanPublicIp.textContent = publicUrl;
+
+      // Generate local PIN from first local IP and daemon port
+      const firstIp = data.localIps && data.localIps.length > 0 ? data.localIps[0] : null;
+      const dPort = appState.settings.port || 8383;
+      if (firstIp) {
+        const pin = encodePin(firstIp, dPort);
+        if (pin) {
+          if (settingsLocalSyncPin) settingsLocalSyncPin.textContent = pin;
+          if (localSyncPinVal) localSyncPinVal.textContent = pin;
+        } else {
+          if (settingsLocalSyncPin) settingsLocalSyncPin.textContent = 'N/A (Non-LAN IP)';
+          if (localSyncPinVal) localSyncPinVal.textContent = 'N/A';
+        }
+      } else {
+        if (settingsLocalSyncPin) settingsLocalSyncPin.textContent = 'N/A (No LAN IP)';
+        if (localSyncPinVal) localSyncPinVal.textContent = 'N/A';
+      }
     }
   } catch (_) {
     if (settingsLocalIps) settingsLocalIps.textContent = 'Failed';
     if (settingsPublicIp) settingsPublicIp.textContent = 'Failed';
+    if (settingsLocalSyncPin) settingsLocalSyncPin.textContent = 'Failed';
+    if (localSyncPinVal) localSyncPinVal.textContent = 'Failed';
     if (wanLocalIps) wanLocalIps.textContent = 'Failed';
     if (wanPublicIp) wanPublicIp.textContent = 'Failed';
   }
@@ -1636,7 +1796,10 @@ function renderDrawerDetails() {
             <span>ID: <code class="node-id-badge">${snap.id}</code></span>
           </div>
         </div>
-        <button class="btn-rollback-action" onclick="triggerRollbackConfirmation('${snap.id}')">Rollback</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-rollback-action" onclick="triggerRollbackConfirmation('${snap.id}')">Rollback</button>
+          <button class="btn-secondary btn-sm" onclick="openSnapshotBrowser('${game.id}', '${snap.id}')">Browse Files</button>
+        </div>
       </div>
     `;
     timelineTree.appendChild(node);
@@ -1730,13 +1893,13 @@ function checkActiveConflicts(activeConflicts) {
   for (const gameId in activeConflicts) {
     const conflict = activeConflicts[gameId];
     if (conflict && conflict.peer) {
-      openConflictModal(gameId, conflict.peer.id, conflict.peer.name, conflict.localSnap, conflict.remoteSnap);
+      openConflictModal(gameId, conflict.peer.id, conflict.peer.name, conflict.localSnap, conflict.remoteSnap, conflict.diff);
       break;
     }
   }
 }
 
-function openConflictModal(gameId, peerId, peerName, localSnap, remoteSnap) {
+function openConflictModal(gameId, peerId, peerName, localSnap, remoteSnap, diff) {
   activeConflictData = { gameId, peerId, peerName };
   const modal = document.getElementById('conflict-modal');
   if (!modal) return;
@@ -1748,6 +1911,47 @@ function openConflictModal(gameId, peerId, peerName, localSnap, remoteSnap) {
   document.getElementById('conflict-remote-comment').textContent = remoteSnap?.comment || 'No remote snapshots';
   document.getElementById('conflict-remote-time').textContent    = remoteSnap ? new Date(remoteSnap.timestamp).toLocaleString() : 'Never';
   document.getElementById('conflict-remote-id').textContent      = remoteSnap?.id || 'N/A';
+
+  const diffList = document.getElementById('conflict-diff-list');
+  if (diffList) {
+    diffList.innerHTML = '';
+    let diffCount = 0;
+    
+    if (diff) {
+      if (Array.isArray(diff.added)) {
+        diff.added.forEach(file => {
+          diffCount++;
+          const li = document.createElement('li');
+          li.className = 'conflict-diff-item added';
+          li.innerHTML = `<span class="conflict-diff-file">${file}</span><span class="conflict-diff-type">Added on remote</span>`;
+          diffList.appendChild(li);
+        });
+      }
+      if (diff.modified) {
+        Object.keys(diff.modified).forEach(file => {
+          diffCount++;
+          const li = document.createElement('li');
+          li.className = 'conflict-diff-item modified';
+          li.innerHTML = `<span class="conflict-diff-file">${file}</span><span class="conflict-diff-type">Modified</span>`;
+          diffList.appendChild(li);
+        });
+      }
+      if (Array.isArray(diff.deleted)) {
+        diff.deleted.forEach(file => {
+          diffCount++;
+          const li = document.createElement('li');
+          li.className = 'conflict-diff-item deleted';
+          li.innerHTML = `<span class="conflict-diff-file">${file}</span><span class="conflict-diff-type">Deleted on remote</span>`;
+          diffList.appendChild(li);
+        });
+      }
+    }
+
+    if (diffCount === 0) {
+      diffList.innerHTML = `<li class="empty-list-msg" style="padding-left:0; color: var(--text-3);">No file-level differences found.</li>`;
+    }
+  }
+
   modal.classList.remove('hidden');
 }
 
@@ -1931,6 +2135,98 @@ function renderCustomScanPaths() {
 window.removeCustomScanPath = (idx) => {
   localCustomScanPaths.splice(idx, 1);
   renderCustomScanPaths();
+};
+
+// Custom Path Translations Renderer & Handlers
+function renderPathTranslations() {
+  if (!pathTranslationsList) return;
+  pathTranslationsList.innerHTML = '';
+  if (localPathTranslations.length === 0) {
+    pathTranslationsList.innerHTML = `<div style="font-size:12px; color:var(--text-3); font-style:italic;">No custom path translation rules.</div>`;
+    return;
+  }
+  localPathTranslations.forEach((rule, idx) => {
+    const item = document.createElement('div');
+    item.className = 'custom-path-item';
+    item.style = 'display:flex; flex-direction:column; gap:4px; background:rgba(255,255,255,0.03); border:1px solid var(--border); padding:8px 36px 8px 10px; border-radius:6px; font-size:11px; margin-bottom: 4px; position:relative;';
+    item.innerHTML = `
+      <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">FROM: <span style="color:white; word-break:break-all;">${rule.fromPattern}</span></div>
+      <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted); margin-top:2px;">TO: <span style="color:white; word-break:break-all;">${rule.toPattern}</span></div>
+      <button type="button" class="btn-peer-action btn-danger" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); padding:2px 6px; background:rgba(239,68,68,0.15); color:var(--red);" onclick="removePathTranslation(${idx})">Delete</button>
+    `;
+    pathTranslationsList.appendChild(item);
+  });
+}
+
+window.removePathTranslation = async (idx) => {
+  localPathTranslations.splice(idx, 1);
+  renderPathTranslations();
+  await saveSettings({ pathTranslations: localPathTranslations }, '🔄 Path translation rule deleted!');
+};
+
+// ============================================================
+// SNAPSHOT FILE BROWSER & GRANULAR RESTORE
+// ============================================================
+window.openSnapshotBrowser = async (gameId, snapshotId) => {
+  const modal = document.getElementById('snapshot-browser-modal');
+  const tableBody = document.getElementById('snapshot-files-table-body');
+  if (!modal || !tableBody) return;
+
+  document.getElementById('snapshot-browser-title').textContent = `📂 Browse Backup: ${snapshotId}`;
+  tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-3);">Loading files from snapshot...</td></tr>';
+  openModal(modal);
+
+  try {
+    const res = await fetch(`/api/games/${gameId}/snapshot/${snapshotId}/files`);
+    if (res.ok) {
+      const data = await res.json();
+      tableBody.innerHTML = '';
+      if (data.files.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--text-3);">No files in this snapshot.</td></tr>';
+        return;
+      }
+      data.files.forEach(file => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="font-family:var(--font-mono); font-size:11px; word-break:break-all;">${file.name}</td>
+          <td>${(file.size / 1024).toFixed(1)} KB</td>
+          <td style="text-align:right;">
+            <button class="btn-restore-file-action" onclick="restoreSnapshotFile('${gameId}', '${snapshotId}', '${file.name.replace(/'/g, "\\'")}')">Restore File</button>
+          </td>
+        `;
+        tableBody.appendChild(tr);
+      });
+    } else {
+      const err = await res.json();
+      tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--red);">Failed to read snapshot: ${err.error}</td></tr>`;
+    }
+  } catch (err) {
+    tableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--red);">Error: ${err.message}</td></tr>`;
+  }
+};
+
+window.restoreSnapshotFile = async (gameId, snapshotId, relPath) => {
+  if (!confirm(`Are you sure you want to restore only "${relPath}" from snapshot "${snapshotId}"?\nThis will overwrite the active file.`)) {
+    return;
+  }
+
+  showToast(`Restoring ${relPath}...`, 'info');
+  try {
+    const res = await fetch(`/api/games/${gameId}/snapshot/${snapshotId}/restore-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ relPath })
+    });
+    if (res.ok) {
+      showToast(`Successfully restored "${relPath}"!`, 'success');
+      closeModal(document.getElementById('snapshot-browser-modal'));
+    } else {
+      const err = await res.json();
+      showToast(`Failed: ${err.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
 };
 
 // ============================================================

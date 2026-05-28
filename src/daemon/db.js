@@ -35,6 +35,7 @@ const defaultState = {
     autoDeleteDays: 30,
     autoSyncOnTrack: true,
     customScanPaths: [],
+    pathTranslations: [],
     relayUrl: CLOUD_RELAY_URL,
     syncCode: '',
     hostRelay: false,
@@ -54,8 +55,9 @@ class Database {
 
   load() {
     try {
-      if (fs.existsSync(DB_FILE)) {
-        const fileContent = fs.readFileSync(DB_FILE, 'utf8');
+      const dbFile = this.getDbFilePath();
+      if (fs.existsSync(dbFile)) {
+        const fileContent = fs.readFileSync(dbFile, 'utf8');
         this.data = JSON.parse(fileContent);
         // Fill in missing default structures if database is older
         this.data.settings = { ...defaultState.settings, ...this.data.settings };
@@ -78,7 +80,8 @@ class Database {
 
   save() {
     try {
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.data, null, 2), 'utf8');
+      const dbFile = this.getDbFilePath();
+      fs.writeFileSync(dbFile, JSON.stringify(this.data, null, 2), 'utf8');
     } catch (error) {
       console.error('Error saving database:', error);
     }

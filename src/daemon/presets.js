@@ -158,31 +158,48 @@ export async function scanInstalledSaves() {
     }
   }
 
-  // Add Steam userdata folders
-  const steamPath = 'C:/Program Files (x86)/Steam/userdata';
-  if (fs.existsSync(steamPath)) {
-    try {
-      const users = fs.readdirSync(steamPath);
-      for (const user of users) {
-        const userPath = path.join(steamPath, user);
-        if (fs.statSync(userPath).isDirectory()) {
-          const games = fs.readdirSync(userPath);
-          for (const game of games) {
-            const gamePath = path.join(userPath, game);
-            if (fs.statSync(gamePath).isDirectory()) {
-              const isAppId = /^\d+$/.test(game);
-              discovered.push({
-                id: `steam-${user}-${game}`,
-                name: `Steam User ${user} - AppID: ${game}`,
-                type: 'game',
-                savePath: gamePath,
-                appId: isAppId ? game : null
-              });
+  // Add Steam userdata folders (supporting Windows and Linux/SteamOS paths)
+  const steamPaths = [
+    'C:/Program Files (x86)/Steam/userdata',
+    'C:/Program Files/Steam/userdata',
+    path.join(os.homedir(), '.local/share/Steam/userdata'),
+    path.join(os.homedir(), '.steam/steam/userdata'),
+    path.join(os.homedir(), '.var/app/com.valvesoftware.Steam/.local/share/Steam/userdata')
+  ];
+
+  const seenPaths = new Set(discovered.map(d => path.resolve(d.savePath)));
+
+  for (const steamPath of steamPaths) {
+    if (fs.existsSync(steamPath)) {
+      try {
+        const users = fs.readdirSync(steamPath);
+        for (const user of users) {
+          const userPath = path.join(steamPath, user);
+          if (fs.statSync(userPath).isDirectory()) {
+            const games = fs.readdirSync(userPath);
+            for (const game of games) {
+              const gamePath = path.join(userPath, game);
+              if (fs.statSync(gamePath).isDirectory()) {
+                const normalizedPath = path.resolve(gamePath);
+                if (seenPaths.has(normalizedPath)) {
+                  continue;
+                }
+                seenPaths.add(normalizedPath);
+                
+                const isAppId = /^\d+$/.test(game);
+                discovered.push({
+                  id: `steam-${user}-${game}`,
+                  name: `Steam User ${user} - AppID: ${game}`,
+                  type: 'game',
+                  savePath: gamePath,
+                  appId: isAppId ? game : null
+                });
+              }
             }
           }
         }
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
   }
 
   // 3. GOG & Epic Games Saved Games and My Games wrapper folders

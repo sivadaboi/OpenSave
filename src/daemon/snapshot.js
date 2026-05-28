@@ -29,29 +29,58 @@ function clearFolder(folderPath) {
 }
 
 /**
- * Creates a zip snapshot of a directory.
+ * Creates a zip snapshot of a directory or a single file.
  */
 function zipDirectory(sourceDir, outPath) {
   const zip = new AdmZip();
-  // Check if directory is empty or doesn't exist
   if (!fs.existsSync(sourceDir)) {
-    throw new Error(`Source directory does not exist: ${sourceDir}`);
+    throw new Error(`Source path does not exist: ${sourceDir}`);
   }
-  zip.addLocalFolder(sourceDir);
+  const stat = fs.statSync(sourceDir);
+  if (stat.isFile()) {
+    zip.addLocalFile(sourceDir);
+  } else {
+    zip.addLocalFolder(sourceDir);
+  }
   zip.writeZip(outPath);
 }
 
 /**
- * Unzips a snapshot to a directory.
+ * Unzips a snapshot to a directory or restores it as a single file.
  */
 function unzipDirectory(zipPath, targetDir) {
   if (!fs.existsSync(zipPath)) {
     throw new Error(`Zip archive not found: ${zipPath}`);
   }
-  ensureDir(targetDir);
-  clearFolder(targetDir);
-  const zip = new AdmZip(zipPath);
-  zip.extractAllTo(targetDir, true);
+  
+  let isFile = false;
+  if (fs.existsSync(targetDir)) {
+    isFile = fs.statSync(targetDir).isFile();
+  } else {
+    // If targetDir doesn't exist, check the ZIP archive contents
+    const zip = new AdmZip(zipPath);
+    const entries = zip.getEntries();
+    if (entries.length === 1 && !entries[0].isDirectory) {
+      isFile = true;
+    }
+  }
+
+  if (isFile) {
+    const parentDir = path.dirname(targetDir);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+    if (fs.existsSync(targetDir)) {
+      fs.unlinkSync(targetDir);
+    }
+    const zip = new AdmZip(zipPath);
+    zip.extractAllTo(parentDir, true);
+  } else {
+    ensureDir(targetDir);
+    clearFolder(targetDir);
+    const zip = new AdmZip(zipPath);
+    zip.extractAllTo(targetDir, true);
+  }
 }
 
 export function createSnapshot(gameId, comment = '', isSystemAuto = false) {
@@ -61,10 +90,24 @@ export function createSnapshot(gameId, comment = '', isSystemAuto = false) {
   }
 
   const savePath = game.savePath;
-  if (!fs.existsSync(savePath) || fs.readdirSync(savePath).length === 0) {
-    // If the directory does not exist or is empty, we can create it or return a warning
-    // For games that haven't run yet, let's create the folder
-    ensureDir(savePath);
+  let isFile = false;
+  if (fs.existsSync(savePath)) {
+    isFile = fs.statSync(savePath).isFile();
+  }
+
+  if (!fs.existsSync(savePath)) {
+    // If it does not exist, assume it's a file if it has a typical file extension, otherwise a directory
+    const ext = path.extname(savePath);
+    if (ext && ext.length > 1) {
+      isFile = true;
+      ensureDir(path.dirname(savePath));
+    } else {
+      ensureDir(savePath);
+    }
+  } else if (!isFile) {
+    if (fs.readdirSync(savePath).length === 0) {
+      ensureDir(savePath);
+    }
   }
 
   const settings = db.getSettings();
@@ -141,7 +184,17 @@ export function restoreSnapshot(gameId, snapshotId) {
   }
 
   // Create safety restore point first if there are actual files in the save folder
-  if (fs.existsSync(game.savePath) && fs.readdirSync(game.savePath).length > 0) {
+  let hasFiles = false;
+  if (fs.existsSync(game.savePath)) {
+    const isFile = fs.statSync(game.savePath).isFile();
+    if (isFile) {
+      hasFiles = true;
+    } else if (fs.readdirSync(game.savePath).length > 0) {
+      hasFiles = true;
+    }
+  }
+
+  if (hasFiles) {
     try {
       createSnapshot(gameId, `Pre-rollback safety restore point (before restoring ${snapshotId})`, true);
     } catch (e) {
@@ -194,17 +247,32 @@ export function switchBranch(gameId, targetBranchName) {
 
   // 1. Take a snapshot of the current active save files and store them under the current branch
   let currentHadFiles = false;
-  if (fs.existsSync(game.savePath) && fs.readdirSync(game.savePath).length > 0) {
+  let isFile = false;
+  if (fs.existsSync(game.savePath)) {
+    isFile = fs.statSync(game.savePath).isFile();
+    if (isFile) {
+      currentHadFiles = true;
+    } else if (fs.readdirSync(game.savePath).length > 0) {
+      currentHadFiles = true;
+    }
+  }
+
+  if (currentHadFiles) {
     try {
       createSnapshot(gameId, `Auto backup before switching to branch "${targetBranchName}"`, true);
-      currentHadFiles = true;
     } catch (e) {
       console.warn('[Snapshot] Safety snapshot failed before branch switch:', e.message);
     }
   }
 
-  // 2. Clear current save folder
-  clearFolder(game.savePath);
+  // 2. Clear current save folder or delete file
+  if (isFile) {
+    if (fs.existsSync(game.savePath)) {
+      fs.unlinkSync(game.savePath);
+    }
+  } else {
+    clearFolder(game.savePath);
+  }
 
   // 3. Update database active branch
   db.updateGame(gameId, { activeBranch: targetBranchName });

@@ -14,7 +14,7 @@
     "dist:app": "electron-builder --win && electron-builder --linux",
     "port:forward": "node scripts/upnp-port-forward.js 8386",
     "port:unforward": "node scripts/upnp-port-forward.js 8386 --delete",
-    "test": "node test/test-sync.js",
+    "test": "node test/test-path-translation.js && node test/test-security.js && node test/test-single-file.js && node test/test-sync.js && node test/test-qol-features.js",
     "test:wan": "node test/test-wan-relay.js",
     "deploy:relay": "echo 'Push to GitHub then go to https://render.com/deploy and connect your repo. render.yaml handles the rest.'"
   },

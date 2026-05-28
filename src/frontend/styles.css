@@ -1764,3 +1764,95 @@ input, textarea, code, pre, [contenteditable="true"], .node-id-badge {
   background: #0f101f;
   color: var(--text-1);
 }
+
+/* Conflict Diff Viewer Styling */
+.conflict-diff-viewer {
+  margin-top: 18px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+.conflict-diff-title {
+  font-size: 11px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+}
+.conflict-diff-list {
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.conflict-diff-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.01);
+}
+.conflict-diff-item.added {
+  border-left: 3px solid #10b981;
+}
+.conflict-diff-item.modified {
+  border-left: 3px solid #f59e0b;
+}
+.conflict-diff-item.deleted {
+  border-left: 3px solid #ef4444;
+}
+.conflict-diff-type {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.conflict-diff-item.added .conflict-diff-type {
+  background: rgba(16,185,129,0.15);
+  color: #10b981;
+}
+.conflict-diff-item.modified .conflict-diff-type {
+  background: rgba(245,158,11,0.15);
+  color: #f59e0b;
+}
+.conflict-diff-item.deleted .conflict-diff-type {
+  background: rgba(239,68,68,0.15);
+  color: #ef4444;
+}
+
+/* Snapshot File Browser Styling */
+#snapshot-files-table-body tr {
+  border-bottom: 1px solid var(--border);
+  transition: var(--ease);
+}
+#snapshot-files-table-body tr:hover {
+  background: rgba(255,255,255,0.01);
+}
+#snapshot-files-table-body td {
+  padding: 10px 14px;
+  vertical-align: middle;
+}
+.btn-restore-file-action {
+  padding: 4px 8px;
+  font-size: 11px;
+  background: var(--violet-dim);
+  border: 1px solid var(--violet);
+  color: #c084fc;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--ease);
+}
+.btn-restore-file-action:hover {
+  background: var(--violet);
+  color: #fff;
+}

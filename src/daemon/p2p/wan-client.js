@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import db from '../db.js';
 import { log } from '../logger.js';
-import { getFolderManifest, readBlocks, translatePathToLocal, isSafePath } from '../delta.js';
+import { getFolderManifest, readBlocks, translatePathToLocal, isSafePath, resolveLocalSaveFilePath } from '../delta.js';
 import { getLatestSnapshot } from '../snapshot.js';
 import watcherEngine from '../watcher.js';
 
@@ -401,7 +401,7 @@ export class WanClientManager {
         }
       } else if (route.startsWith('/blocks/')) {
         const gameId = route.split('/').pop();
-        const { relPath, blockIndices } = body;
+        const { relPath, blockIndices, blockSize } = body;
         const game = db.getGame(gameId);
         if (!game) {
           status = 404;
@@ -411,10 +411,10 @@ export class WanClientManager {
           status = 403;
           data = { error: 'Access denied: path traversal attempt detected.' };
         } else {
-          const fullPath = path.join(game.savePath, relPath);
+          const fullPath = resolveLocalSaveFilePath(game.savePath, relPath);
           data = {
             relPath,
-            blocks: readBlocks(fullPath, blockIndices)
+            blocks: readBlocks(fullPath, blockIndices, blockSize)
           };
         }
       } else if (route.startsWith('/snapshot/')) {

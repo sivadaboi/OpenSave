@@ -14,6 +14,7 @@ import p2pEngine from './p2p.js';
 import { setupWindowsFirewall } from './p2p/firewall.js';
 import { createSnapshot, restoreSnapshot, createBranch, switchBranch } from './snapshot.js';
 import { scanInstalledSaves } from './presets.js';
+import { isSafePath, resolveLocalSaveFilePath } from './delta.js';
 import relayManager from './relay-manager.js';
 import { setBroadcastFn, getHistory, log } from './logger.js';
 
@@ -231,6 +232,16 @@ app.post('/api/settings', (req, res) => {
         updateData.customScanPaths = req.body.customScanPaths.map(p => path.resolve(p));
       } else {
         updateData.customScanPaths = [];
+      }
+    }
+    if (req.body.pathTranslations !== undefined) {
+      if (Array.isArray(req.body.pathTranslations)) {
+        updateData.pathTranslations = req.body.pathTranslations.map(rule => ({
+          fromPattern: String(rule.fromPattern || '').trim(),
+          toPattern: String(rule.toPattern || '').trim()
+        })).filter(rule => rule.fromPattern && rule.toPattern);
+      } else {
+        updateData.pathTranslations = [];
       }
     }
 
@@ -508,6 +519,110 @@ app.post('/api/games/:gameId/rollback', (req, res) => {
     const snap = restoreSnapshot(gameId, snapshotId);
     broadcast('games-update', db.getGames());
     res.json({ success: true, restored: snap });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET snapshot files list
+app.get('/api/games/:gameId/snapshot/:snapshotId/files', (req, res) => {
+  const { gameId, snapshotId } = req.params;
+  const game = db.getGame(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+
+  let snapshot = null;
+  for (const b in game.branches) {
+    const snap = game.branches[b].snapshots.find(s => s.id === snapshotId);
+    if (snap) {
+      snapshot = snap;
+      break;
+    }
+  }
+
+  if (!snapshot || !fs.existsSync(snapshot.zipPath)) {
+    return res.status(404).json({ error: 'Snapshot ZIP file not found.' });
+  }
+
+  try {
+    const zip = new AdmZip(snapshot.zipPath);
+    const entries = zip.getEntries();
+    const files = entries
+      .filter(entry => !entry.isDirectory)
+      .map(entry => ({
+        name: entry.entryName,
+        size: entry.header.size,
+        compressedSize: entry.header.compressedSize,
+        time: entry.header.time
+      }));
+    res.json({ files });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST granular restore single file from snapshot
+app.post('/api/games/:gameId/snapshot/:snapshotId/restore-file', (req, res) => {
+  const { gameId, snapshotId } = req.params;
+  const { relPath } = req.body;
+  if (!relPath) return res.status(400).json({ error: 'relPath is required.' });
+
+  const game = db.getGame(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+
+  if (!isSafePath(game.savePath, relPath)) {
+    return res.status(403).json({ error: 'Access denied: path traversal attempt detected.' });
+  }
+
+  let snapshot = null;
+  for (const b in game.branches) {
+    const snap = game.branches[b].snapshots.find(s => s.id === snapshotId);
+    if (snap) {
+      snapshot = snap;
+      break;
+    }
+  }
+
+  if (!snapshot || !fs.existsSync(snapshot.zipPath)) {
+    return res.status(404).json({ error: 'Snapshot ZIP file not found.' });
+  }
+
+  try {
+    const zip = new AdmZip(snapshot.zipPath);
+    const entry = zip.getEntry(relPath);
+    if (!entry) {
+      return res.status(404).json({ error: `File ${relPath} not found in backup snapshot.` });
+    }
+
+    if (fs.existsSync(game.savePath)) {
+      const isFile = fs.statSync(game.savePath).isFile();
+      let hasFiles = false;
+      if (isFile) {
+        hasFiles = true;
+      } else if (fs.readdirSync(game.savePath).length > 0) {
+        hasFiles = true;
+      }
+
+      if (hasFiles) {
+        try {
+          createSnapshot(gameId, `Auto safety backup before restoring single file: ${path.basename(relPath)}`, true);
+        } catch (e) {
+          console.warn('[Snapshot] Safety snapshot failed before file restore:', e.message);
+        }
+      }
+    }
+
+    const localFilePath = resolveLocalSaveFilePath(game.savePath, relPath);
+    const parentDir = path.dirname(localFilePath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
+    }
+
+    const content = zip.readFile(entry);
+    fs.writeFileSync(localFilePath, content);
+
+    log('success', `Granular Restore Successful`, `Restored file: ${relPath} for "${game.name}"`);
+    broadcast('games-update', db.getGames());
+    res.json({ success: true, restoredFile: relPath });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

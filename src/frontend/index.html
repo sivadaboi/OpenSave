@@ -208,12 +208,18 @@
 
             <div class="content-card">
               <div class="card-header-row">
-                <h3>Connect via IP Address</h3>
+                <h3>Connect via IP or PIN Code</h3>
               </div>
-              <p class="card-desc">Use the other device's LAN IP and port 8383 when automatic discovery is blocked.</p>
+              <p class="card-desc">Use the other device's LAN IP and port 8383 or PIN Code when automatic discovery is blocked.</p>
+              
+              <div class="local-pin-display" style="margin-bottom:14px; padding:10px 14px; border-radius:6px; background:rgba(255,255,255,0.02); border:1px dashed var(--border); display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:12px; color:var(--text-muted);">Your Local Sync PIN:</span>
+                <span id="local-sync-pin-val" class="font-mono" style="font-weight:bold; color:var(--accent); font-size:13px; letter-spacing:0.5px;">Loading...</span>
+              </div>
+
               <form id="form-add-peer" class="inline-form">
-                <input type="text" id="peer-address-input" placeholder="e.g. 192.168.1.100" required>
-                <input type="number" id="peer-port-input" placeholder="8383" value="8383" required>
+                <input type="text" id="peer-address-input" placeholder="IP address or SS-LAN-XXXXXX" required style="flex:2;">
+                <input type="number" id="peer-port-input" placeholder="8383" value="8383" style="flex:1;">
                 <button type="submit" class="btn-submit">Pair</button>
               </form>
               <div id="peer-probe-status" class="info-banner hidden" style="margin-top:12px;"></div>
@@ -638,6 +644,7 @@
             <div id="relay-ips-config-container" class="info-banner hidden" style="margin-top:12px;">
               <div style="font-weight:600; margin-bottom:6px;">📡 Share these with your friend:</div>
               <div>LAN IP(s): <span id="settings-local-ips" class="text-warning">Loading...</span></div>
+              <div style="margin-top:4px;">LAN Sync PIN: <span id="settings-local-sync-pin" class="font-mono text-warning" style="font-weight:600;">Loading...</span></div>
               <div style="margin-top:4px;">Public IP: <span id="settings-public-ip" class="text-warning">Loading...</span></div>
             </div>
 
@@ -692,6 +699,29 @@
           </form>
 
           <div style="display:flex; flex-direction:column; gap:20px;">
+            <div class="content-card">
+              <h3 class="settings-section-title">🔄 Custom Path Translations</h3>
+              <p style="font-size:12px; color:var(--text-muted); line-height:1.4; margin-bottom:12px;">
+                Map custom folder paths bidirectionally across different OS platforms (e.g. syncing Windows PC saves with a Linux Steam Deck).
+              </p>
+              
+              <div id="path-translations-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px; max-height:180px; overflow-y:auto;">
+                <!-- Dynamically populated translation rules -->
+              </div>
+
+              <form id="form-add-translation" style="display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--border); padding-top:12px;">
+                <div class="form-group" style="margin:0;">
+                  <label style="font-size:10px; text-transform:uppercase; color:var(--text-muted); margin-bottom:4px; display:block;">From Folder Prefix (e.g. Windows)</label>
+                  <input type="text" id="translation-from-input" placeholder="e.g. C:\Users\Siva\Saved Games" required style="font-size:12px; padding:6px 10px; border-radius:4px; border:1px solid var(--border); background:rgba(0,0,0,0.2); color:white;">
+                </div>
+                <div class="form-group" style="margin:0; margin-top:6px;">
+                  <label style="font-size:10px; text-transform:uppercase; color:var(--text-muted); margin-bottom:4px; display:block;">To Folder Prefix (e.g. Steam Deck)</label>
+                  <input type="text" id="translation-to-input" placeholder="e.g. /home/deck/Games/Saves" required style="font-size:12px; padding:6px 10px; border-radius:4px; border:1px solid var(--border); background:rgba(0,0,0,0.2); color:white;">
+                </div>
+                <button type="submit" class="btn-primary btn-sm" style="align-self:flex-end; margin-top:8px; font-size:11px; padding:4px 10px;">Add Rule</button>
+              </form>
+            </div>
+
             <div class="content-card">
               <h3 class="settings-section-title">📩 Contact & Support</h3>
               <p style="font-size:13px; color:var(--text-muted); line-height:1.5; margin-bottom:12px;">
@@ -984,6 +1014,14 @@
           </div>
         </div>
 
+        <!-- File-Level Conflict Diff Viewer -->
+        <div class="conflict-diff-viewer">
+          <div class="conflict-diff-title">Files Altered:</div>
+          <ul id="conflict-diff-list" class="conflict-diff-list">
+            <!-- Dynamically populated -->
+          </ul>
+        </div>
+
         <div class="conflict-options-desc" style="margin-top:16px; font-size:12px; line-height:1.4; color:var(--text-muted);">
           <div style="margin-bottom:6px;"><strong style="color:var(--text-main);">Keep Local:</strong> Overwrites remote saves with your local files.</div>
           <div style="margin-bottom:6px;"><strong style="color:var(--text-main);">Keep Remote:</strong> Overwrites your local save files with the peer's files.</div>
@@ -994,6 +1032,35 @@
         <button id="btn-conflict-keep-local" class="btn-primary" style="flex:1;">Keep Local</button>
         <button id="btn-conflict-keep-remote" class="btn-accent" style="flex:1;">Keep Remote</button>
         <button id="btn-conflict-keep-both" class="btn-warning" style="flex:1;">Keep Both</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- POPUP MODAL: Snapshot File Browser -->
+  <div id="snapshot-browser-modal" class="modal-overlay hidden">
+    <div class="modal-card" style="width: 700px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <h3 id="snapshot-browser-title">📂 Browse Backup Files</h3>
+        <button id="btn-close-snapshot-browser" class="btn-close-submodal">&times;</button>
+      </div>
+      <div class="modal-body" style="overflow-y: auto; flex: 1; min-height: 250px;">
+        <p style="font-size: 12px; color: var(--text-3); margin-bottom: 12px;">
+          Select a file below to restore it granularly to your active save folder. A safety restore point will be created automatically.
+        </p>
+        <div style="border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.2);">
+          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12px;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); color: var(--text-2); font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;">
+                <th style="padding: 10px 14px;">File Name</th>
+                <th style="padding: 10px 14px; width: 100px;">Size</th>
+                <th style="padding: 10px 14px; width: 100px; text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="snapshot-files-table-body">
+              <!-- Dynamically populated files -->
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

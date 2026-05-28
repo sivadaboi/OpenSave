@@ -3,7 +3,7 @@ import path from 'path';
 import AdmZip from 'adm-zip';
 import db from '../db.js';
 import { log } from '../logger.js';
-import { getFolderManifest, diffManifests, patchFile, isSafePath } from '../delta.js';
+import { getFolderManifest, diffManifests, patchFile, isSafePath, resolveLocalSaveFilePath, getManifestHash } from '../delta.js';
 import { getLatestSnapshot, switchBranch, createBranch } from '../snapshot.js';
 
 function ensureDir(dirPath) {
@@ -94,6 +94,66 @@ export class SyncEngine {
     const localManifest = getFolderManifest(game.savePath);
     const remoteManifest = remoteData.manifest;
 
+    // Check if there is an active conflict already
+    if (this.p2pEngine.activeConflicts[gameId]) {
+      log('warn', `Sync skipped: Active conflict on "${game.name}" with peer "${peer.name}" needs resolution.`);
+      return {
+        status: 'conflict',
+        peerId: peer.id,
+        peerName: peer.name,
+        localSnap: this.p2pEngine.activeConflicts[gameId].localSnap,
+        remoteSnap: this.p2pEngine.activeConflicts[gameId].remoteSnap
+      };
+    }
+
+    // Conflict detection:
+    const peerData = db.getPeers()[peer.id];
+    const lastSyncTime = peerData && peerData.lastSynced ? new Date(peerData.lastSynced).getTime() : 0;
+    const localHash = getManifestHash(localManifest);
+    const remoteHash = getManifestHash(remoteManifest);
+
+    let isConflict = false;
+    if (localHash !== remoteHash) {
+      if (lastSyncTime === 0) {
+        const localHasFiles = Object.keys(localManifest.files || {}).length > 0;
+        const remoteHasFiles = Object.keys(remoteManifest.files || {}).length > 0;
+        if (localHasFiles && remoteHasFiles) {
+          isConflict = true;
+        }
+      } else {
+        // Allow a 2-second tolerance for clock skew
+        const localModified = localManifest.latestMtime > (lastSyncTime + 2000);
+        const remoteModified = remoteManifest.latestMtime > (lastSyncTime + 2000);
+        if (localModified && remoteModified) {
+          isConflict = true;
+        }
+      }
+    }
+
+    if (isConflict) {
+      log('warn', `Sync conflict detected for "${game.name}" with peer "${peer.name}". Both modified since last sync.`);
+      const diff = diffManifests(localManifest, remoteManifest);
+      
+      this.p2pEngine.activeConflicts[gameId] = {
+        peer: { id: peer.id, name: peer.name },
+        localSnap: getLatestSnapshot(gameId) || { id: 'current', timestamp: new Date(localManifest.latestMtime).toISOString(), comment: 'Current active saves' },
+        remoteSnap: remoteData.latestSnapshot || { id: 'remote-current', timestamp: new Date(remoteManifest.latestMtime).toISOString(), comment: 'Current peer saves' },
+        diff: diff
+      };
+
+      if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+        this.p2pEngine.onPeerUpdate();
+      }
+
+      return {
+        status: 'conflict',
+        peerId: peer.id,
+        peerName: peer.name,
+        localSnap: this.p2pEngine.activeConflicts[gameId].localSnap,
+        remoteSnap: this.p2pEngine.activeConflicts[gameId].remoteSnap
+      };
+    }
+
     const remoteLatestSnap = remoteData.latestSnapshot;
 
     const localFiles = localManifest.files || {};
@@ -166,7 +226,7 @@ export class SyncEngine {
           log('warn', `Path traversal deletion denied: ${relPath}`);
           continue;
         }
-        const fullPath = path.join(game.savePath, relPath);
+        const fullPath = resolveLocalSaveFilePath(game.savePath, relPath);
         try {
           if (fs.existsSync(fullPath)) {
             fs.unlinkSync(fullPath);
@@ -222,7 +282,7 @@ export class SyncEngine {
         let differentBlocks = [];
         const localFile = localFiles[relPath];
 
-        if (!localFile) {
+        if (!localFile || localFile.blockSize !== remoteFileMeta.blockSize) {
           differentBlocks = remoteFileMeta.blocks.map(b => b.index);
         } else {
           const remoteBlocks = remoteFileMeta.blocks || [];
@@ -240,7 +300,7 @@ export class SyncEngine {
 
         for (const index of differentBlocks) {
           const blockMeta = remoteFileMeta.blocks[index];
-          totalBytesToPull += blockMeta ? blockMeta.length : 64 * 1024;
+          totalBytesToPull += blockMeta ? blockMeta.length : (remoteFileMeta.blockSize || 64 * 1024);
         }
       }
 
@@ -256,18 +316,40 @@ export class SyncEngine {
         const blockChunks = [];
         const isWan = peer.address === 'relay' || peer.isWan;
         const batchSize = isWan ? 8 : 16;
+        const fBlockSize = remoteFileMeta.blockSize || 64 * 1024;
 
+        // Split differentBlocks into batch indices
+        const batches = [];
         for (let i = 0; i < differentBlocks.length; i += batchSize) {
-          const batchIndices = differentBlocks.slice(i, i + batchSize);
-          const blockData = await this.p2pEngine.p2pRequest(peer, `/blocks/${gameId}`, 'POST', { relPath, blockIndices: batchIndices });
-          blockChunks.push(...blockData.blocks);
+          batches.push(differentBlocks.slice(i, i + batchSize));
+        }
 
-          let bytesReceived = 0;
-          for (const block of blockData.blocks) {
-            bytesReceived += block.length;
+        // Pull block batches concurrently
+        const concurrencyLimit = isWan ? 3 : 5;
+        for (let i = 0; i < batches.length; i += concurrencyLimit) {
+          const batchGroup = batches.slice(i, i + concurrencyLimit);
+          const promises = batchGroup.map(batchIndices =>
+            this.p2pEngine.p2pRequest(peer, `/blocks/${gameId}`, 'POST', {
+              relPath,
+              blockIndices: batchIndices,
+              blockSize: fBlockSize
+            })
+          );
+
+          const results = await Promise.all(promises);
+
+          for (const blockData of results) {
+            if (blockData && blockData.blocks) {
+              blockChunks.push(...blockData.blocks);
+
+              let bytesReceived = 0;
+              for (const block of blockData.blocks) {
+                bytesReceived += block.length;
+              }
+              bytesPulled += bytesReceived;
+              await this.throttle(bytesReceived, isWan);
+            }
           }
-          bytesPulled += bytesReceived;
-          await this.throttle(bytesReceived, isWan);
 
           // Calculate speed and progress
           const elapsedTime = Date.now() - pullStart;
@@ -290,7 +372,7 @@ export class SyncEngine {
         if (!isSafePath(game.savePath, relPath)) {
           throw new Error(`Access denied: path traversal attempt detected on pulled file ${relPath}`);
         }
-        const localFilePath = path.join(game.savePath, relPath);
+        const localFilePath = resolveLocalSaveFilePath(game.savePath, relPath);
         patchFile(localFilePath, blockChunks, remoteFileMeta);
 
         // Update local modification time to match remote
@@ -313,7 +395,11 @@ export class SyncEngine {
         const zipPath = path.join(localBackupDir, `${remoteLatestSnap.id}.zip`);
         
         const zip = new AdmZip();
-        zip.addLocalFolder(game.savePath);
+        if (fs.existsSync(game.savePath) && fs.statSync(game.savePath).isFile()) {
+          zip.addLocalFile(game.savePath);
+        } else {
+          zip.addLocalFolder(game.savePath);
+        }
         zip.writeZip(zipPath);
 
         const branches = game.branches || {};
@@ -424,7 +510,7 @@ export class SyncEngine {
       
       for (const relPath of diff.deleted) {
         if (!isSafePath(game.savePath, relPath)) continue;
-        const fullPath = path.join(game.savePath, relPath);
+        const fullPath = resolveLocalSaveFilePath(game.savePath, relPath);
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
         }
@@ -459,7 +545,7 @@ export class SyncEngine {
           await this.throttle(bytesReceived, isWan);
         }
 
-        const localFilePath = path.join(game.savePath, relPath);
+        const localFilePath = resolveLocalSaveFilePath(game.savePath, relPath);
         patchFile(localFilePath, blockChunks, remoteFileMeta);
       }
 
@@ -470,7 +556,11 @@ export class SyncEngine {
         const zipPath = path.join(localBackupDir, `${remoteLatestSnap.id}.zip`);
         
         const zip = new AdmZip();
-        zip.addLocalFolder(game.savePath);
+        if (fs.existsSync(game.savePath) && fs.statSync(game.savePath).isFile()) {
+          zip.addLocalFile(game.savePath);
+        } else {
+          zip.addLocalFolder(game.savePath);
+        }
         zip.writeZip(zipPath);
 
         const branches = game.branches || {};
@@ -505,7 +595,7 @@ export class SyncEngine {
       const diff = diffManifests(localManifest, remoteManifest);
       for (const relPath of diff.deleted) {
         if (!isSafePath(game.savePath, relPath)) continue;
-        const fullPath = path.join(game.savePath, relPath);
+        const fullPath = resolveLocalSaveFilePath(game.savePath, relPath);
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
         }
@@ -540,7 +630,7 @@ export class SyncEngine {
           await this.throttle(bytesReceived, isWan);
         }
 
-        const localFilePath = path.join(game.savePath, relPath);
+        const localFilePath = resolveLocalSaveFilePath(game.savePath, relPath);
         patchFile(localFilePath, blockChunks, remoteFileMeta);
       }
 
@@ -551,7 +641,11 @@ export class SyncEngine {
         const zipPath = path.join(localBackupDir, `${remoteLatestSnap.id}.zip`);
         
         const zip = new AdmZip();
-        zip.addLocalFolder(game.savePath);
+        if (fs.existsSync(game.savePath) && fs.statSync(game.savePath).isFile()) {
+          zip.addLocalFile(game.savePath);
+        } else {
+          zip.addLocalFolder(game.savePath);
+        }
         zip.writeZip(zipPath);
 
         const branches = game.branches || {};
