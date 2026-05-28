@@ -134,7 +134,8 @@ class P2PEngine {
       const options = {
         method,
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(30000),
+        keepalive: true
       };
       if (body) {
         options.body = JSON.stringify(body);

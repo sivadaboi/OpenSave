@@ -315,8 +315,12 @@ export class SyncEngine {
 
         const blockChunks = [];
         const isWan = peer.address === 'relay' || peer.isWan;
-        const batchSize = isWan ? 8 : 16;
         const fBlockSize = remoteFileMeta.blockSize || 64 * 1024;
+
+        // Dynamically scale batch size based on block size to ensure JSON responses don't exceed 1.5MB (preventing proxy payload limits)
+        const targetBatchBytes = 1.5 * 1024 * 1024;
+        const calculatedBatchSize = Math.max(1, Math.floor(targetBatchBytes / fBlockSize));
+        const batchSize = Math.min(isWan ? 8 : 16, calculatedBatchSize);
 
         // Split differentBlocks into batch indices
         const batches = [];
@@ -328,13 +332,24 @@ export class SyncEngine {
         const concurrencyLimit = isWan ? 3 : 5;
         for (let i = 0; i < batches.length; i += concurrencyLimit) {
           const batchGroup = batches.slice(i, i + concurrencyLimit);
-          const promises = batchGroup.map(batchIndices =>
-            this.p2pEngine.p2pRequest(peer, `/blocks/${gameId}`, 'POST', {
-              relPath,
-              blockIndices: batchIndices,
-              blockSize: fBlockSize
-            })
-          );
+          const promises = batchGroup.map(async (batchIndices) => {
+            let attempt = 0;
+            const maxAttempts = 3;
+            while (attempt < maxAttempts) {
+              try {
+                return await this.p2pEngine.p2pRequest(peer, `/blocks/${gameId}`, 'POST', {
+                  relPath,
+                  blockIndices: batchIndices,
+                  blockSize: fBlockSize
+                });
+              } catch (err) {
+                attempt++;
+                log('warn', `Block fetch attempt ${attempt}/${maxAttempts} failed for ${relPath} (${err.message})`);
+                if (attempt >= maxAttempts) throw err;
+                await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+              }
+            }
+          });
 
           const results = await Promise.all(promises);
 
@@ -531,11 +546,35 @@ export class SyncEngine {
 
         const isWan = peer.address === 'relay' || peer.isWan;
         const blockChunks = [];
-        const batchSize = isWan ? 8 : 16;
+        const fBlockSize = remoteFileMeta.blockSize || 64 * 1024;
+
+        // Dynamically scale batch size based on block size to ensure JSON responses don't exceed 1.5MB (preventing proxy payload limits)
+        const targetBatchBytes = 1.5 * 1024 * 1024;
+        const calculatedBatchSize = Math.max(1, Math.floor(targetBatchBytes / fBlockSize));
+        const batchSize = Math.min(isWan ? 8 : 16, calculatedBatchSize);
 
         for (let i = 0; i < differentBlocks.length; i += batchSize) {
           const batchIndices = differentBlocks.slice(i, i + batchSize);
-          const blockData = await this.p2pEngine.p2pRequest(peer, `/blocks/${gameId}`, 'POST', { relPath, blockIndices: batchIndices });
+          
+          let blockData = null;
+          let attempt = 0;
+          const maxAttempts = 3;
+          while (attempt < maxAttempts) {
+            try {
+              blockData = await this.p2pEngine.p2pRequest(peer, `/blocks/${gameId}`, 'POST', {
+                relPath,
+                blockIndices: batchIndices,
+                blockSize: fBlockSize
+              });
+              break;
+            } catch (err) {
+              attempt++;
+              log('warn', `Conflict block fetch attempt ${attempt}/${maxAttempts} failed for ${relPath} (${err.message})`);
+              if (attempt >= maxAttempts) throw err;
+              await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+            }
+          }
+
           blockChunks.push(...blockData.blocks);
 
           let bytesReceived = 0;
@@ -616,11 +655,35 @@ export class SyncEngine {
 
         const isWan = peer.address === 'relay' || peer.isWan;
         const blockChunks = [];
-        const batchSize = isWan ? 8 : 16;
+        const fBlockSize = remoteFileMeta.blockSize || 64 * 1024;
+
+        // Dynamically scale batch size based on block size to ensure JSON responses don't exceed 1.5MB (preventing proxy payload limits)
+        const targetBatchBytes = 1.5 * 1024 * 1024;
+        const calculatedBatchSize = Math.max(1, Math.floor(targetBatchBytes / fBlockSize));
+        const batchSize = Math.min(isWan ? 8 : 16, calculatedBatchSize);
 
         for (let i = 0; i < differentBlocks.length; i += batchSize) {
           const batchIndices = differentBlocks.slice(i, i + batchSize);
-          const blockData = await this.p2pEngine.p2pRequest(peer, `/blocks/${gameId}`, 'POST', { relPath, blockIndices: batchIndices });
+          
+          let blockData = null;
+          let attempt = 0;
+          const maxAttempts = 3;
+          while (attempt < maxAttempts) {
+            try {
+              blockData = await this.p2pEngine.p2pRequest(peer, `/blocks/${gameId}`, 'POST', {
+                relPath,
+                blockIndices: batchIndices,
+                blockSize: fBlockSize
+              });
+              break;
+            } catch (err) {
+              attempt++;
+              log('warn', `Conflict block fetch attempt ${attempt}/${maxAttempts} failed for ${relPath} (${err.message})`);
+              if (attempt >= maxAttempts) throw err;
+              await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+            }
+          }
+
           blockChunks.push(...blockData.blocks);
 
           let bytesReceived = 0;
