@@ -395,7 +395,8 @@ function matchAndTranslate(pathStr, patternPrefix, targetPrefix) {
   }
   if (normPath.startsWith(normPattern + '/')) {
     const sub = pathStr.substring(normPattern.length + 1);
-    return path.join(targetPrefix, sub);
+    const subNormalized = sub.replace(/[\\/]/g, path.sep);
+    return path.join(targetPrefix, subNormalized);
   }
   return null;
 }
@@ -419,30 +420,33 @@ export function translatePathToLocal(remotePath) {
     }
   }
   
-  const normalizedRemote = path.normalize(remotePath);
+  const remoteUnified = remotePath.replace(/\\/g, '/');
   
   // 1. Windows to Local (Linux/Windows)
-  const winPrefix = 'c:\\users\\';
-  if (normalizedRemote.toLowerCase().startsWith(winPrefix)) {
-    const afterUsers = normalizedRemote.substring(winPrefix.length);
-    const firstSlashIndex = afterUsers.indexOf(path.sep);
+  const winPrefix = 'c:/users/';
+  if (remoteUnified.toLowerCase().startsWith(winPrefix)) {
+    const afterUsers = remoteUnified.substring(winPrefix.length);
+    const firstSlashIndex = afterUsers.indexOf('/');
     if (firstSlashIndex !== -1) {
       const subPath = afterUsers.substring(firstSlashIndex + 1);
-      return path.join(os.homedir(), subPath);
+      const subPathNormalized = subPath.replace(/[\\/]/g, path.sep);
+      return path.join(os.homedir(), subPathNormalized);
     }
   }
   
   // 2. Linux to Local (Windows/Linux)
-  const normalizedLower = normalizedRemote.toLowerCase().replace(/\\/g, '/');
-  if (normalizedLower.startsWith('/home/')) {
-    const parts = normalizedLower.split('/');
-    if (parts.length > 3) {
-      const subPath = remotePath.replace(/\\/g, '/').split('/').slice(3).join(path.sep);
-      return path.join(os.homedir(), subPath);
+  const linuxPrefix = '/home/';
+  if (remoteUnified.toLowerCase().startsWith(linuxPrefix)) {
+    const afterHome = remoteUnified.substring(linuxPrefix.length);
+    const firstSlashIndex = afterHome.indexOf('/');
+    if (firstSlashIndex !== -1) {
+      const subPath = afterHome.substring(firstSlashIndex + 1);
+      const subPathNormalized = subPath.replace(/[\\/]/g, path.sep);
+      return path.join(os.homedir(), subPathNormalized);
     }
   }
   
-  return normalizedRemote;
+  return path.normalize(remotePath);
 }
 
 /**
