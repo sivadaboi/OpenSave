@@ -867,7 +867,11 @@ app.post('/api/games/:gameId/sync', async (req, res) => {
     broadcast('sync-start', { gameId, message: 'Syncing game saves with peers...' });
     const result = await p2pEngine.syncGame(gameId);
     broadcast('games-update', db.getGames());
-    broadcast('sync-complete', { gameId, result });
+    if (result.errors && result.errors.length > 0) {
+      broadcast('sync-error', { gameId, error: result.errors[0].error });
+    } else {
+      broadcast('sync-complete', { gameId, result });
+    }
     res.json(result);
   } catch (err) {
     broadcast('sync-error', { gameId, error: err.message });
@@ -885,7 +889,11 @@ app.get('/api/sync/trigger/:gameId', (req, res) => {
   p2pEngine.syncGame(gameId)
     .then((result) => {
       broadcast('games-update', db.getGames());
-      broadcast('sync-complete', { gameId, result });
+      if (result.errors && result.errors.length > 0) {
+        broadcast('sync-error', { gameId, error: result.errors[0].error });
+      } else {
+        broadcast('sync-complete', { gameId, result });
+      }
     })
     .catch((err) => {
       console.error('[Sync] Triggered sync failed:', err.message);
@@ -995,8 +1003,28 @@ app.delete('/api/peers/:peerId', async (req, res) => {
 // ----------------------------------------------------
 p2pEngine.registerRoutes(app);
 
+p2pEngine.onSyncStart = (gameId, data) => {
+  const message = data.direction === 'upload'
+    ? `Uploading saves to ${data.peerName}...`
+    : `Receiving saves from ${data.peerName}...`;
+  broadcast('sync-start', { gameId, message, peerName: data.peerName });
+};
+
 p2pEngine.onSyncProgress = (gameId, progress) => {
   broadcast('sync-progress', { gameId, ...progress });
+};
+
+p2pEngine.onSyncComplete = (gameId, data) => {
+  broadcast('games-update', db.getGames());
+  const status = data.direction === 'upload' ? 'pushed' : 'pulled';
+  broadcast('sync-complete', { gameId, result: { status, peerName: data.peerName } });
+};
+
+p2pEngine.onSyncError = (gameId, data) => {
+  const errorMsg = data.direction === 'upload'
+    ? `Upload to ${data.peerName} failed: ${data.error}`
+    : `Download from ${data.peerName} failed: ${data.error}`;
+  broadcast('sync-error', { gameId, error: errorMsg });
 };
 
 // ----------------------------------------------------
@@ -1018,7 +1046,11 @@ watcherEngine.setSyncCallback((gameId, snapshot) => {
   p2pEngine.syncGame(gameId)
     .then((result) => {
       broadcast('games-update', db.getGames());
-      broadcast('sync-complete', { gameId, result });
+      if (result.errors && result.errors.length > 0) {
+        broadcast('sync-error', { gameId, error: result.errors[0].error });
+      } else {
+        broadcast('sync-complete', { gameId, result });
+      }
     })
     .catch((err) => {
       console.error('[Watcher Sync Hook] Peer sync failed:', err.message);

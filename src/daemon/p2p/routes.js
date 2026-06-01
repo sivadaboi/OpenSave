@@ -202,5 +202,30 @@ export function registerExpressRoutes(app, p2pEngine) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  app.post('/api/p2p/sync-event/:gameId', requirePairedPeer, (req, res) => {
+    const { gameId } = req.params;
+    const { eventType, data } = req.body;
+
+    if (eventType === 'sync-start') {
+      if (typeof p2pEngine.onSyncStart === 'function') {
+        p2pEngine.onSyncStart(gameId, data);
+      }
+    } else if (eventType === 'sync-progress') {
+      if (typeof p2pEngine.onSyncProgress === 'function') {
+        p2pEngine.onSyncProgress(gameId, data);
+      }
+    } else if (eventType === 'sync-complete') {
+      if (typeof p2pEngine.onSyncComplete === 'function') {
+        p2pEngine.onSyncComplete(gameId, data);
+      }
+    } else if (eventType === 'sync-error') {
+      if (typeof p2pEngine.onSyncError === 'function') {
+        p2pEngine.onSyncError(gameId, data);
+      }
+    }
+
+    res.status(200).json({ success: true });
+  });
 }
 

@@ -258,7 +258,20 @@ export class SyncEngine {
 
     // 2. Pull remote files if needed
     if (filesToPull.length > 0) {
-      // Ensure all remote directories exist locally
+      if (typeof this.p2pEngine.onSyncStart === 'function') {
+        this.p2pEngine.onSyncStart(gameId, {
+          peerName: peer.name,
+          direction: 'download'
+        });
+      }
+
+      this.reportSyncEventToPeer(peer, gameId, 'sync-start', {
+        peerName: db.getSettings().deviceName,
+        direction: 'upload'
+      });
+
+      try {
+        // Ensure all remote directories exist locally
       const remoteDirs = remoteManifest.dirs || [];
       for (const dir of remoteDirs) {
         if (!isSafePath(game.savePath, dir)) {
@@ -381,6 +394,15 @@ export class SyncEngine {
               percentage
             });
           }
+
+          // Report sync progress to peer (they are uploading to us)
+          this.reportSyncEventToPeer(peer, gameId, 'sync-progress', {
+            peerName: db.getSettings().deviceName,
+            bytesTransferred: bytesPulled,
+            totalBytes: totalBytesToPull,
+            speedBytesPerSec,
+            percentage
+          });
         }
 
         // Patch file
@@ -434,6 +456,19 @@ export class SyncEngine {
           });
           db.updateGame(gameId, { branches });
         }
+      }
+
+        this.reportSyncEventToPeer(peer, gameId, 'sync-complete', {
+          peerName: db.getSettings().deviceName,
+          direction: 'upload'
+        });
+      } catch (err) {
+        this.reportSyncEventToPeer(peer, gameId, 'sync-error', {
+          peerName: db.getSettings().deviceName,
+          error: err.message,
+          direction: 'upload'
+        });
+        throw err;
       }
     }
 
@@ -729,5 +764,31 @@ export class SyncEngine {
     }
 
     throw new Error('Invalid conflict resolution type.');
+  }
+
+  async reportSyncEventToPeer(peer, gameId, eventType, data = {}) {
+    try {
+      if (peer.address === 'relay' || peer.isWan) {
+        this.p2pEngine.wanClient.sendRelayMessage({
+          type: 'sync-event',
+          to: peer.id,
+          from: this.p2pEngine.getLocalPeerId(),
+          gameId,
+          eventType,
+          data
+        });
+      } else {
+        fetch(`http://${peer.address}:${peer.port}/api/p2p/sync-event/${gameId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ eventType, data }),
+          signal: AbortSignal.timeout(2000)
+        }).catch(() => {});
+      }
+    } catch (err) {
+      // Ignore network errors reporting progress
+    }
   }
 }

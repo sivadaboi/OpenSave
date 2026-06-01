@@ -204,6 +204,25 @@ export class WanClientManager {
     }
 
     switch (msg.type) {
+      case 'sync-event':
+        if (msg.eventType === 'sync-start') {
+          if (typeof this.p2pEngine.onSyncStart === 'function') {
+            this.p2pEngine.onSyncStart(msg.gameId, msg.data);
+          }
+        } else if (msg.eventType === 'sync-progress') {
+          if (typeof this.p2pEngine.onSyncProgress === 'function') {
+            this.p2pEngine.onSyncProgress(msg.gameId, msg.data);
+          }
+        } else if (msg.eventType === 'sync-complete') {
+          if (typeof this.p2pEngine.onSyncComplete === 'function') {
+            this.p2pEngine.onSyncComplete(msg.gameId, msg.data);
+          }
+        } else if (msg.eventType === 'sync-error') {
+          if (typeof this.p2pEngine.onSyncError === 'function') {
+            this.p2pEngine.onSyncError(msg.gameId, msg.data);
+          }
+        }
+        break;
       case 'ping':
         if (msg.from !== localPeerId && msg.deviceName) {
           const isNew = !this.p2pEngine.discoveredPeers[msg.from];
