@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SaveSync for Linux &amp; Steam Deck — Download &amp; Setup</title>
+  <meta name="description" content="Download SaveSync for Linux and Steam Deck. Learn how to configure local P2P save syncing on SteamOS Gaming Mode, configure path translations, and set up desktop applications.">
+  
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="index.html" class="logo" style="text-decoration: none; color: inherit;">
+        <img src="icon.png" alt="Logo" class="logo-img" style="height: 24px; width: auto; object-fit: contain;">
+        <span class="logo-text">Save<span>Sync</span></span>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html#features">Features</a>
+        <a href="index.html#demo">Live Demo</a>
+        <a href="index.html#install">Install Guide</a>
+        <a href="guide.html">User Guide</a>
+        <a href="linux.html" class="active">Linux Build</a>
+        <a href="https://github.com/sivadaboi/SaveSync" target="_blank" class="github-link">
+          <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+          GitHub
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Background Ambient Glows -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Main Container -->
+  <div class="guide-layout">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="guide-sidebar">
+      <div class="guide-sidebar-title">Downloads</div>
+      <ul class="guide-nav">
+        <li><a href="#downloads" class="guide-nav-link active">Linux Downloads</a></li>
+        <li><a href="#deck-install" class="guide-nav-link">Steam Deck Setup</a></li>
+        <li><a href="#background" class="guide-nav-link">Gaming Mode Daemon</a></li>
+        <li><a href="#desktop-linux" class="guide-nav-link">Desktop Linux Guide</a></li>
+        <li><a href="#steam-cloud" class="guide-nav-link">Path Mappings</a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="guide-content">
+      
+      <!-- Back to Home -->
+      <a href="index.html" class="guide-back-btn">
+        <span>←</span> Back to Homepage
+      </a>
+
+      <!-- Page Header -->
+      <header style="margin-bottom: 40px;">
+        <h1 class="hero-title" style="font-size: 42px; margin-bottom: 12px; line-height: 1.2;">
+          SaveSync for <span>Linux &amp; Steam Deck</span>
+        </h1>
+        <p style="color: var(--text-secondary); font-size: 17px; max-width: 700px; line-height: 1.6;">
+          Sync your game saves flawlessly between your Windows gaming rig and your Linux Steam Deck over local Wi-Fi or secure internet relays.
+        </p>
+      </header>
+
+      <!-- Welcome Banner -->
+      <div class="guide-intro-card">
+        <p>
+          🐧 <strong>Linux builds are fully supported!</strong> SaveSync features cross-platform path translation rules mapping Windows user profile save locations to Linux home paths automatically. Follow the guides below to get up and running.
+        </p>
+      </div>
+
+      <!-- Downloads Section -->
+      <section id="downloads" class="guide-section">
+        <h2 class="guide-section-title">📥 Download <span>Linux Builds</span></h2>
+        <p style="color: var(--text-secondary); margin-bottom: 24px;">
+          Choose the archive type that fits your distribution. For the Steam Deck (SteamOS), the <code>.tar.gz</code> package is highly recommended.
+        </p>
+        
+        <div class="guide-card-grid">
+          <div class="guide-step-card" style="border-color: var(--border-active);">
+            <div class="guide-step-header">
+              <div class="guide-step-badge" style="background: var(--violet); color: white;">RECOMMENDED</div>
+              <h3>Tarball Archive (.tar.gz)</h3>
+            </div>
+            <p style="margin-top: 12px; margin-bottom: 20px; color: var(--text-secondary);">
+              Highly optimized archive. Native Unix file permission preservation makes this ideal for SteamOS/Steam Deck.
+            </p>
+            <a href="https://github.com/sivadaboi/SaveSync/releases/download/v1.1.0/savesync-1.1.0.tar.gz" class="btn-primary" style="display: inline-block; width: 100%; text-align: center; text-decoration: none;" download>
+              📥 Download .tar.gz (v1.1.0)
+            </a>
+          </div>
+
+          <div class="guide-step-card">
+            <div class="guide-step-header">
+              <div class="guide-step-badge">STANDALONE</div>
+              <h3>Zip Archive (.zip)</h3>
+            </div>
+            <p style="margin-top: 12px; margin-bottom: 20px; color: var(--text-secondary);">
+              Standard zip format bundle containing all necessary execution assets. Run chmod on the executable after extraction.
+            </p>
+            <a href="https://github.com/sivadaboi/SaveSync/releases/download/v1.1.0/savesync-1.1.0.zip" class="btn-secondary" style="display: inline-block; width: 100%; text-align: center; text-decoration: none;" download>
+              📥 Download .zip (v1.1.0)
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Steam Deck Setup Guide -->
+      <section id="deck-install" class="guide-section">
+        <h2 class="guide-section-title">🎮 Steam Deck <span>Desktop Mode Setup</span></h2>
+        <div class="guide-step-card">
+          <p style="margin-bottom: 16px; color: var(--text-secondary);">
+            Setting up SaveSync on SteamOS takes less than 2 minutes in Desktop Mode:
+          </p>
+          <ol class="guide-step-list-numbered">
+            <li data-step="1">
+              Press the <strong>Steam</strong> button on your Steam Deck, select <strong>Power</strong> &gt; <strong>Switch to Desktop</strong>.
+            </li>
+            <li data-step="2">
+              Open your web browser (e.g. Firefox) on the Deck, navigate to this page, and download the <strong>savesync-1.1.0.tar.gz</strong> archive.
+            </li>
+            <li data-step="3">
+              Open <strong>Dolphin</strong> (file manager), go to your Downloads folder, right-click the tarball and select <strong>Extract</strong> &gt; <strong>Extract archive here</strong>.
+            </li>
+            <li data-step="4">
+              Move the extracted <code>savesync</code> folder to a safe long-term directory on your internal drive (for example: <code>/home/deck/Applications/savesync</code>).
+            </li>
+            <li data-step="5">
+              Open **Steam** in Desktop Mode, click <strong>Add a Game</strong> in the bottom-left corner, and select <strong>Add a Non-Steam Game...</strong>.
+            </li>
+            <li data-step="6">
+              Click <strong>Browse</strong>, navigate to your savesync folder, select the main <strong>SaveSync</strong> binary (or <code>SaveSync</code> shortcut launcher), and click <strong>Add Selected Programs</strong>.
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- Gaming Mode Daemon Guide -->
+      <section id="background" class="guide-section">
+        <h2 class="guide-section-title">📡 Launching in <span>Gaming Mode</span></h2>
+        <div class="guide-step-card">
+          <p style="margin-bottom: 16px; color: var(--text-secondary);">
+            To keep synchronization active in Gaming Mode (Gaming UI) while playing games:
+          </p>
+          <ul class="guide-step-list">
+            <li>Return to Gaming Mode by clicking the **Return to Gaming Mode** shortcut on the Desktop.</li>
+            <li>In your Steam Library, navigate to the <strong>Non-Steam</strong> category, select **SaveSync**, and click **Play**.</li>
+            <li><strong>Controller Layout</strong>: Since SaveSync has a browser-based dashboard interface, click the Controller icon next to the Play button, and change the layout template to **Web Browser** or **Mouse and Keyboard** to navigate easily using the trackpads.</li>
+            <li>The interface will open up inside Steam. Configure your room codes under **Internet Sync** or pair locally. Once configured, you can exit the dashboard. The background daemon service will remain active in the system tray, monitoring save directories and executing syncs silently in the background while you play!</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Desktop Linux Guide -->
+      <section id="desktop-linux" class="guide-section">
+        <h2 class="guide-section-title">💻 Desktop Linux <span>Configuration</span></h2>
+        <div class="guide-step-card">
+          <p style="margin-bottom: 16px; color: var(--text-secondary);">
+            For standard Linux distributions (Ubuntu, Fedora, Arch, etc.):
+          </p>
+          <ul class="guide-step-list">
+            <li>Extract the tarball or zip bundle in your home applications path.</li>
+            <li>Make sure the main execution files are marked executable. In a terminal:
+              <pre style="background: var(--bg-input); padding: 12px; border-radius: 6px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 13px; margin: 8px 0; overflow-x: auto; color: var(--text-primary);">cd /path/to/extracted/savesync
+chmod +x SaveSync bin/savesync.js</pre>
+            </li>
+            <li>Launch the application to run the background service. Right-click the system tray icon to open the Dashboard, or navigate to <code>http://localhost:8383</code> in your web browser.</li>
+            <li>To configure autostart on system boot, add the application to your Desktop Environment's startup applications manager.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Path Mappings Section -->
+      <section id="steam-cloud" class="guide-section">
+        <h2 class="guide-section-title">📂 Seamless <span>Path Mappings &amp; Translations</span></h2>
+        <div class="guide-step-card">
+          <p style="margin-bottom: 16px; color: var(--text-secondary);">
+            SaveSync translates user directories automatically. For example, if you track a game save on Windows at:
+          </p>
+          <div style="background: var(--bg-input); padding: 12px; border-radius: 6px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 14px; margin-bottom: 16px; color: var(--orange);">
+            C:\Users\Username\Documents\My Games\GameTitle
+          </div>
+          <p style="margin-bottom: 16px; color: var(--text-secondary);">
+            SaveSync will translate it on your Steam Deck to:
+          </p>
+          <div style="background: var(--bg-input); padding: 12px; border-radius: 6px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 14px; margin-bottom: 24px; color: var(--emerald);">
+            /home/deck/Documents/My Games/GameTitle
+          </div>
+          
+          <div class="guide-alert">
+            <div class="guide-alert-icon">🛠️</div>
+            <div class="guide-alert-content">
+              <strong>Custom Mappings (Protip):</strong> For emulators (such as Yuzu, Ryujinx, RPCS3) or games utilizing prefix structures (Proton prefixes under <code>compatdata</code>), you can set up custom translation paths inside **Settings** &gt; **Custom Path Translations** (e.g. mapping Windows directories to customized Deck subdirectories) to sync folders of any structure.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom CTAs -->
+      <div class="bottom-download-box" style="margin-top: 60px;">
+        <h3>Need help or want to compile from source?</h3>
+        <p>SaveSync is free, open-source under MIT. Explore the code or compile binaries on GitHub.</p>
+        <a href="https://github.com/sivadaboi/SaveSync" target="_blank" class="btn-primary">
+          ⭐ Visit Github Repository
+        </a>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand" style="display: flex; align-items: center; gap: 8px;">
+        <img src="icon.png" alt="Logo" class="logo-img" style="height: 20px; width: auto; object-fit: contain;">
+        Save<span>Sync</span>
+      </div>
+      <p class="footer-text">
+        Created by <a href="mailto:officialsivapm@gmail.com">Siva Prakash</a>. Free &amp; Open Source under the MIT License.
+      </p>
+      <div class="footer-links">
+        <a href="index.html#features">Features</a>
+        <a href="index.html#demo">Demo</a>
+        <a href="index.html#install">Install</a>
+        <a href="guide.html">User Guide</a>
+        <a href="linux.html">Linux Build</a>
+        <a href="https://github.com/sivadaboi/SaveSync" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scroll Spy Script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const sections = document.querySelectorAll('.guide-section');
+      const navLinks = document.querySelectorAll('.guide-nav-link');
+
+      window.addEventListener('scroll', () => {
+        let current = '';
+        const scrollPosition = window.pageYOffset || document.documentElement.scrollTop;
+
+        sections.forEach(section => {
+          const sectionTop = section.offsetTop;
+          const sectionHeight = section.clientHeight;
+          if (scrollPosition >= (sectionTop - 160)) {
+            current = section.getAttribute('id');
+          }
+        });
+
+        navLinks.forEach(link => {
+          link.classList.remove('active');
+          if (link.getAttribute('href') === `#${current}`) {
+            link.classList.add('active');
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>
