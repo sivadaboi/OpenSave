@@ -38,7 +38,7 @@ class RelayManager {
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
           res.end(JSON.stringify({
             status:           'ok',
-            version:          '1.1.0',
+            version:          '1.1.1',
             uptime:           process.uptime(),
             startedAt:        this._startedAt,
             rooms:            roomCount,
