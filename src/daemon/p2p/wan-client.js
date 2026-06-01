@@ -24,6 +24,8 @@ export class WanClientManager {
       this.relayReconnectTimeout = null;
     }
 
+    this.clearWanPeers();
+
     const settings = db.getSettings();
     const relayUrl = settings.relayUrl;
     const syncCode = settings.syncCode;
@@ -138,6 +140,29 @@ export class WanClientManager {
     }
   }
 
+  clearWanPeers() {
+    let changed = false;
+    for (const [id, peer] of Object.entries(this.p2pEngine.discoveredPeers)) {
+      if (peer.isWan || peer.address === 'relay') {
+        delete this.p2pEngine.discoveredPeers[id];
+        delete this.p2pEngine.peerGameStates[id];
+        changed = true;
+      }
+    }
+    if (changed) {
+      const peers = db.getPeers();
+      for (const peerId in peers) {
+        const peer = peers[peerId];
+        if ((peer.address === 'relay' || peer.isWan) && peer.status !== 'offline') {
+          db.updatePeer(peerId, { status: 'offline' });
+        }
+      }
+      if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+        this.p2pEngine.onPeerUpdate();
+      }
+    }
+  }
+
   stop() {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
@@ -147,6 +172,7 @@ export class WanClientManager {
       try { this.relaySocket.close(); } catch (e) {}
       this.relaySocket = null;
     }
+    this.clearWanPeers();
   }
 
   getWanRoomStatus() {
