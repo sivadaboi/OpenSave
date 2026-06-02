@@ -5,6 +5,7 @@ import { SyncEngine } from './sync-engine.js';
 import { registerExpressRoutes } from './routes.js';
 import { getFolderManifest, getManifestHash } from '../delta.js';
 import { getLatestSnapshot } from '../snapshot.js';
+import { log } from '../logger.js';
 
 class P2PEngine {
   constructor() {
@@ -147,7 +148,7 @@ class P2PEngine {
       const response = await fetch(url, options);
       if (!response.ok) {
         if (response.status === 401) {
-          console.warn(`[P2P] Received 401 Unauthorized from peer ${peer.id}. Automatically unpairing.`);
+          log('warn', `Received 401 Unauthorized from peer ${peer.id}. Automatically unpairing.`);
           db.removePeer(peer.id);
           if (typeof this.onPeerUpdate === 'function') {
             this.onPeerUpdate();
@@ -193,7 +194,7 @@ class P2PEngine {
           if (response.ok) {
             const data = await response.json();
             if (data.paired === false) {
-              console.warn(`[P2P] Peer ${peerId} reported we are not paired. Automatically unpairing.`);
+              log('warn', `Peer ${peerId} reported we are not paired. Automatically unpairing.`);
               db.removePeer(peerId);
               if (typeof this.onPeerUpdate === 'function') {
                 this.onPeerUpdate();
@@ -206,7 +207,7 @@ class P2PEngine {
             }
           } else {
             if (response.status === 401) {
-              console.warn(`[P2P] Received 401 on ping to ${peerId}. Automatically unpairing.`);
+              log('warn', `Received 401 on ping to ${peerId}. Automatically unpairing.`);
               db.removePeer(peerId);
               if (typeof this.onPeerUpdate === 'function') {
                 this.onPeerUpdate();
@@ -345,7 +346,7 @@ class P2PEngine {
       const localPeerId = this.getLocalPeerId();
       await this.p2pRequest(peer, '/unpair', 'POST', { peerId: localPeerId });
     } catch (err) {
-      console.warn(`[P2P] Could not notify peer ${peerId} of unpairing:`, err.message);
+      log('warn', `Could not notify peer ${peerId} of unpairing:`, err.message);
     }
   }
 

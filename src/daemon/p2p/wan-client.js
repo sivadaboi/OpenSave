@@ -215,7 +215,7 @@ export class WanClientManager {
       if (Array.isArray(msg.pairedPeers)) {
         const isPairedOnRemote = msg.pairedPeers.includes(localPeerId);
         if (pairedPeers[msg.from] && !isPairedOnRemote) {
-          console.warn(`[WAN] WAN Peer ${msg.from} does not have us paired. Automatically unpairing.`);
+          log('warn', `WAN Peer ${msg.from} does not have us paired. Automatically unpairing.`);
           db.removePeer(msg.from);
           if (typeof this.p2pEngine.onPeerUpdate === 'function') {
             this.p2pEngine.onPeerUpdate();
@@ -223,7 +223,7 @@ export class WanClientManager {
           return;
         }
         if (!pairedPeers[msg.from] && isPairedOnRemote) {
-          console.warn(`[WAN] WAN Peer ${msg.from} thinks we are paired, but we do not have them paired. Sending unpair-notify.`);
+          log('warn', `WAN Peer ${msg.from} thinks we are paired, but we do not have them paired. Sending unpair-notify.`);
           this.sendRelayMessage({
             type: 'unpair-notify',
             to: msg.from,
@@ -345,7 +345,7 @@ export class WanClientManager {
 
           // Self-healing: if they explicitly report they don't have us paired, unpair them!
           if (pairedPeers[msg.from] && msg.paired === false) {
-            console.warn(`[WAN] WAN Peer ${msg.from} reported we are not paired in hello-reply. Automatically unpairing.`);
+            log('warn', `WAN Peer ${msg.from} reported we are not paired in hello-reply. Automatically unpairing.`);
             db.removePeer(msg.from);
             if (typeof this.p2pEngine.onPeerUpdate === 'function') {
               this.p2pEngine.onPeerUpdate();
@@ -382,7 +382,7 @@ export class WanClientManager {
 
           // If they think they are paired with us, but we do not have them paired
           if (!pairedPeers[msg.from]) {
-            console.log(`[WAN] Peer ${msg.from} sent hello-reply but is not paired locally. Sending unpair-notify.`);
+            log('warn', `Peer ${msg.from} sent hello-reply but is not paired locally. Sending unpair-notify.`);
             this.sendRelayMessage({
               type: 'unpair-notify',
               to: msg.from,
@@ -396,7 +396,7 @@ export class WanClientManager {
         if (msg.from !== localPeerId) {
           const pairedPeers = db.getPeers();
           if (pairedPeers[msg.from]) {
-            console.warn(`[WAN] Received unpair-notify from WAN Peer ${msg.from}. Automatically unpairing.`);
+            log('warn', `Received unpair-notify from WAN Peer ${msg.from}. Automatically unpairing.`);
             db.removePeer(msg.from);
             if (typeof this.p2pEngine.onPeerUpdate === 'function') {
               this.p2pEngine.onPeerUpdate();
@@ -420,7 +420,7 @@ export class WanClientManager {
             pending.resolve(msg.data);
           } else {
             if (msg.status === 401 && pending.peerId) {
-              console.warn(`[WAN] Received 401 Unauthorized from WAN peer ${pending.peerId}. Automatically unpairing.`);
+              log('warn', `Received 401 Unauthorized from WAN peer ${pending.peerId}. Automatically unpairing.`);
               db.removePeer(pending.peerId);
               if (typeof this.p2pEngine.onPeerUpdate === 'function') {
                 this.p2pEngine.onPeerUpdate();
@@ -438,7 +438,7 @@ export class WanClientManager {
     const localPeerId = this.p2pEngine.getLocalPeerId();
     const { msgId, from, route, method, body } = msg;
 
-    console.log(`[WAN Client] Received WAN API Request: ${method} ${route} from ${from}`);
+    log('info', `Received WAN API Request: ${method} ${route} from ${from}`);
 
     let status = 200;
     let data = {};
@@ -454,14 +454,14 @@ export class WanClientManager {
 
     try {
       if (requiresPairing && !isPaired) {
-        console.warn(`[WAN Guard] Blocked request for ${route} from unpaired WAN peer: ${from}`);
+        log('warn', `Blocked request for ${route} from unpaired WAN peer: ${from}`);
         status = 401;
         data = { error: 'Unauthorized: Requesting peer is not paired.' };
       } else if (route === '/approve-confirm') {
         const { peerId, deviceName, deviceType, port } = body;
         const sentRequests = this.p2pEngine.sentPairingRequests || {};
         if (!sentRequests[peerId] && !sentRequests[from] && !sentRequests['relay']) {
-          console.warn(`[WAN Guard] Blocked unsolicited /approve-confirm from WAN peerId: ${peerId}`);
+          log('warn', `Blocked unsolicited /approve-confirm from WAN peerId: ${peerId}`);
           status = 400;
           data = { error: 'Pairing confirmation rejected: no matching handshake initiated.' };
         } else {
@@ -485,7 +485,7 @@ export class WanClientManager {
           if (name && savePath) {
             try {
               const localSavePath = translatePathToLocal(savePath);
-              console.log(`[WAN P2P] Auto-tracking game "${name}" at "${localSavePath}" (original: "${savePath}") requested by WAN peer.`);
+              log('info', `Auto-tracking game "${name}" at "${localSavePath}" (original: "${savePath}") requested by WAN peer.`);
               if (!fs.existsSync(localSavePath)) {
                 fs.mkdirSync(localSavePath, { recursive: true });
               }
@@ -519,7 +519,7 @@ export class WanClientManager {
           status = 404;
           data = { error: 'Game not found.' };
         } else if (!isSafePath(game.savePath, relPath)) {
-          console.warn(`[WAN Guard] Path traversal attempt blocked on game ${gameId}: ${relPath}`);
+          log('error', `Path traversal attempt blocked on game ${gameId}: ${relPath}`);
           status = 403;
           data = { error: 'Access denied: path traversal attempt detected.' };
         } else {
@@ -558,7 +558,7 @@ export class WanClientManager {
         }
       } else if (route.startsWith('/sync/trigger/')) {
         const gameId = route.split('/').pop();
-        console.log(`[WAN Client] WAN Sync trigger received for game "${gameId}"`);
+        log('info', `WAN Sync trigger received for game "${gameId}"`);
         this.p2pEngine.syncGame(gameId).catch(err => {
           console.error('[WAN Client] WAN Triggered sync failed:', err.message);
         });
