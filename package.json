@@ -36,6 +36,7 @@
   "build": {
     "appId": "com.savesync.app",
     "productName": "SaveSync",
+    "afterPack": "./scripts/after-pack.cjs",
     "win": {
       "target": [
         "nsis",
@@ -45,8 +46,7 @@
     },
     "linux": {
       "target": [
-        "tar.gz",
-        "zip"
+        "tar.gz"
       ],
       "category": "Utility",
       "icon": "src/tray-icon.png"
