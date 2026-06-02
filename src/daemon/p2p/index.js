@@ -193,33 +193,11 @@ class P2PEngine {
           });
           if (response.ok) {
             const data = await response.json();
-            if (data.paired === false) {
-              const pairedAt = peer.pairedAt ? new Date(peer.pairedAt).getTime() : 0;
-              if (Date.now() - pairedAt > 15000) {
-                log('warn', `Peer ${peerId} reported we are not paired. Automatically unpairing.`);
-                db.removePeer(peerId);
-                if (typeof this.onPeerUpdate === 'function') {
-                  this.onPeerUpdate();
-                }
-                continue;
-              }
-            }
             db.updatePeer(peerId, { status: 'online', lastSeen: Date.now() });
             if (data.games) {
               this.peerGameStates[peerId] = data.games;
             }
           } else {
-            if (response.status === 401) {
-              const pairedAt = peer.pairedAt ? new Date(peer.pairedAt).getTime() : 0;
-              if (Date.now() - pairedAt > 15000) {
-                log('warn', `Received 401 on ping to ${peerId}. Automatically unpairing.`);
-                db.removePeer(peerId);
-                if (typeof this.onPeerUpdate === 'function') {
-                  this.onPeerUpdate();
-                }
-                continue;
-              }
-            }
             db.updatePeer(peerId, { status: 'offline' });
           }
         } catch (err) {
@@ -294,18 +272,13 @@ class P2PEngine {
     const localPeerId = this.getLocalPeerId();
 
     if (request.address === 'relay' || request.isWan) {
-      this.wanClient.sendRelayMessage({
-        type: 'request',
-        to: peerId,
-        from: localPeerId,
-        route: '/approve-confirm',
-        method: 'POST',
-        body: {
-          peerId: localPeerId,
-          deviceName: settings.deviceName,
-          deviceType: settings.deviceType || 'desktop',
-          port: this.localPort
-        }
+      this.wanClient.sendWanRequest(peerId, '/approve-confirm', 'POST', {
+        peerId: localPeerId,
+        deviceName: settings.deviceName,
+        deviceType: settings.deviceType || 'desktop',
+        port: this.localPort
+      }).catch(err => {
+        log('warn', `Could not send approve-confirm to WAN peer ${peerId}: ${err.message}`);
       });
     } else {
       fetch(`http://${request.address}:${request.port}/api/p2p/approve-confirm`, {

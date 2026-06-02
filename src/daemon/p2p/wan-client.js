@@ -65,8 +65,7 @@ export class WanClientManager {
           deviceName: settings.deviceName,
           deviceType: settings.deviceType || 'desktop',
           port: this.p2pEngine.localPort,
-          games: this.p2pEngine.getLocalGamesState(),
-          pairedPeers: Object.keys(db.getPeers())
+          games: this.p2pEngine.getLocalGamesState()
         });
 
         // Start ping interval (every 3 seconds) to keep connection alive and update presence
@@ -129,8 +128,7 @@ export class WanClientManager {
           deviceName: db.getSettings().deviceName,
           deviceType: db.getSettings().deviceType || 'desktop',
           port: this.p2pEngine.localPort,
-          games: this.p2pEngine.getLocalGamesState(),
-          pairedPeers: Object.keys(db.getPeers())
+          games: this.p2pEngine.getLocalGamesState()
         });
       } catch (err) {}
     }
@@ -210,30 +208,6 @@ export class WanClientManager {
     // Track peer active presence/heartbeat
     if (msg.from && msg.from !== localPeerId) {
       const pairedPeers = db.getPeers();
-
-      // Self-healing: if they send pairedPeers list, verify if they have us paired
-      if (Array.isArray(msg.pairedPeers)) {
-        const isPairedOnRemote = msg.pairedPeers.includes(localPeerId);
-        if (pairedPeers[msg.from] && !isPairedOnRemote) {
-          const pairedAt = pairedPeers[msg.from].pairedAt ? new Date(pairedPeers[msg.from].pairedAt).getTime() : 0;
-          if (Date.now() - pairedAt > 15000) {
-            log('warn', `WAN Peer ${msg.from} does not have us paired. Automatically unpairing.`);
-            db.removePeer(msg.from);
-            if (typeof this.p2pEngine.onPeerUpdate === 'function') {
-              this.p2pEngine.onPeerUpdate();
-            }
-            return;
-          }
-        }
-        if (!pairedPeers[msg.from] && isPairedOnRemote) {
-          log('warn', `WAN Peer ${msg.from} thinks we are paired, but we do not have them paired. Sending unpair-notify.`);
-          this.sendRelayMessage({
-            type: 'unpair-notify',
-            to: msg.from,
-            from: localPeerId
-          });
-        }
-      }
 
       let changed = false;
       if (pairedPeers[msg.from]) {
@@ -331,8 +305,6 @@ export class WanClientManager {
             type: 'hello-reply',
             to: msg.from,
             from: localPeerId,
-            paired: !!pairedPeers[msg.from],
-            pairedPeers: Object.keys(db.getPeers()),
             deviceName: db.getSettings().deviceName,
             deviceType: db.getSettings().deviceType || 'desktop',
             port: this.p2pEngine.localPort,
@@ -345,19 +317,6 @@ export class WanClientManager {
         if (msg.from !== localPeerId) {
           const key = msg.from;
           const pairedPeers = db.getPeers();
-
-          // Self-healing: if they explicitly report they don't have us paired, unpair them!
-          if (pairedPeers[msg.from] && msg.paired === false) {
-            const pairedAt = pairedPeers[msg.from].pairedAt ? new Date(pairedPeers[msg.from].pairedAt).getTime() : 0;
-            if (Date.now() - pairedAt > 15000) {
-              log('warn', `WAN Peer ${msg.from} reported we are not paired in hello-reply. Automatically unpairing.`);
-              db.removePeer(msg.from);
-              if (typeof this.p2pEngine.onPeerUpdate === 'function') {
-                this.p2pEngine.onPeerUpdate();
-              }
-              break;
-            }
-          }
 
           const isNew = !this.p2pEngine.discoveredPeers[key];
           this.p2pEngine.discoveredPeers[key] = {
@@ -385,30 +344,19 @@ export class WanClientManager {
           if ((isNew || pairedChanged) && typeof this.p2pEngine.onPeerUpdate === 'function') {
             this.p2pEngine.onPeerUpdate();
           }
-
-          // If they think they are paired with us, but we do not have them paired
-          if (!pairedPeers[msg.from] && msg.paired === true) {
-            log('warn', `Peer ${msg.from} sent hello-reply but is not paired locally. Sending unpair-notify.`);
-            this.sendRelayMessage({
-              type: 'unpair-notify',
-              to: msg.from,
-              from: localPeerId
-            });
-          }
         }
         break;
 
       case 'unpair-notify':
+        // Only explicit unpair-notify (sent when user actively unpairs) causes auto-unpairing.
+        // No grace period needed here — this is always intentional.
         if (msg.from !== localPeerId) {
           const pairedPeers = db.getPeers();
           if (pairedPeers[msg.from]) {
-            const pairedAt = pairedPeers[msg.from].pairedAt ? new Date(pairedPeers[msg.from].pairedAt).getTime() : 0;
-            if (Date.now() - pairedAt > 15000) {
-              log('warn', `Received unpair-notify from WAN Peer ${msg.from}. Automatically unpairing.`);
-              db.removePeer(msg.from);
-              if (typeof this.p2pEngine.onPeerUpdate === 'function') {
-                this.p2pEngine.onPeerUpdate();
-              }
+            log('warn', `Received unpair-notify from WAN Peer ${msg.from}. Unpairing.`);
+            db.removePeer(msg.from);
+            if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+              this.p2pEngine.onPeerUpdate();
             }
           }
         }
@@ -428,17 +376,6 @@ export class WanClientManager {
           if (msg.status >= 200 && msg.status < 300) {
             pending.resolve(msg.data);
           } else {
-            if (msg.status === 401 && pending.peerId) {
-              const peer = pairedPeers[pending.peerId];
-              const pairedAt = peer && peer.pairedAt ? new Date(peer.pairedAt).getTime() : 0;
-              if (Date.now() - pairedAt > 15000) {
-                log('warn', `Received 401 Unauthorized from WAN peer ${pending.peerId}. Automatically unpairing.`);
-                db.removePeer(pending.peerId);
-                if (typeof this.p2pEngine.onPeerUpdate === 'function') {
-                  this.p2pEngine.onPeerUpdate();
-                }
-              }
-            }
             pending.reject(new Error(msg.data?.error || `WAN request returned status ${msg.status}`));
           }
         }
