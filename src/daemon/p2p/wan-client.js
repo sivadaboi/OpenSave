@@ -65,7 +65,8 @@ export class WanClientManager {
           deviceName: settings.deviceName,
           deviceType: settings.deviceType || 'desktop',
           port: this.p2pEngine.localPort,
-          games: this.p2pEngine.getLocalGamesState()
+          games: this.p2pEngine.getLocalGamesState(),
+          pairedPeers: Object.keys(db.getPeers())
         });
 
         // Start ping interval (every 3 seconds) to keep connection alive and update presence
@@ -128,7 +129,8 @@ export class WanClientManager {
           deviceName: db.getSettings().deviceName,
           deviceType: db.getSettings().deviceType || 'desktop',
           port: this.p2pEngine.localPort,
-          games: this.p2pEngine.getLocalGamesState()
+          games: this.p2pEngine.getLocalGamesState(),
+          pairedPeers: Object.keys(db.getPeers())
         });
       } catch (err) {}
     }
@@ -208,6 +210,28 @@ export class WanClientManager {
     // Track peer active presence/heartbeat
     if (msg.from && msg.from !== localPeerId) {
       const pairedPeers = db.getPeers();
+
+      // Self-healing: if they send pairedPeers list, verify if they have us paired
+      if (Array.isArray(msg.pairedPeers)) {
+        const isPairedOnRemote = msg.pairedPeers.includes(localPeerId);
+        if (pairedPeers[msg.from] && !isPairedOnRemote) {
+          console.warn(`[WAN] WAN Peer ${msg.from} does not have us paired. Automatically unpairing.`);
+          db.removePeer(msg.from);
+          if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+            this.p2pEngine.onPeerUpdate();
+          }
+          return;
+        }
+        if (!pairedPeers[msg.from] && isPairedOnRemote) {
+          console.warn(`[WAN] WAN Peer ${msg.from} thinks we are paired, but we do not have them paired. Sending unpair-notify.`);
+          this.sendRelayMessage({
+            type: 'unpair-notify',
+            to: msg.from,
+            from: localPeerId
+          });
+        }
+      }
+
       let changed = false;
       if (pairedPeers[msg.from]) {
         const wasOffline = pairedPeers[msg.from].status !== 'online';
@@ -305,6 +329,7 @@ export class WanClientManager {
             to: msg.from,
             from: localPeerId,
             paired: !!pairedPeers[msg.from],
+            pairedPeers: Object.keys(db.getPeers()),
             deviceName: db.getSettings().deviceName,
             deviceType: db.getSettings().deviceType || 'desktop',
             port: this.p2pEngine.localPort,
