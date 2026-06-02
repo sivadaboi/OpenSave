@@ -387,7 +387,7 @@ export class WanClientManager {
           }
 
           // If they think they are paired with us, but we do not have them paired
-          if (!pairedPeers[msg.from]) {
+          if (!pairedPeers[msg.from] && msg.paired === true) {
             log('warn', `Peer ${msg.from} sent hello-reply but is not paired locally. Sending unpair-notify.`);
             this.sendRelayMessage({
               type: 'unpair-notify',
