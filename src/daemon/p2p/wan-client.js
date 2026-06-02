@@ -65,7 +65,8 @@ export class WanClientManager {
           deviceName: settings.deviceName,
           deviceType: settings.deviceType || 'desktop',
           port: this.p2pEngine.localPort,
-          games: this.p2pEngine.getLocalGamesState()
+          games: this.p2pEngine.getLocalGamesState(),
+          pairedPeers: Object.keys(db.getPeers())
         });
 
         // Start ping interval (every 3 seconds) to keep connection alive and update presence
@@ -298,6 +299,23 @@ export class WanClientManager {
 
           if ((isNew || pairedChanged) && typeof this.p2pEngine.onPeerUpdate === 'function') {
             this.p2pEngine.onPeerUpdate();
+          }
+
+          // If they think they are paired with us but we don't have them paired,
+          // send unpair-notify — but only if we don't have an active pairing handshake
+          // with them (which would indicate this is a race during the approval flow).
+          const pairedPeers = db.getPeers();
+          if (!pairedPeers[msg.from] && Array.isArray(msg.pairedPeers) && msg.pairedPeers.includes(localPeerId)) {
+            const sentRequests = this.p2pEngine.sentPairingRequests || {};
+            const hasPendingHandshake = !!(sentRequests[msg.from] || sentRequests['relay']);
+            if (!hasPendingHandshake) {
+              log('warn', `WAN Peer ${msg.from} thinks we are paired (came back online), but we have already unpaired. Sending unpair-notify.`);
+              this.sendRelayMessage({
+                type: 'unpair-notify',
+                to: msg.from,
+                from: localPeerId
+              });
+            }
           }
 
           // Reply with our presence so they discover us immediately
