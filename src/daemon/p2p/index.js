@@ -194,12 +194,15 @@ class P2PEngine {
           if (response.ok) {
             const data = await response.json();
             if (data.paired === false) {
-              log('warn', `Peer ${peerId} reported we are not paired. Automatically unpairing.`);
-              db.removePeer(peerId);
-              if (typeof this.onPeerUpdate === 'function') {
-                this.onPeerUpdate();
+              const pairedAt = peer.pairedAt ? new Date(peer.pairedAt).getTime() : 0;
+              if (Date.now() - pairedAt > 15000) {
+                log('warn', `Peer ${peerId} reported we are not paired. Automatically unpairing.`);
+                db.removePeer(peerId);
+                if (typeof this.onPeerUpdate === 'function') {
+                  this.onPeerUpdate();
+                }
+                continue;
               }
-              continue;
             }
             db.updatePeer(peerId, { status: 'online', lastSeen: Date.now() });
             if (data.games) {
@@ -207,12 +210,15 @@ class P2PEngine {
             }
           } else {
             if (response.status === 401) {
-              log('warn', `Received 401 on ping to ${peerId}. Automatically unpairing.`);
-              db.removePeer(peerId);
-              if (typeof this.onPeerUpdate === 'function') {
-                this.onPeerUpdate();
+              const pairedAt = peer.pairedAt ? new Date(peer.pairedAt).getTime() : 0;
+              if (Date.now() - pairedAt > 15000) {
+                log('warn', `Received 401 on ping to ${peerId}. Automatically unpairing.`);
+                db.removePeer(peerId);
+                if (typeof this.onPeerUpdate === 'function') {
+                  this.onPeerUpdate();
+                }
+                continue;
               }
-              continue;
             }
             db.updatePeer(peerId, { status: 'offline' });
           }

@@ -215,12 +215,15 @@ export class WanClientManager {
       if (Array.isArray(msg.pairedPeers)) {
         const isPairedOnRemote = msg.pairedPeers.includes(localPeerId);
         if (pairedPeers[msg.from] && !isPairedOnRemote) {
-          log('warn', `WAN Peer ${msg.from} does not have us paired. Automatically unpairing.`);
-          db.removePeer(msg.from);
-          if (typeof this.p2pEngine.onPeerUpdate === 'function') {
-            this.p2pEngine.onPeerUpdate();
+          const pairedAt = pairedPeers[msg.from].pairedAt ? new Date(pairedPeers[msg.from].pairedAt).getTime() : 0;
+          if (Date.now() - pairedAt > 15000) {
+            log('warn', `WAN Peer ${msg.from} does not have us paired. Automatically unpairing.`);
+            db.removePeer(msg.from);
+            if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+              this.p2pEngine.onPeerUpdate();
+            }
+            return;
           }
-          return;
         }
         if (!pairedPeers[msg.from] && isPairedOnRemote) {
           log('warn', `WAN Peer ${msg.from} thinks we are paired, but we do not have them paired. Sending unpair-notify.`);
@@ -345,12 +348,15 @@ export class WanClientManager {
 
           // Self-healing: if they explicitly report they don't have us paired, unpair them!
           if (pairedPeers[msg.from] && msg.paired === false) {
-            log('warn', `WAN Peer ${msg.from} reported we are not paired in hello-reply. Automatically unpairing.`);
-            db.removePeer(msg.from);
-            if (typeof this.p2pEngine.onPeerUpdate === 'function') {
-              this.p2pEngine.onPeerUpdate();
+            const pairedAt = pairedPeers[msg.from].pairedAt ? new Date(pairedPeers[msg.from].pairedAt).getTime() : 0;
+            if (Date.now() - pairedAt > 15000) {
+              log('warn', `WAN Peer ${msg.from} reported we are not paired in hello-reply. Automatically unpairing.`);
+              db.removePeer(msg.from);
+              if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+                this.p2pEngine.onPeerUpdate();
+              }
+              break;
             }
-            break;
           }
 
           const isNew = !this.p2pEngine.discoveredPeers[key];
@@ -396,10 +402,13 @@ export class WanClientManager {
         if (msg.from !== localPeerId) {
           const pairedPeers = db.getPeers();
           if (pairedPeers[msg.from]) {
-            log('warn', `Received unpair-notify from WAN Peer ${msg.from}. Automatically unpairing.`);
-            db.removePeer(msg.from);
-            if (typeof this.p2pEngine.onPeerUpdate === 'function') {
-              this.p2pEngine.onPeerUpdate();
+            const pairedAt = pairedPeers[msg.from].pairedAt ? new Date(pairedPeers[msg.from].pairedAt).getTime() : 0;
+            if (Date.now() - pairedAt > 15000) {
+              log('warn', `Received unpair-notify from WAN Peer ${msg.from}. Automatically unpairing.`);
+              db.removePeer(msg.from);
+              if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+                this.p2pEngine.onPeerUpdate();
+              }
             }
           }
         }
@@ -420,10 +429,14 @@ export class WanClientManager {
             pending.resolve(msg.data);
           } else {
             if (msg.status === 401 && pending.peerId) {
-              log('warn', `Received 401 Unauthorized from WAN peer ${pending.peerId}. Automatically unpairing.`);
-              db.removePeer(pending.peerId);
-              if (typeof this.p2pEngine.onPeerUpdate === 'function') {
-                this.p2pEngine.onPeerUpdate();
+              const peer = pairedPeers[pending.peerId];
+              const pairedAt = peer && peer.pairedAt ? new Date(peer.pairedAt).getTime() : 0;
+              if (Date.now() - pairedAt > 15000) {
+                log('warn', `Received 401 Unauthorized from WAN peer ${pending.peerId}. Automatically unpairing.`);
+                db.removePeer(pending.peerId);
+                if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+                  this.p2pEngine.onPeerUpdate();
+                }
               }
             }
             pending.reject(new Error(msg.data?.error || `WAN request returned status ${msg.status}`));
