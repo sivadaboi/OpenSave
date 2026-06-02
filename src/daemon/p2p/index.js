@@ -146,6 +146,13 @@ class P2PEngine {
 
       const response = await fetch(url, options);
       if (!response.ok) {
+        if (response.status === 401) {
+          console.warn(`[P2P] Received 401 Unauthorized from peer ${peer.id}. Automatically unpairing.`);
+          db.removePeer(peer.id);
+          if (typeof this.onPeerUpdate === 'function') {
+            this.onPeerUpdate();
+          }
+        }
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
@@ -179,16 +186,33 @@ class P2PEngine {
         }
       } else {
         try {
-          const response = await fetch(`http://${peer.address}:${peer.port}/api/p2p/ping`, {
+          const localPeerId = this.getLocalPeerId();
+          const response = await fetch(`http://${peer.address}:${peer.port}/api/p2p/ping?from=${localPeerId}`, {
             signal: AbortSignal.timeout(2000)
           });
           if (response.ok) {
-            db.updatePeer(peerId, { status: 'online', lastSeen: Date.now() });
             const data = await response.json();
+            if (data.paired === false) {
+              console.warn(`[P2P] Peer ${peerId} reported we are not paired. Automatically unpairing.`);
+              db.removePeer(peerId);
+              if (typeof this.onPeerUpdate === 'function') {
+                this.onPeerUpdate();
+              }
+              continue;
+            }
+            db.updatePeer(peerId, { status: 'online', lastSeen: Date.now() });
             if (data.games) {
               this.peerGameStates[peerId] = data.games;
             }
           } else {
+            if (response.status === 401) {
+              console.warn(`[P2P] Received 401 on ping to ${peerId}. Automatically unpairing.`);
+              db.removePeer(peerId);
+              if (typeof this.onPeerUpdate === 'function') {
+                this.onPeerUpdate();
+              }
+              continue;
+            }
             db.updatePeer(peerId, { status: 'offline' });
           }
         } catch (err) {
@@ -205,6 +229,8 @@ class P2PEngine {
     if (isWan || peerIp === 'relay') {
       if (targetPeerId) {
         this.sentPairingRequests[targetPeerId] = Date.now();
+      } else {
+        this.sentPairingRequests['relay'] = Date.now();
       }
       this.wanClient.sendRelayMessage({
         type: 'request',

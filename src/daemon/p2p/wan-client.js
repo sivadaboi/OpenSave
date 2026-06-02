@@ -24,6 +24,8 @@ export class WanClientManager {
       this.relayReconnectTimeout = null;
     }
 
+    this.clearWanPeers();
+
     const settings = db.getSettings();
     const relayUrl = settings.relayUrl;
     const syncCode = settings.syncCode;
@@ -138,6 +140,29 @@ export class WanClientManager {
     }
   }
 
+  clearWanPeers() {
+    let changed = false;
+    for (const [id, peer] of Object.entries(this.p2pEngine.discoveredPeers)) {
+      if (peer.isWan || peer.address === 'relay') {
+        delete this.p2pEngine.discoveredPeers[id];
+        delete this.p2pEngine.peerGameStates[id];
+        changed = true;
+      }
+    }
+    if (changed) {
+      const peers = db.getPeers();
+      for (const peerId in peers) {
+        const peer = peers[peerId];
+        if ((peer.address === 'relay' || peer.isWan) && peer.status !== 'offline') {
+          db.updatePeer(peerId, { status: 'offline' });
+        }
+      }
+      if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+        this.p2pEngine.onPeerUpdate();
+      }
+    }
+  }
+
   stop() {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
@@ -147,6 +172,7 @@ export class WanClientManager {
       try { this.relaySocket.close(); } catch (e) {}
       this.relaySocket = null;
     }
+    this.clearWanPeers();
   }
 
   getWanRoomStatus() {
@@ -278,6 +304,7 @@ export class WanClientManager {
             type: 'hello-reply',
             to: msg.from,
             from: localPeerId,
+            paired: !!pairedPeers[msg.from],
             deviceName: db.getSettings().deviceName,
             deviceType: db.getSettings().deviceType || 'desktop',
             port: this.p2pEngine.localPort,
@@ -289,6 +316,18 @@ export class WanClientManager {
       case 'hello-reply':
         if (msg.from !== localPeerId) {
           const key = msg.from;
+          const pairedPeers = db.getPeers();
+
+          // Self-healing: if they explicitly report they don't have us paired, unpair them!
+          if (pairedPeers[msg.from] && msg.paired === false) {
+            console.warn(`[WAN] WAN Peer ${msg.from} reported we are not paired in hello-reply. Automatically unpairing.`);
+            db.removePeer(msg.from);
+            if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+              this.p2pEngine.onPeerUpdate();
+            }
+            break;
+          }
+
           const isNew = !this.p2pEngine.discoveredPeers[key];
           this.p2pEngine.discoveredPeers[key] = {
             id: msg.from,
@@ -301,7 +340,6 @@ export class WanClientManager {
           };
 
           let pairedChanged = false;
-          const pairedPeers = db.getPeers();
           if (pairedPeers[msg.from]) {
             const wasOffline = pairedPeers[msg.from].status !== 'online';
             db.updatePeer(msg.from, {
@@ -315,6 +353,29 @@ export class WanClientManager {
 
           if ((isNew || pairedChanged) && typeof this.p2pEngine.onPeerUpdate === 'function') {
             this.p2pEngine.onPeerUpdate();
+          }
+
+          // If they think they are paired with us, but we do not have them paired
+          if (!pairedPeers[msg.from]) {
+            console.log(`[WAN] Peer ${msg.from} sent hello-reply but is not paired locally. Sending unpair-notify.`);
+            this.sendRelayMessage({
+              type: 'unpair-notify',
+              to: msg.from,
+              from: localPeerId
+            });
+          }
+        }
+        break;
+
+      case 'unpair-notify':
+        if (msg.from !== localPeerId) {
+          const pairedPeers = db.getPeers();
+          if (pairedPeers[msg.from]) {
+            console.warn(`[WAN] Received unpair-notify from WAN Peer ${msg.from}. Automatically unpairing.`);
+            db.removePeer(msg.from);
+            if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+              this.p2pEngine.onPeerUpdate();
+            }
           }
         }
         break;
@@ -333,6 +394,13 @@ export class WanClientManager {
           if (msg.status >= 200 && msg.status < 300) {
             pending.resolve(msg.data);
           } else {
+            if (msg.status === 401 && pending.peerId) {
+              console.warn(`[WAN] Received 401 Unauthorized from WAN peer ${pending.peerId}. Automatically unpairing.`);
+              db.removePeer(pending.peerId);
+              if (typeof this.p2pEngine.onPeerUpdate === 'function') {
+                this.p2pEngine.onPeerUpdate();
+              }
+            }
             pending.reject(new Error(msg.data?.error || `WAN request returned status ${msg.status}`));
           }
         }
@@ -367,7 +435,7 @@ export class WanClientManager {
       } else if (route === '/approve-confirm') {
         const { peerId, deviceName, deviceType, port } = body;
         const sentRequests = this.p2pEngine.sentPairingRequests || {};
-        if (!sentRequests[peerId] && !sentRequests[from]) {
+        if (!sentRequests[peerId] && !sentRequests[from] && !sentRequests['relay']) {
           console.warn(`[WAN Guard] Blocked unsolicited /approve-confirm from WAN peerId: ${peerId}`);
           status = 400;
           data = { error: 'Pairing confirmation rejected: no matching handshake initiated.' };
@@ -531,7 +599,7 @@ export class WanClientManager {
         reject(new Error(`WAN Request timeout on route ${route}`));
       }, 30000); // 30s timeout
 
-      this.pendingWanRequests.set(msgId, { resolve, reject, timeout });
+      this.pendingWanRequests.set(msgId, { resolve, reject, timeout, peerId });
 
       this.sendRelayMessage({
         type: 'request',

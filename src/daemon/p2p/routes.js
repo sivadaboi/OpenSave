@@ -30,8 +30,11 @@ function requirePairedPeer(req, res, next) {
 
 export function registerExpressRoutes(app, p2pEngine) {
   app.get('/api/p2p/ping', (req, res) => {
+    const { from } = req.query;
+    const paired = from ? !!db.getPeers()[from] : true;
     res.status(200).json({
       status: 'ok',
+      paired,
       deviceName: db.getSettings().deviceName,
       deviceType: db.getSettings().deviceType || 'desktop',
       games: p2pEngine.getLocalGamesState()

@@ -135,7 +135,13 @@ export class SyncEngine {
       const diff = diffManifests(localManifest, remoteManifest);
       
       this.p2pEngine.activeConflicts[gameId] = {
-        peer: { id: peer.id, name: peer.name },
+        peer: {
+          id: peer.id,
+          name: peer.name,
+          address: peer.address,
+          port: peer.port,
+          isWan: peer.isWan || peer.address === 'relay'
+        },
         localSnap: getLatestSnapshot(gameId) || { id: 'current', timestamp: new Date(localManifest.latestMtime).toISOString(), comment: 'Current active saves' },
         remoteSnap: remoteData.latestSnapshot || { id: 'remote-current', timestamp: new Date(remoteManifest.latestMtime).toISOString(), comment: 'Current peer saves' },
         diff: diff
@@ -528,7 +534,8 @@ export class SyncEngine {
     const game = db.getGame(gameId);
     if (!game) throw new Error('Game not found.');
 
-    const peer = conflict.peer;
+    const dbPeers = db.getPeers();
+    const peer = dbPeers[peerId] || this.p2pEngine.discoveredPeers[peerId] || conflict.peer;
 
     if (resolution === 'keep-local') {
       console.log(`[Sync] Conflict resolved by keeping LOCAL save. Triggering peer "${peer.name}" to pull from us.`);
@@ -610,13 +617,17 @@ export class SyncEngine {
             }
           }
 
-          blockChunks.push(...blockData.blocks);
+          if (blockData && blockData.blocks) {
+            blockChunks.push(...blockData.blocks);
 
-          let bytesReceived = 0;
-          for (const block of blockData.blocks) {
-            bytesReceived += block.length;
+            let bytesReceived = 0;
+            for (const block of blockData.blocks) {
+              bytesReceived += block.length;
+            }
+            await this.throttle(bytesReceived, isWan);
+          } else {
+            throw new Error(`Failed to fetch blocks for conflict file ${relPath}.`);
           }
-          await this.throttle(bytesReceived, isWan);
         }
 
         const localFilePath = resolveLocalSaveFilePath(game.savePath, relPath);
@@ -719,13 +730,17 @@ export class SyncEngine {
             }
           }
 
-          blockChunks.push(...blockData.blocks);
+          if (blockData && blockData.blocks) {
+            blockChunks.push(...blockData.blocks);
 
-          let bytesReceived = 0;
-          for (const block of blockData.blocks) {
-            bytesReceived += block.length;
+            let bytesReceived = 0;
+            for (const block of blockData.blocks) {
+              bytesReceived += block.length;
+            }
+            await this.throttle(bytesReceived, isWan);
+          } else {
+            throw new Error(`Failed to fetch blocks for conflict file ${relPath}.`);
           }
-          await this.throttle(bytesReceived, isWan);
         }
 
         const localFilePath = resolveLocalSaveFilePath(game.savePath, relPath);
