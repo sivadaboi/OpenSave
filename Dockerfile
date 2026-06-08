@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────
-# SaveSync Relay Server — Dockerfile
+# SyncSave Relay Server — Dockerfile
 # Minimal Node.js 20 image for cloud deployment
 # ─────────────────────────────────────────────────────
 

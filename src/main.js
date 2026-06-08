@@ -89,7 +89,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 650,
     frame: false,
-    title: 'SaveSync — Universal Save Synchronizer',
+    title: 'SyncSave — Universal Save Synchronizer',
     backgroundColor: '#05060f', // Match dashboard background
     show: !shouldHide,
     webPreferences: {
@@ -137,11 +137,11 @@ function createTray() {
     tray = new Tray(nativeImage.createEmpty());
   }
 
-  tray.setToolTip('SaveSync — Running in background');
+  tray.setToolTip('SyncSave — Running in background');
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open SaveSync',
+      label: 'Open SyncSave',
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -219,7 +219,7 @@ if (!gotTheLock) {
       });
     })
     .catch((err) => {
-      console.error('Failed to start SaveSync background daemon:', err);
+      console.error('Failed to start SyncSave background daemon:', err);
       app.quit();
     });
 

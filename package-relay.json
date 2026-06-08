@@ -1,7 +1,7 @@
 {
-  "name": "savesync-relay",
+  "name": "syncsave-relay",
   "version": "1.1.2",
-  "description": "SaveSync WAN WebSocket relay server — standalone cloud deploy",
+  "description": "SyncSave WAN WebSocket relay server — standalone cloud deploy",
   "type": "module",
   "main": "relay-server.js",
   "scripts": {

@@ -1,11 +1,11 @@
 {
-  "name": "savesync",
+  "name": "syncsave",
   "version": "1.1.2",
   "description": "Universal P2P game save synchronizer",
   "main": "src/main.js",
   "type": "module",
   "bin": {
-    "savesync": "./bin/savesync.js"
+    "syncsave": "./bin/syncsave.js"
   },
   "scripts": {
     "start": "node src/daemon/index.js",
@@ -34,8 +34,8 @@
     "electron-builder": "^26.8.1"
   },
   "build": {
-    "appId": "com.savesync.app",
-    "productName": "SaveSync",
+    "appId": "com.syncsave.app",
+    "productName": "SyncSave",
     "afterPack": "./scripts/after-pack.cjs",
     "win": {
       "target": [
@@ -60,7 +60,7 @@
       "installerHeaderIcon": "src/tray-icon.png",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "SaveSync"
+      "shortcutName": "SyncSave"
     },
     "files": [
       "src/**/*",

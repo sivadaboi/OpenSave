@@ -68,7 +68,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function runSelfHealingTest() {
   console.log('====================================================');
-  console.log('Starting SaveSync WAN Self-Healing Integration Test...');
+  console.log('Starting SyncSave WAN Self-Healing Integration Test...');
   console.log('====================================================');
 
   cleanup();

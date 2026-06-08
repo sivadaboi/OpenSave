@@ -51,8 +51,8 @@ export class DiscoveryManager {
         try {
           const data = JSON.parse(msg.toString());
 
-          // Filter: only process savesync-pings
-          if (data.type !== 'savesync-ping') return;
+          // Filter: only process syncsave-pings
+          if (data.type !== 'syncsave-ping') return;
 
           // Filter: ignore messages from our own nodeId or our own IP addresses
           const settings = db.getSettings();
@@ -186,7 +186,7 @@ export class DiscoveryManager {
       const settings = db.getSettings();
       const message = Buffer.from(
         JSON.stringify({
-          type: 'savesync-ping',
+          type: 'syncsave-ping',
           nodeId: settings.nodeId,
           deviceName: settings.deviceName,
           deviceType: settings.deviceType || 'desktop',

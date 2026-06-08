@@ -1,6 +1,6 @@
-# SaveSync 🎮🔄
+# SyncSave 🎮🔄
 
-**SaveSync** is a lightweight, decentralized, peer-to-peer (P2P) game save synchronization engine. It automatically tracks save games across multiple devices (PCs, laptops, handhelds) and replicates them in real-time without relying on external cloud storage.
+**SyncSave** is a lightweight, decentralized, peer-to-peer (P2P) game save synchronization engine. It automatically tracks save games across multiple devices (PCs, laptops, handhelds) and replicates them in real-time without relying on external cloud storage.
 
 ---
 
@@ -50,17 +50,17 @@
 
 ```
 +--------------------+                     +--------------------+
-|   SaveSync (PC A)  |                     |   SaveSync (PC B)  |
+|   SyncSave (PC A)  |                     |   SyncSave (PC B)  |
 |  [File Watcher]    |                     |  [File Watcher]    |
 |  [P2P Sync Engine] | <=================> |  [P2P Sync Engine] |
 +---------+----------+      Local LAN      +---------+----------+
           |             (or WAN via Relay)           |
           v                                          v
-    ~/.savesync/                               ~/.savesync/
+    ~/.syncsave/                               ~/.syncsave/
     (Database & Snapshots)                     (Database & Snapshots)
 ```
 
 1. **Watcher**: The daemon monitors selected save folders for changes using `chokidar`.
-2. **Snapshot**: On change, it creates a zipped snapshot under `~/.savesync/backups/`.
+2. **Snapshot**: On change, it creates a zipped snapshot under `~/.syncsave/backups/`.
 3. **Delta Check**: It scans local vs. peer block listings to calculate differences.
 4. **Replication**: It syncs only the changed blocks over WebSockets directly to the target device.

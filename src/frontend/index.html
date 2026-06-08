@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SaveSync — Universal P2P Game Save Synchronizer</title>
-  <meta name="description" content="SaveSync is a free, open-source peer-to-peer game save synchronization utility. Sync, version, and backup your game saves across devices.">
+  <title>SyncSave — Universal P2P Game Save Synchronizer</title>
+  <meta name="description" content="SyncSave is a free, open-source peer-to-peer game save synchronization utility. Sync, version, and backup your game saves across devices.">
   <!-- Modern Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -255,7 +255,7 @@
               <span class="badge-pill badge-cloud">RECOMMENDED</span>
             </div>
             <p class="card-desc">
-              SaveSync hosts a <strong>free public relay</strong> — no setup required.
+              SyncSave hosts a <strong>free public relay</strong> — no setup required.
               Just generate a code, share it with the other device, and join.
             </p>
 
@@ -272,7 +272,7 @@
             <!-- Relay URL display (editable, advanced) -->
             <div class="form-group" style="margin-bottom:12px; margin-top:12px;">
               <label for="wan-relay-url-input">Relay URL</label>
-              <input type="text" id="wan-relay-url-input" placeholder="wss://savesync-relay.onrender.com">
+              <input type="text" id="wan-relay-url-input" placeholder="wss://syncsave-relay.onrender.com">
               <small>Cloud relay is WSS (encrypted). Self-hosted relays use WS. Both devices must use the same URL.</small>
             </div>
 
@@ -330,7 +330,7 @@
               <input type="checkbox" id="wan-host-relay">
               <label for="wan-host-relay">
                 <strong>Host relay on this PC</strong>
-                <span>Starts the room broker inside SaveSync on TCP port 8386.</span>
+                <span>Starts the room broker inside SyncSave on TCP port 8386.</span>
               </label>
             </div>
 
@@ -369,14 +369,14 @@
                 <div class="hiw-num">2</div>
                 <div>
                   <strong>Both devices join the room</strong>
-                  <p>Enter the same code on both machines. The SaveSync cloud relay passes traffic between room members — no port forwarding needed.</p>
+                  <p>Enter the same code on both machines. The SyncSave cloud relay passes traffic between room members — no port forwarding needed.</p>
                 </div>
               </div>
               <div class="hiw-step">
                 <div class="hiw-num">3</div>
                 <div>
                   <strong>Pair &amp; sync automatically</strong>
-                  <p>Once in the same room, SaveSync handles pairing and keeps your saves in sync — even across continents.</p>
+                  <p>Once in the same room, SyncSave handles pairing and keeps your saves in sync — even across continents.</p>
                 </div>
               </div>
               <div class="hiw-step">
@@ -434,12 +434,12 @@
               <span class="badge-pill" style="background:rgba(6,182,212,0.12);color:#67e8f9;border-color:rgba(6,182,212,0.25);">DECOMPRESS</span>
             </div>
             <p class="card-desc">
-              Select a SaveSync backup folder (containing <code>.sscb</code> files and <code>backup-metadata.json</code>). Files will be decompressed and restored to their original save paths.
+              Select a SyncSave backup folder (containing <code>.sscb</code> files and <code>backup-metadata.json</code>). Files will be decompressed and restored to their original save paths.
             </p>
             <div class="form-group">
               <label for="restore-backup-dir">Backup Folder to Restore</label>
               <div class="input-row">
-                <input type="text" id="restore-backup-dir" placeholder="e.g. D:\SaveBackups\2026-05-24_18-00-00-savesync-backup">
+                <input type="text" id="restore-backup-dir" placeholder="e.g. D:\SaveBackups\2026-05-24_18-00-00-syncsave-backup">
                 <button type="button" id="btn-browse-restore-dir" class="btn-secondary btn-sm">Browse...</button>
               </div>
             </div>
@@ -548,14 +548,14 @@
               <span class="dot-yellow"></span>
               <span class="dot-green"></span>
             </div>
-            <div class="terminal-title">savesync@local:~</div>
+            <div class="terminal-title">syncsave@local:~</div>
             <button id="btn-clear-console" class="btn-clear-console" title="Clear console">🧹 Clear</button>
           </div>
           <div class="terminal-body" id="console-logs-area">
             <!-- logs appended here -->
           </div>
           <div class="terminal-footer">
-            <span class="version-lbl">savesync v1.1.2</span>
+            <span class="version-lbl">syncsave v1.1.2</span>
             <span class="sync-status-lbl" id="console-sync-status">● All devices synchronized</span>
           </div>
         </div>
@@ -610,7 +610,7 @@
               <input type="checkbox" id="settings-start-on-boot">
               <label for="settings-start-on-boot">
                 <strong>Launch on System Startup</strong>
-                <span>Automatically run SaveSync in the system tray when Windows starts.</span>
+                <span>Automatically run SyncSave in the system tray when Windows starts.</span>
               </label>
             </div>
 
@@ -652,7 +652,7 @@
             <div class="form-group">
               <label for="settings-sync-backups-dir">Sync Snapshots Directory</label>
               <div class="input-row">
-                <input type="text" id="settings-sync-backups-dir" placeholder="Default: ~/.savesync/backups">
+                <input type="text" id="settings-sync-backups-dir" placeholder="Default: ~/.syncsave/backups">
                 <button type="button" id="btn-browse-sync-backups-dir" class="btn-secondary btn-sm">Browse...</button>
               </div>
               <small>Where P2P sync snapshots are stored (separate from manual backups). Leave blank to use the default location.</small>
@@ -690,7 +690,7 @@
                 <button type="button" id="btn-browse-scan-path" class="btn-secondary btn-sm" style="white-space:nowrap;">Browse...</button>
                 <button type="button" id="btn-add-scan-path" class="btn-primary btn-sm" style="white-space:nowrap;">Add Path</button>
               </div>
-              <small>Additional folder directories where SaveSync will search for emulator, custom, or repack game saves.</small>
+              <small>Additional folder directories where SyncSave will search for emulator, custom, or repack game saves.</small>
             </div>
 
             <div class="form-actions">
@@ -735,7 +735,7 @@
             <div class="content-card">
               <h3 class="settings-section-title">🔒 Privacy</h3>
               <p style="font-size:13px; color:var(--text-muted); line-height:1.5; margin-bottom:12px;">
-                SaveSync collects <strong style="color:var(--color-emerald);">zero personal data</strong>. No accounts, no telemetry, no cloud uploads. All saves stay on your machine.
+                SyncSave collects <strong style="color:var(--color-emerald);">zero personal data</strong>. No accounts, no telemetry, no cloud uploads. All saves stay on your machine.
               </p>
               <div style="font-size:12px; color:var(--text-muted);">
                 Open-source · Local-first · Self-hostable
@@ -775,7 +775,7 @@
             <input type="text" id="game-path-input" placeholder="e.g. C:\Users\...\My Games\EldenRing" required>
             <button type="button" id="btn-browse-folder" class="btn-secondary btn-sm">Browse...</button>
           </div>
-          <small>Choose any save directory. SaveSync monitors and syncs all files inside it.</small>
+          <small>Choose any save directory. SyncSave monitors and syncs all files inside it.</small>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn-secondary btn-close-modal">Cancel</button>
@@ -934,7 +934,7 @@
       </div>
       <div class="modal-body">
         <p>You are about to roll back your save folder to snapshot: <strong id="rollback-target-id">snap_12345</strong>.</p>
-        <p class="text-warning" style="margin-top:10px;">⚠️ WARNING: This will overwrite files in your active game save folder. SaveSync will automatically create a safety rollback point before writing.</p>
+        <p class="text-warning" style="margin-top:10px;">⚠️ WARNING: This will overwrite files in your active game save folder. SyncSave will automatically create a safety rollback point before writing.</p>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-secondary btn-close-submodal">Cancel Rollback</button>

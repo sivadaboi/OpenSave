@@ -28,12 +28,12 @@ const YELLOW = '\x1b[33m';
 const RED = '\x1b[31m';
 
 const asciiArt = `
-${PURPLE}${BOLD}   ____                     ____                  
-  / ___|  __ ___   _____   / ___| _   _ _ __   ___ 
-  \\___ \\ / _\` \\ \\ / / _ \\  \\___ \\| | | | '_ \\ / __|
-   ___) | (_| |\\ V /  __/   ___) | |_| | | | | (__ 
-  |____/ \\__,_| \\_/ \\___|  |____/ \\__, |_| |_|\\___|
-                                  |___/            
+${PURPLE}${BOLD}   ____                  ____                     
+  / ___| _   _ _ __   ___/ ___|  __ ___   _____   
+  \\___ \\| | | | '_ \\ / __\\___ \\ / _\` \\ \\ / / _ \\  
+   ___) | |_| | | | | (__ ___) | (_| |\\ V /  __/  
+  |____/ \\__, |_| |_|\\___|____/ \\__,_| \\_/ \\___|  
+         |___/                                    
 ${CYAN}         Universal P2P Game Save Sync Engine${RESET}
 `;
 
@@ -95,10 +95,10 @@ async function main() {
 
 function printHelp() {
   console.log(asciiArt);
-  console.log(`${BOLD}Usage:${RESET} savesync <command> [arguments]`);
+  console.log(`${BOLD}Usage:${RESET} syncsave <command> [arguments]`);
   console.log('\n');
   console.log(`${BOLD}Core Commands:${RESET}`);
-  console.log(`  ${GREEN}init${RESET}                                   Initialize SaveSync local setup`);
+  console.log(`  ${GREEN}init${RESET}                                   Initialize SyncSave local setup`);
   console.log(`  ${GREEN}add <Game Name> <Save Path>${RESET}           Track a new game or custom folder path`);
   console.log(`  ${GREEN}scan${RESET}                                   Scan system for installed game & emulator saves`);
   console.log(`  ${GREEN}status${RESET}                                 View monitored games, branches, and peers`);
@@ -110,25 +110,25 @@ function printHelp() {
   console.log(`  ${GREEN}pair-code <code>${RESET}                       Pair with another device using a WAN Sync Code`);
   console.log('\n');
   console.log(`${BOLD}Daemon Commands:${RESET}`);
-  console.log(`  ${GREEN}daemon start [--port <port>]${RESET}           Start SaveSync background service`);
-  console.log(`  ${GREEN}daemon stop${RESET}                            Stop SaveSync background service`);
+  console.log(`  ${GREEN}daemon start [--port <port>]${RESET}           Start SyncSave background service`);
+  console.log(`  ${GREEN}daemon stop${RESET}                            Stop SyncSave background service`);
 }
 
 function handleInit() {
   console.log(asciiArt);
   const settings = db.getSettings();
-  console.log(`${GREEN}✔ SaveSync database initialized successfully!${RESET}`);
+  console.log(`${GREEN}✔ SyncSave database initialized successfully!${RESET}`);
   console.log(`${BOLD}Storage Directory:${RESET} ${settings.dataDir}`);
   console.log(`${BOLD}Backup Directory:${RESET} ${settings.backupsDir}`);
   console.log(`${BOLD}Device Name:${RESET} ${settings.deviceName}`);
   console.log(`${BOLD}Default Port:${RESET} ${settings.port}`);
-  console.log(`\nTo start the background daemon, run: ${CYAN}savesync daemon start${RESET}`);
+  console.log(`\nTo start the background daemon, run: ${CYAN}syncsave daemon start${RESET}`);
 }
 
 async function handleAdd(name, savePath) {
   if (!name || !savePath) {
     console.log(`${RED}Error: Game name and save directory path are required.${RESET}`);
-    console.log(`Example: ${CYAN}savesync add "Dark Souls III" "C:\\Users\\Siva Prakash\\Documents\\My Games\\DarkSoulsIII"${RESET}`);
+    console.log(`Example: ${CYAN}syncsave add "Dark Souls III" "C:\\Users\\Siva Prakash\\Documents\\My Games\\DarkSoulsIII"${RESET}`);
     return;
   }
 
@@ -154,7 +154,7 @@ async function handleAdd(name, savePath) {
     try {
       const game = db.addGame(name, savePath);
       console.log(`${GREEN}✔ Game "${game.name}" added to configuration! (ID: ${game.id})${RESET}`);
-      console.log(`${YELLOW}⚠ Note: The daemon is currently offline. Start the daemon to monitor folder changes: ${CYAN}savesync daemon start${RESET}`);
+      console.log(`${YELLOW}⚠ Note: The daemon is currently offline. Start the daemon to monitor folder changes: ${CYAN}syncsave daemon start${RESET}`);
     } catch (err) {
       console.log(`${RED}Error: ${err.message}${RESET}`);
     }
@@ -192,7 +192,7 @@ async function handleSync(gameId = null) {
   const running = await isDaemonRunning();
   if (!running) {
     console.log(`${RED}Error: Daemon must be running to sync with peers.${RESET}`);
-    console.log(`Start daemon using: ${CYAN}savesync daemon start${RESET}`);
+    console.log(`Start daemon using: ${CYAN}syncsave daemon start${RESET}`);
     return;
   }
 
@@ -360,7 +360,7 @@ async function handleCheckout(gameId, branchName) {
 
 async function handleDaemon(action, customPort = null) {
   if (!action || (action !== 'start' && action !== 'stop')) {
-    console.log(`${RED}Usage: savesync daemon start [--port <port>] | savesync daemon stop${RESET}`);
+    console.log(`${RED}Usage: syncsave daemon start [--port <port>] | syncsave daemon stop${RESET}`);
     return;
   }
 
@@ -375,7 +375,7 @@ async function handleDaemon(action, customPort = null) {
     const portToUse = customPort ? parseInt(customPort, 10) : PORT;
     const daemonScript = path.join(__dirname, '../src/daemon/index.js');
     
-    console.log(`Starting SaveSync background daemon on port ${portToUse}...`);
+    console.log(`Starting SyncSave background daemon on port ${portToUse}...`);
 
     // Spawn daemon independently in background
     const logFile = path.join(db.getSettings().dataDir, 'daemon.log');
@@ -401,7 +401,7 @@ async function handleDaemon(action, customPort = null) {
       return;
     }
 
-    console.log('Stopping SaveSync daemon...');
+    console.log('Stopping SyncSave daemon...');
     let pid = null;
     
     if (fs.existsSync(PID_FILE)) {
@@ -446,7 +446,7 @@ async function handleScan() {
   if (discovered.length === 0) {
     console.log(`${YELLOW}No installed game save presets or emulators detected automatically.${RESET}`);
     console.log(`You can still track any custom folder manually:`);
-    console.log(`  ${CYAN}savesync add "<Game Name>" "<Save Folder Path>"${RESET}`);
+    console.log(`  ${CYAN}syncsave add "<Game Name>" "<Save Folder Path>"${RESET}`);
     return;
   }
 
@@ -455,7 +455,7 @@ async function handleScan() {
   for (const item of discovered) {
     console.log(`${BOLD}${CYAN}${item.name}${RESET} [Type: ${item.type}]`);
     console.log(`  Path: ${item.savePath}`);
-    console.log(`  To track: ${YELLOW}savesync add "${item.name}" "${item.savePath}"${RESET}`);
+    console.log(`  To track: ${YELLOW}syncsave add "${item.name}" "${item.savePath}"${RESET}`);
     console.log('');
   }
 }
@@ -463,7 +463,7 @@ async function handleScan() {
 async function handlePairCode(code) {
   if (!code) {
     console.log(`${RED}Error: Sync room code is required.${RESET}`);
-    console.log(`Usage: ${CYAN}savesync pair-code <room-code>${RESET}`);
+    console.log(`Usage: ${CYAN}syncsave pair-code <room-code>${RESET}`);
     return;
   }
 

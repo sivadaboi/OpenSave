@@ -1,4 +1,4 @@
-// SaveSync Dashboard App Orchestrator - Sidebar Navigation Edition
+// SyncSave Dashboard App Orchestrator - Sidebar Navigation Edition
 
 let ws = null;
 let appState = {
@@ -10,8 +10,8 @@ let appState = {
   wanRoom: null
 };
 
-// Public SaveSync cloud relay — no setup needed
-const CLOUD_RELAY_URL = 'wss://savesync-relay.onrender.com';
+// Public SyncSave cloud relay — no setup needed
+const CLOUD_RELAY_URL = 'wss://syncsave-relay.onrender.com';
 let relayHealthTimer = null;
 let activeGameId = null;
 let discoveredSavesList = [];
@@ -243,7 +243,7 @@ function navigateTo(viewId) {
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}`;
-  showToast('Connecting to SaveSync daemon...', 'info');
+  showToast('Connecting to SyncSave daemon...', 'info');
 
   ws = new WebSocket(wsUrl);
 
@@ -635,14 +635,14 @@ function setupEventListeners() {
     await loadRelayIps();
   });
 
-  // "Use Cloud Relay" button — sets relay URL to the public SaveSync relay
+  // "Use Cloud Relay" button — sets relay URL to the public SyncSave relay
   document.getElementById('btn-use-cloud-relay')?.addEventListener('click', async () => {
     if (wanRelayUrlInput) wanRelayUrlInput.value = CLOUD_RELAY_URL;
     if (wanHostRelay) wanHostRelay.checked = false;
     await saveSettings({
       relayUrl: CLOUD_RELAY_URL,
       hostRelay: false
-    }, '☁️ Switched to SaveSync cloud relay!');
+    }, '☁️ Switched to SyncSave cloud relay!');
     loadRelayHealth();
   });
 
@@ -893,7 +893,7 @@ function setupEventListeners() {
   const lblBackupOrig      = document.getElementById('lbl-backup-orig');
   const lblBackupComp      = document.getElementById('lbl-backup-comp');
 
-  btnBrowseBackupDir?.addEventListener('click', () => browseDirectory(inputBackupDir, 'savesync_last_backup_dir'));
+  btnBrowseBackupDir?.addEventListener('click', () => browseDirectory(inputBackupDir, 'syncsave_last_backup_dir'));
 
   btnExecuteBackup?.addEventListener('click', async () => {
     const exportDir = inputBackupDir?.value.trim();
@@ -911,7 +911,7 @@ function setupEventListeners() {
       });
       if (res.ok) {
         const data = await res.json();
-        localStorage.setItem('savesync_last_backup_dir', exportDir);
+        localStorage.setItem('syncsave_last_backup_dir', exportDir);
         if (lblBackupFolder) lblBackupFolder.textContent = data.backupFolder;
         if (lblBackupRatio)  lblBackupRatio.textContent  = data.savings;
         if (lblBackupOrig)   lblBackupOrig.textContent   = (data.totalOriginal / 1024).toFixed(1) + ' KB';
@@ -938,7 +938,7 @@ function setupEventListeners() {
   const restoreResultTitle     = document.getElementById('restore-result-title');
   const restoreResultDetails   = document.getElementById('restore-result-details');
 
-  btnBrowseRestoreDir?.addEventListener('click', () => browseDirectory(inputRestoreDir, 'savesync_last_restore_dir'));
+  btnBrowseRestoreDir?.addEventListener('click', () => browseDirectory(inputRestoreDir, 'syncsave_last_restore_dir'));
 
   btnExecuteRestore?.addEventListener('click', async () => {
     const backupPath = inputRestoreDir?.value.trim();
@@ -1018,7 +1018,7 @@ async function probePeerAddress(address, port, { quiet = false } = {}) {
     });
     const data = await res.json();
     if (!res.ok || !data.reachable) {
-      const message = data.error || `Could not reach SaveSync at ${address}:${port}.`;
+      const message = data.error || `Could not reach SyncSave at ${address}:${port}.`;
       setPeerProbeStatus(message, 'error');
       if (!quiet) showToast(message, 'error');
       return null;
@@ -1062,8 +1062,8 @@ async function browseDirectory(inputEl, storageKey) {
 function restoreSavedBackupDir() {
   const backupInput = document.getElementById('settings-backup-dir');
   const restoreInput = document.getElementById('restore-backup-dir');
-  const savedBackup = localStorage.getItem('savesync_last_backup_dir');
-  const savedRestore = localStorage.getItem('savesync_last_restore_dir');
+  const savedBackup = localStorage.getItem('syncsave_last_backup_dir');
+  const savedRestore = localStorage.getItem('syncsave_last_restore_dir');
   if (backupInput && savedBackup) backupInput.value = savedBackup;
   if (restoreInput && savedRestore) restoreInput.value = savedRestore;
 }
@@ -2003,7 +2003,7 @@ function initConsole(history = []) {
     appendLogLine({
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       type: 'info',
-      message: 'SaveSync Console Connection Initialized',
+      message: 'SyncSave Console Connection Initialized',
       meta: 'v1.0.0'
     }, false);
   }

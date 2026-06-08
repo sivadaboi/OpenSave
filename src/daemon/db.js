@@ -4,8 +4,27 @@ import os from 'os';
 import crypto from 'crypto';
 
 const DEFAULT_PORT = 8383;
-const HOME_DIR = path.join(os.homedir(), '.savesync');
-const DB_FILE = path.join(HOME_DIR, 'savesync-db.json');
+const OLD_HOME_DIR = path.join(os.homedir(), '.savesync');
+const HOME_DIR = path.join(os.homedir(), '.syncsave');
+const DB_FILE = path.join(HOME_DIR, 'syncsave-db.json');
+
+// Migrate old folder if it exists
+if (fs.existsSync(OLD_HOME_DIR) && !fs.existsSync(HOME_DIR)) {
+  try {
+    fs.renameSync(OLD_HOME_DIR, HOME_DIR);
+    console.log(`[Migration] Automatically migrated user database folder from ${OLD_HOME_DIR} to ${HOME_DIR}`);
+    
+    // Also rename savesync-db.json to syncsave-db.json inside it if present
+    const oldDbFile = path.join(HOME_DIR, 'savesync-db.json');
+    const newDbFile = path.join(HOME_DIR, 'syncsave-db.json');
+    if (fs.existsSync(oldDbFile)) {
+      fs.renameSync(oldDbFile, newDbFile);
+      console.log(`[Migration] Automatically renamed database file to ${newDbFile}`);
+    }
+  } catch (err) {
+    console.error(`[Migration] Failed to migrate database folder:`, err.message);
+  }
+}
 
 // Ensure home directories exist
 if (!fs.existsSync(HOME_DIR)) {
@@ -16,9 +35,9 @@ if (!fs.existsSync(BACKUPS_DIR)) {
   fs.mkdirSync(BACKUPS_DIR, { recursive: true });
 }
 
-// Public SaveSync cloud relay — deployed on Render.com free tier.
+// Public SyncSave cloud relay — deployed on Render.com free tier.
 // Users who self-host can override this in Settings > Internet Sync.
-const CLOUD_RELAY_URL = 'wss://savesync-relay.onrender.com';
+const CLOUD_RELAY_URL = 'wss://syncsave-relay.onrender.com';
 
 const defaultState = {
   settings: {

@@ -1,5 +1,5 @@
 // ============================================================
-// SaveSync Landing Page Interactive Orchestrator
+// SyncSave Landing Page Interactive Orchestrator
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {
