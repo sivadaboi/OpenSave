@@ -1,3 +1,4 @@
+import { logErrorToFile } from './errorHandler.js';
 import { app, BrowserWindow, dialog, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -41,11 +42,43 @@ global.openExternalUrl = async (url) => {
 // Expose startup settings manager
 global.updateStartupSettings = (enabled) => {
   try {
-    app.setLoginItemSettings({
-      openAtLogin: enabled,
-      path: process.execPath,
-      args: ['--hidden']
-    });
+    if (process.platform === 'linux') {
+      const homeDir = app.getPath('home');
+      const autostartDir = path.join(homeDir, '.config', 'autostart');
+      const desktopPath = path.join(autostartDir, 'syncsave.desktop');
+
+      if (enabled) {
+        if (!fs.existsSync(autostartDir)) {
+          fs.mkdirSync(autostartDir, { recursive: true });
+        }
+        const execPath = process.execPath;
+        const desktopContent = `[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SyncSave
+Comment=SyncSave background game save synchronizer daemon
+Exec="${execPath}" --hidden
+Icon=syncsave
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+`;
+        fs.writeFileSync(desktopPath, desktopContent, 'utf8');
+        console.log('[Startup Settings] Linux autostart desktop entry created.');
+      } else {
+        if (fs.existsSync(desktopPath)) {
+          fs.unlinkSync(desktopPath);
+          console.log('[Startup Settings] Linux autostart desktop entry removed.');
+        }
+      }
+    } else {
+      app.setLoginItemSettings({
+        openAtLogin: enabled,
+        path: process.execPath,
+        args: ['--hidden']
+      });
+      console.log(`[Startup Settings] Login item settings updated: enabled=${enabled}`);
+    }
   } catch (err) {
     console.error('[Startup Settings] Failed to set login item settings:', err.message);
   }
@@ -70,6 +103,61 @@ global.closeWindow = () => {
   if (mainWindow) {
     mainWindow.hide(); // Minimize to system tray
   }
+};
+
+// Expose OAuth BrowserWindow authorization popup to Express API daemon
+global.openAuthWindow = (url, redirectUrl) => {
+  return new Promise((resolve, reject) => {
+    import('electron').then(({ BrowserWindow }) => {
+      const authWindow = new BrowserWindow({
+        width: 600,
+        height: 750,
+        show: true,
+        title: 'Sign In — Cloud Provider',
+        autoHideMenuBar: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true
+        }
+      });
+
+      authWindow.loadURL(url);
+
+      const checkUrl = (currentUrl) => {
+        if (currentUrl.startsWith(redirectUrl)) {
+          try {
+            const parsedUrl = new URL(currentUrl);
+            const code = parsedUrl.searchParams.get('code');
+            const error = parsedUrl.searchParams.get('error');
+            if (code) {
+              resolve(code);
+            } else if (error) {
+              reject(new Error(error));
+            } else {
+              reject(new Error('No authorization code found in redirect URL.'));
+            }
+          } catch (e) {
+            reject(e);
+          }
+          authWindow.close();
+        }
+      };
+
+      authWindow.webContents.on('will-navigate', (event, currentUrl) => {
+        checkUrl(currentUrl);
+      });
+
+      authWindow.webContents.on('will-redirect', (event, currentUrl) => {
+        checkUrl(currentUrl);
+      });
+
+      authWindow.on('closed', () => {
+        reject(new Error('User closed the login window.'));
+      });
+    }).catch(err => {
+      reject(new Error('Electron app is required for popup authentication window.'));
+    });
+  });
 };
 
 import db from './daemon/db.js';
@@ -220,6 +308,13 @@ if (!gotTheLock) {
     })
     .catch((err) => {
       console.error('Failed to start SyncSave background daemon:', err);
+      logErrorToFile(err);
+      try {
+        dialog.showErrorBox(
+          'SyncSave Daemon Startup Error',
+          `The background database/server daemon failed to initialize.\n\nError details:\n${err.stack || err.message || err}`
+        );
+      } catch (dialogErr) {}
       app.quit();
     });
 

@@ -246,145 +246,156 @@
           </div>
         </div>
 
+        <!-- WAN Sync Tab Toggles (Modern UI only) -->
+        <div class="wan-tabs">
+          <button type="button" class="wan-tab-btn active" data-wan-tab="room">🌐 Join/Create Room</button>
+          <button type="button" class="wan-tab-btn" data-wan-tab="host">📡 Self-Host Relay</button>
+        </div>
+
         <div class="wan-grid">
+          <!-- Tab 1: Room Sync -->
+          <div id="wan-tab-room" class="wan-tab-content wan-grid-sub">
+            <!-- Cloud Relay Card (recommended / default) -->
+            <div class="content-card cloud-relay-card">
+              <div class="card-header-row">
+                <h3>☁️ Cloud Relay</h3>
+                <span class="badge-pill badge-cloud">RECOMMENDED</span>
+              </div>
+              <p class="card-desc">
+                SyncSave hosts a <strong>free public relay</strong> — no setup required.
+                Just generate a code, share it with the other device, and join.
+              </p>
 
-          <!-- Cloud Relay Card (recommended / default) -->
-          <div class="content-card cloud-relay-card">
-            <div class="card-header-row">
-              <h3>☁️ Cloud Relay</h3>
-              <span class="badge-pill badge-cloud">RECOMMENDED</span>
-            </div>
-            <p class="card-desc">
-              SyncSave hosts a <strong>free public relay</strong> — no setup required.
-              Just generate a code, share it with the other device, and join.
-            </p>
+              <!-- Relay health status bar -->
+              <div class="relay-health-bar" id="relay-health-bar">
+                <div class="relay-health-dot" id="relay-health-dot"></div>
+                <span class="relay-health-label" id="relay-health-label">Checking relay…</span>
+                <span class="relay-health-meta" id="relay-health-meta"></span>
+                <button type="button" id="btn-use-cloud-relay" class="btn-sm btn-cloud-relay" title="Switch to cloud relay">
+                  Use Cloud Relay
+                </button>
+              </div>
 
-            <!-- Relay health status bar -->
-            <div class="relay-health-bar" id="relay-health-bar">
-              <div class="relay-health-dot" id="relay-health-dot"></div>
-              <span class="relay-health-label" id="relay-health-label">Checking relay…</span>
-              <span class="relay-health-meta" id="relay-health-meta"></span>
-              <button type="button" id="btn-use-cloud-relay" class="btn-sm btn-cloud-relay" title="Switch to cloud relay">
-                Use Cloud Relay
+              <!-- Relay URL display (editable, advanced) -->
+              <div class="form-group" style="margin-bottom:12px; margin-top:12px;">
+                <label for="wan-relay-url-input">Relay URL</label>
+                <input type="text" id="wan-relay-url-input" placeholder="wss://syncsave-relay.onrender.com">
+                <small>Cloud relay is WSS (encrypted). Self-hosted relays use WS. Both devices must use the same URL.</small>
+              </div>
+
+              <!-- Join room -->
+              <form id="form-wan-sync" class="wan-form">
+                <div class="wan-input-row">
+                  <input type="text" id="wan-code-input" placeholder="Enter or paste a Sync Room Code" required>
+                  <button type="submit" class="btn-primary">Join Room</button>
+                </div>
+              </form>
+
+              <div id="active-wan-room-display" class="wan-active-room hidden">
+                <div class="wan-room-info">
+                  <div class="wan-room-dot"></div>
+                  <div>
+                    <div class="wan-room-label">Active Sync Room</div>
+                    <div id="wan-room-name-lbl" class="wan-room-code">None</div>
+                  </div>
+                </div>
+                <button id="btn-leave-wan-room" class="btn-danger btn-sm">Leave Room</button>
+              </div>
+
+              <button id="btn-generate-wan-code" class="btn-secondary" style="width:100%;margin-top:12px;">
+                🎲 Generate Random Code
               </button>
             </div>
 
-            <!-- Relay URL display (editable, advanced) -->
-            <div class="form-group" style="margin-bottom:12px; margin-top:12px;">
-              <label for="wan-relay-url-input">Relay URL</label>
-              <input type="text" id="wan-relay-url-input" placeholder="wss://syncsave-relay.onrender.com">
-              <small>Cloud relay is WSS (encrypted). Self-hosted relays use WS. Both devices must use the same URL.</small>
+            <!-- Devices in Room -->
+            <div class="content-card">
+              <div class="card-header-row">
+                <h3>Devices in Room</h3>
+                <span id="wan-room-peer-count" class="badge-pill">0 ONLINE</span>
+              </div>
+              <div class="wan-relay-status">
+                <div>
+                  <span class="wan-room-label">Relay</span>
+                  <div id="wan-relay-url-lbl" class="wan-room-url">Not configured</div>
+                </div>
+                <span id="wan-connection-state" class="badge-pill badge-warning">DISCONNECTED</span>
+              </div>
+              <ul id="wan-room-peers-list" class="peer-list wan-room-peer-list">
+                <li class="empty-list-msg">Join a room to see relay peers.</li>
+              </ul>
             </div>
 
-            <!-- Join room -->
-            <form id="form-wan-sync" class="wan-form">
-              <div class="wan-input-row">
-                <input type="text" id="wan-code-input" placeholder="Enter or paste a Sync Room Code" required>
-                <button type="submit" class="btn-primary">Join Room</button>
+            <!-- How It Works -->
+            <div class="content-card" style="grid-column: 1 / -1;">
+              <div class="card-header-row">
+                <h3>How It Works</h3>
               </div>
-            </form>
-
-            <div id="active-wan-room-display" class="wan-active-room hidden">
-              <div class="wan-room-info">
-                <div class="wan-room-dot"></div>
-                <div>
-                  <div class="wan-room-label">Active Sync Room</div>
-                  <div id="wan-room-name-lbl" class="wan-room-code">None</div>
+              <div class="how-it-works" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="hiw-step">
+                  <div class="hiw-num">1</div>
+                  <div>
+                    <strong>Generate or share a code</strong>
+                    <p>Create a unique room code and share it with the other device via any messenger.</p>
+                  </div>
+                </div>
+                <div class="hiw-step">
+                  <div class="hiw-num">2</div>
+                  <div>
+                    <strong>Both devices join the room</strong>
+                    <p>Enter the same code on both machines. The SyncSave cloud relay passes traffic between room members — no port forwarding needed.</p>
+                  </div>
+                </div>
+                <div class="hiw-step">
+                  <div class="hiw-num">3</div>
+                  <div>
+                    <strong>Pair &amp; sync automatically</strong>
+                    <p>Once in the same room, SyncSave handles pairing and keeps your saves in sync — even across continents.</p>
+                  </div>
+                </div>
+                <div class="hiw-step">
+                  <div class="hiw-num">4</div>
+                  <div>
+                    <strong>Want to self-host?</strong>
+                    <p>Deploy the relay to Render.com for free using the <code>render.yaml</code> in the project root, or use Docker.</p>
+                  </div>
                 </div>
               </div>
-              <button id="btn-leave-wan-room" class="btn-danger btn-sm">Leave Room</button>
-            </div>
-
-            <button id="btn-generate-wan-code" class="btn-secondary" style="width:100%;margin-top:12px;">
-              🎲 Generate Random Code
-            </button>
-          </div>
-
-          <!-- Devices in Room -->
-          <div class="content-card">
-            <div class="card-header-row">
-              <h3>Devices in Room</h3>
-              <span id="wan-room-peer-count" class="badge-pill">0 ONLINE</span>
-            </div>
-            <div class="wan-relay-status">
-              <div>
-                <span class="wan-room-label">Relay</span>
-                <div id="wan-relay-url-lbl" class="wan-room-url">Not configured</div>
-              </div>
-              <span id="wan-connection-state" class="badge-pill badge-warning">DISCONNECTED</span>
-            </div>
-            <ul id="wan-room-peers-list" class="peer-list wan-room-peer-list">
-              <li class="empty-list-msg">Join a room to see relay peers.</li>
-            </ul>
-          </div>
-
-          <!-- Self-Host / Advanced -->
-          <div class="content-card">
-            <div class="card-header-row">
-              <h3>Self-Host Relay <span style="font-size:0.75rem;opacity:0.5;">(Advanced)</span></h3>
-              <span class="badge-pill">OPTIONAL</span>
-            </div>
-            <p class="card-desc">Run the relay on your own PC or server. Useful for private LAN-only setups or if you want full control. Requires port forwarding TCP&nbsp;8386 on your router.</p>
-
-            <div class="toggle-row">
-              <input type="checkbox" id="wan-host-relay">
-              <label for="wan-host-relay">
-                <strong>Host relay on this PC</strong>
-                <span>Starts the room broker inside SyncSave on TCP port 8386.</span>
-              </label>
-            </div>
-
-            <div class="form-group" style="margin-top:12px;">
-              <label for="wan-relay-port-input">Relay Port</label>
-              <input type="number" id="wan-relay-port-input" value="8386">
-              <small>Forward this TCP port on your router to this PC for internet access.</small>
-            </div>
-
-            <div class="info-banner" style="margin-top:12px;">
-              <div style="font-weight:600; margin-bottom:6px;">Shareable relay addresses</div>
-              <div>LAN: <span id="wan-local-ips" class="text-warning">Loading…</span></div>
-              <div style="margin-top:4px;">Internet: <span id="wan-public-ip" class="text-warning">Loading…</span></div>
-            </div>
-
-            <div class="form-actions">
-              <button type="button" id="btn-save-wan-hosting" class="btn-primary">Apply Hosting</button>
-              <button type="button" id="btn-use-local-relay" class="btn-secondary">Use Local Relay</button>
             </div>
           </div>
 
-          <!-- How It Works -->
-          <div class="content-card">
-            <div class="card-header-row">
-              <h3>How It Works</h3>
-            </div>
-            <div class="how-it-works">
-              <div class="hiw-step">
-                <div class="hiw-num">1</div>
-                <div>
-                  <strong>Generate or share a code</strong>
-                  <p>Create a unique room code and share it with the other device via any messenger.</p>
-                </div>
+          <!-- Tab 2: Self-Host -->
+          <div id="wan-tab-host" class="wan-tab-content wan-grid-sub hidden" style="grid-column: 1 / -1; display: block;">
+            <!-- Self-Host / Advanced -->
+            <div class="content-card" style="max-width: 600px; margin: 0 auto;">
+              <div class="card-header-row">
+                <h3>Self-Host Relay <span style="font-size:0.75rem;opacity:0.5;">(Advanced)</span></h3>
+                <span class="badge-pill">OPTIONAL</span>
               </div>
-              <div class="hiw-step">
-                <div class="hiw-num">2</div>
-                <div>
-                  <strong>Both devices join the room</strong>
-                  <p>Enter the same code on both machines. The SyncSave cloud relay passes traffic between room members — no port forwarding needed.</p>
-                </div>
+              <p class="card-desc">Run the relay on your own PC or server. Useful for private LAN-only setups or if you want full control. Requires port forwarding TCP&nbsp;8386 on your router.</p>
+
+              <div class="toggle-row">
+                <input type="checkbox" id="wan-host-relay">
+                <label for="wan-host-relay">
+                  <strong>Host relay on this PC</strong>
+                  <span>Starts the room broker inside SyncSave on TCP port 8386.</span>
+                </label>
               </div>
-              <div class="hiw-step">
-                <div class="hiw-num">3</div>
-                <div>
-                  <strong>Pair &amp; sync automatically</strong>
-                  <p>Once in the same room, SyncSave handles pairing and keeps your saves in sync — even across continents.</p>
-                </div>
+
+              <div class="form-group" style="margin-top:12px;">
+                <label for="wan-relay-port-input">Relay Port</label>
+                <input type="number" id="wan-relay-port-input" value="8386">
+                <small>Forward this TCP port on your router to this PC for internet access.</small>
               </div>
-              <div class="hiw-step">
-                <div class="hiw-num">4</div>
-                <div>
-                  <strong>Want to self-host?</strong>
-                  <p>Deploy the relay to Render.com for free using the <code>render.yaml</code> in the project root, or use Docker.</p>
-                </div>
+
+              <div class="info-banner" style="margin-top:12px;">
+                <div style="font-weight:600; margin-bottom:6px;">Shareable relay addresses</div>
+                <div>LAN: <span id="wan-local-ips" class="text-warning">Loading…</span></div>
+                <div style="margin-top:4px;">Internet: <span id="wan-public-ip" class="text-warning">Loading…</span></div>
+              </div>
+
+              <div class="form-actions">
+                <button type="button" id="btn-save-wan-hosting" class="btn-primary">Apply Hosting</button>
+                <button type="button" id="btn-use-local-relay" class="btn-secondary">Use Local Relay</button>
               </div>
             </div>
           </div>
@@ -555,7 +566,7 @@
             <!-- logs appended here -->
           </div>
           <div class="terminal-footer">
-            <span class="version-lbl">syncsave v1.1.2</span>
+            <span class="version-lbl">syncsave v1.1.3</span>
             <span class="sync-status-lbl" id="console-sync-status">● All devices synchronized</span>
           </div>
         </div>
@@ -572,125 +583,284 @@
 
         <div class="settings-layout">
           <form id="form-update-settings" class="content-card settings-card">
-            <h3 class="settings-section-title">🖥️ Device Identity</h3>
-            <div class="form-group">
-              <label for="settings-device-name">Device Display Name</label>
-              <input type="text" id="settings-device-name" placeholder="e.g. My Gaming PC" required>
-              <small>This name appears to other players when they discover your device.</small>
+            <!-- Settings Tab Headers (Modern UI only) -->
+            <div class="settings-tabs">
+              <button type="button" class="settings-tab-btn active" data-settings-tab="identity">🖥️ Identity &amp; Network</button>
+              <button type="button" class="settings-tab-btn" data-settings-tab="system">⚙️ System &amp; Sync</button>
+              <button type="button" class="settings-tab-btn" data-settings-tab="cloud">☁️ Cloud Backup</button>
             </div>
 
-            <div class="form-group" style="margin-top:12px;">
-              <label for="settings-device-type">Device Category Type</label>
-              <select id="settings-device-type" class="select-dropdown">
-                <option value="desktop">Desktop (Windows / macOS / Linux PC)</option>
-                <option value="deck">Steam Deck (Linux/SteamOS Handheld)</option>
-                <option value="handheld">Handheld (ROG Ally / Legion Go / Emulator)</option>
-                <option value="mobile">Companion (Mobile Device)</option>
-              </select>
-              <small>Select the type of device to display on the Activity Log and peer dashboard.</small>
-            </div>
-
-            <h3 class="settings-section-title" style="margin-top:24px;">🌐 WAN Relay Server</h3>
-            <div class="form-group">
-              <label for="settings-relay-url">WebSocket Relay URL</label>
-              <input type="text" id="settings-relay-url" required>
-              <small>Use ws://localhost:8386 on the relay host, or ws://LAN-or-public-IP:8386 from another device. Self-hosted internet relay requires TCP port forwarding.</small>
-            </div>
-
-            <div class="toggle-row">
-              <input type="checkbox" id="settings-host-relay">
-              <label for="settings-host-relay">
-                <strong>Host a Local WAN Relay Server</strong>
-                <span>Run a relay server on this machine so friends can connect to you.</span>
-              </label>
-            </div>
-
-            <h3 class="settings-section-title" style="margin-top:24px;">⚙️ System &amp; Performance</h3>
-            <div class="toggle-row" style="margin-bottom:14px;">
-              <input type="checkbox" id="settings-start-on-boot">
-              <label for="settings-start-on-boot">
-                <strong>Launch on System Startup</strong>
-                <span>Automatically run SyncSave in the system tray when Windows starts.</span>
-              </label>
-            </div>
-
-            <div class="form-group">
-              <label for="settings-speed-limit">WAN Bandwidth Limit</label>
-              <select id="settings-speed-limit" class="select-dropdown">
-                <option value="0">Unlimited (Max Speed)</option>
-                <option value="100">100 KB/s (Very Low)</option>
-                <option value="500">500 KB/s (Medium)</option>
-                <option value="1024">1 MB/s (High)</option>
-                <option value="5120">5 MB/s (Very High)</option>
-                <option value="10240">10 MB/s (Ultra)</option>
-              </select>
-              <small>Limits download rate for file synchronizations over WAN tunnels to preserve network performance.</small>
-            </div>
-
-            <div class="toggle-row" style="margin-top:14px;">
-              <input type="checkbox" id="settings-auto-sync-on-track" checked>
-              <label for="settings-auto-sync-on-track">
-                <strong>Auto-Sync New Tracked Saves</strong>
-                <span>Automatically sync a game with paired devices as soon as it is added to tracking. Enabled by default.</span>
-              </label>
-            </div>
-
-            <div id="relay-port-config-container" class="form-group hidden" style="margin-top:12px;">
-              <label for="settings-relay-port">Relay Hosting Port</label>
-              <input type="number" id="settings-relay-port" value="8386">
-              <small>Forward this port (TCP) on your router to allow remote friends to connect.</small>
-            </div>
-
-            <div id="relay-ips-config-container" class="info-banner hidden" style="margin-top:12px;">
-              <div style="font-weight:600; margin-bottom:6px;">📡 Share these with your friend:</div>
-              <div>LAN IP(s): <span id="settings-local-ips" class="text-warning">Loading...</span></div>
-              <div style="margin-top:4px;">LAN Sync PIN: <span id="settings-local-sync-pin" class="font-mono text-warning" style="font-weight:600;">Loading...</span></div>
-              <div style="margin-top:4px;">Public IP: <span id="settings-public-ip" class="text-warning">Loading...</span></div>
-            </div>
-
-            <h3 class="settings-section-title" style="margin-top:24px;">🗄️ Sync Backup Storage</h3>
-            <div class="form-group">
-              <label for="settings-sync-backups-dir">Sync Snapshots Directory</label>
-              <div class="input-row">
-                <input type="text" id="settings-sync-backups-dir" placeholder="Default: ~/.syncsave/backups">
-                <button type="button" id="btn-browse-sync-backups-dir" class="btn-secondary btn-sm">Browse...</button>
+            <!-- Tab 1: Identity & Network -->
+            <div id="settings-tab-identity" class="settings-tab-content">
+              <h3 class="settings-section-title">🖥️ Device Identity</h3>
+              <div class="form-group">
+                <label for="settings-device-name">Device Display Name</label>
+                <input type="text" id="settings-device-name" placeholder="e.g. My Gaming PC" required>
+                <small>This name appears to other players when they discover your device.</small>
               </div>
-              <small>Where P2P sync snapshots are stored (separate from manual backups). Leave blank to use the default location.</small>
-            </div>
 
-            <div class="toggle-row" style="margin-top:14px;">
-              <input type="checkbox" id="settings-auto-delete-backups">
-              <label for="settings-auto-delete-backups">
-                <strong>Auto-Delete Old Sync Backups</strong>
-                <span>Automatically remove sync backup ZIPs older than the specified number of days.</span>
-              </label>
-            </div>
 
-            <div id="auto-delete-days-container" class="form-group hidden" style="margin-top:12px;">
-              <label for="settings-auto-delete-days">Retention Period (days)</label>
-              <select id="settings-auto-delete-days" class="select-dropdown">
-                <option value="7">7 days</option>
-                <option value="14">14 days</option>
-                <option value="30" selected>30 days</option>
-                <option value="60">60 days</option>
-                <option value="90">90 days</option>
-                <option value="180">180 days</option>
-              </select>
-              <small>Sync backup ZIPs older than this will be deleted automatically once per day when the daemon runs.</small>
-            </div>
-
-            <h3 class="settings-section-title" style="margin-top:24px;">🔎 Game Scanner Settings</h3>
-            <div class="form-group">
-              <label>Custom Scan Directories</label>
-              <div id="custom-scan-paths-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
-                <!-- Dynamically populated custom scan paths -->
+              <div class="form-group" style="margin-top:12px;">
+                <label for="settings-device-type">Device Category Type</label>
+                <select id="settings-device-type" class="select-dropdown">
+                  <option value="desktop">Desktop (Windows / macOS / Linux PC)</option>
+                  <option value="deck">Steam Deck (Linux/SteamOS Handheld)</option>
+                  <option value="handheld">Handheld (ROG Ally / Legion Go / Emulator)</option>
+                  <option value="mobile">Companion (Mobile Device)</option>
+                </select>
+                <small>Select the type of device to display on the Activity Log and peer dashboard.</small>
               </div>
-              <div class="input-row">
-                <input type="text" id="input-new-scan-path" placeholder="e.g. D:\SteamLibrary\steamapps\compatdata" style="flex:1;">
-                <button type="button" id="btn-browse-scan-path" class="btn-secondary btn-sm" style="white-space:nowrap;">Browse...</button>
-                <button type="button" id="btn-add-scan-path" class="btn-primary btn-sm" style="white-space:nowrap;">Add Path</button>
+
+              <h3 class="settings-section-title" style="margin-top:24px;">🌐 WAN Relay Server</h3>
+              <div class="form-group">
+                <label for="settings-relay-url">WebSocket Relay URL</label>
+                <input type="text" id="settings-relay-url" required>
+                <small>Use ws://localhost:8386 on the relay host, or ws://LAN-or-public-IP:8386 from another device.</small>
               </div>
-              <small>Additional folder directories where SyncSave will search for emulator, custom, or repack game saves.</small>
+
+              <div class="toggle-row">
+                <input type="checkbox" id="settings-host-relay">
+                <label for="settings-host-relay">
+                  <strong>Host a Local WAN Relay Server</strong>
+                  <span>Run a relay server on this machine so friends can connect to you.</span>
+                </label>
+              </div>
+
+              <div id="relay-port-config-container" class="form-group hidden" style="margin-top:12px;">
+                <label for="settings-relay-port">Relay Hosting Port</label>
+                <input type="number" id="settings-relay-port" value="8386">
+                <small>Forward this port (TCP) on your router to allow remote friends to connect.</small>
+              </div>
+
+              <div id="relay-ips-config-container" class="info-banner hidden" style="margin-top:12px;">
+                <div style="font-weight:600; margin-bottom:6px;">📡 Share these with your friend:</div>
+                <div>LAN IP(s): <span id="settings-local-ips" class="text-warning">Loading...</span></div>
+                <div style="margin-top:4px;">LAN Sync PIN: <span id="settings-local-sync-pin" class="font-mono text-warning" style="font-weight:600;">Loading...</span></div>
+                <div style="margin-top:4px;">Public IP: <span id="settings-public-ip" class="text-warning">Loading...</span></div>
+              </div>
+            </div>
+
+            <!-- Tab 2: System & Sync -->
+            <div id="settings-tab-system" class="settings-tab-content hidden">
+              <h3 class="settings-section-title">⚙️ System &amp; Performance</h3>
+              <div class="toggle-row" style="margin-bottom:14px;">
+                <input type="checkbox" id="settings-start-on-boot">
+                <label for="settings-start-on-boot">
+                  <strong>Launch on System Startup</strong>
+                  <span>Automatically run SyncSave in the system tray when Windows starts.</span>
+                </label>
+              </div>
+
+              <div class="form-group">
+                <label for="settings-speed-limit">WAN Bandwidth Limit</label>
+                <select id="settings-speed-limit" class="select-dropdown">
+                  <option value="0">Unlimited (Max Speed)</option>
+                  <option value="100">100 KB/s (Very Low)</option>
+                  <option value="500">500 KB/s (Medium)</option>
+                  <option value="1024">1 MB/s (High)</option>
+                  <option value="5120">5 MB/s (Very High)</option>
+                  <option value="10240">10 MB/s (Ultra)</option>
+                </select>
+                <small>Limits download rate for file synchronizations over WAN tunnels.</small>
+              </div>
+
+              <div class="toggle-row" style="margin-top:14px; margin-bottom:14px;">
+                <input type="checkbox" id="settings-auto-sync-on-track" checked>
+                <label for="settings-auto-sync-on-track">
+                  <strong>Auto-Sync New Tracked Saves</strong>
+                  <span>Automatically sync a game with paired devices as soon as it is added to tracking.</span>
+                </label>
+              </div>
+
+              <h3 class="settings-section-title" style="margin-top:24px;">🗄️ Sync Backup Storage</h3>
+              <div class="form-group">
+                <label for="settings-sync-backups-dir">Sync Snapshots Directory</label>
+                <div class="input-row">
+                  <input type="text" id="settings-sync-backups-dir" placeholder="Default: ~/.syncsave/backups">
+                  <button type="button" id="btn-browse-sync-backups-dir" class="btn-secondary btn-sm">Browse...</button>
+                </div>
+                <small>Where P2P sync snapshots are stored (separate from manual backups).</small>
+              </div>
+
+              <div class="toggle-row" style="margin-top:14px;">
+                <input type="checkbox" id="settings-auto-delete-backups">
+                <label for="settings-auto-delete-backups">
+                  <strong>Auto-Delete Old Sync Backups</strong>
+                  <span>Automatically remove sync backup ZIPs older than the specified number of days.</span>
+                </label>
+              </div>
+
+              <div id="auto-delete-days-container" class="form-group hidden" style="margin-top:12px;">
+                <label for="settings-auto-delete-days">Retention Period (days)</label>
+                <select id="settings-auto-delete-days" class="select-dropdown">
+                  <option value="7">7 days</option>
+                  <option value="14">14 days</option>
+                  <option value="30" selected>30 days</option>
+                  <option value="60">60 days</option>
+                  <option value="90">90 days</option>
+                  <option value="180">180 days</option>
+                </select>
+              </div>
+
+              <h3 class="settings-section-title" style="margin-top:24px;">🔎 Game Scanner Settings</h3>
+              <div class="form-group">
+                <label>Custom Scan Directories</label>
+                <div id="custom-scan-paths-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+                  <!-- Dynamically populated custom scan paths -->
+                </div>
+                <div class="input-row">
+                  <input type="text" id="input-new-scan-path" placeholder="e.g. D:\SteamLibrary\steamapps\compatdata" style="flex:1;">
+                  <button type="button" id="btn-browse-scan-path" class="btn-secondary btn-sm" style="white-space:nowrap;">Browse...</button>
+                  <button type="button" id="btn-add-scan-path" class="btn-primary btn-sm" style="white-space:nowrap;">Add Path</button>
+                </div>
+                <small>Additional directories where SyncSave will search for emulator or custom saves.</small>
+              </div>
+            </div>
+
+            <!-- Tab 3: Cloud Backup -->
+            <div id="settings-tab-cloud" class="settings-tab-content hidden">
+              <h3 class="settings-section-title">☁️ Cloud Backup Sync</h3>
+              <div class="toggle-row">
+                <input type="checkbox" id="settings-cloud-enabled">
+                <label for="settings-cloud-enabled">
+                  <strong>Enable Cloud Backup Sync</strong>
+                  <span>Upload a zip copy of each save snapshot automatically to a cloud provider.</span>
+                </label>
+              </div>
+
+              <div id="cloud-sync-fields" class="hidden" style="margin-top:16px; display:flex; flex-direction:column; gap:16px;">
+                <label style="font-weight: 600; font-size: 13px; color: var(--text-2);">Select Cloud Storage Provider</label>
+                
+                <div class="provider-grid">
+                  <!-- Google Drive Card -->
+                  <div class="provider-card" id="card-provider-google" data-provider="google_drive">
+                    <div class="provider-icon">
+                      <img src="googledrive.png" alt="Google Drive" style="width: 36px; height: 36px; object-fit: contain;">
+                    </div>
+                    <div class="provider-name">Google Drive</div>
+                    <div class="provider-status" id="status-google">Click to sign in</div>
+                  </div>
+
+                  <!-- OneDrive Card -->
+                  <div class="provider-card" id="card-provider-onedrive" data-provider="onedrive">
+                    <div class="provider-icon">
+                      <img src="onedrive.png" alt="OneDrive" style="width: 36px; height: 36px; object-fit: contain;">
+                    </div>
+                    <div class="provider-name">OneDrive</div>
+                    <div class="provider-status" id="status-onedrive">Click to sign in</div>
+                  </div>
+
+                  <!-- Dropbox Card -->
+                  <div class="provider-card" id="card-provider-dropbox" data-provider="dropbox">
+                    <div class="provider-icon">
+                      <img src="dropbox.png" alt="Dropbox" style="width: 36px; height: 36px; object-fit: contain;">
+                    </div>
+                    <div class="provider-name">Dropbox</div>
+                    <div class="provider-status" id="status-dropbox">Click to sign in</div>
+                  </div>
+
+                  <!-- Local Folder Card -->
+                  <div class="provider-card" id="card-provider-local" data-provider="local">
+                    <div class="provider-icon">
+                      <svg viewBox="0 0 24 24" width="36" height="36" fill="#f6ad55">
+                        <path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"/>
+                      </svg>
+                    </div>
+                    <div class="provider-name">Local Folder</div>
+                    <div class="provider-status" id="status-local">Not configured</div>
+                  </div>
+
+                  <!-- WebDAV Card -->
+                  <div class="provider-card" id="card-provider-webdav" data-provider="webdav">
+                    <div class="provider-icon">
+                      <svg viewBox="0 0 24 24" width="36" height="36" fill="#b7791f">
+                        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3z"/>
+                      </svg>
+                    </div>
+                    <div class="provider-name">WebDAV Server</div>
+                    <div class="provider-status" id="status-webdav">Not configured</div>
+                  </div>
+
+                  <!-- Webhook Card -->
+                  <div class="provider-card" id="card-provider-webhook" data-provider="webhook">
+                    <div class="provider-icon">
+                      <svg viewBox="0 0 24 24" width="36" height="36" fill="#4a5568">
+                        <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10zM12 10H8v2h4v-2zm4 4h-8v2h8v-2z"/>
+                      </svg>
+                    </div>
+                    <div class="provider-name">HTTP Webhook</div>
+                    <div class="provider-status" id="status-webhook">Not configured</div>
+                  </div>
+                </div>
+
+                <!-- Connected account status bar -->
+                <div id="cloud-oauth-details" class="hidden" style="background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center;">
+                  <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:16px;">✅</span>
+                    <div>
+                      <div style="font-weight: 600; font-size: 13px; color: var(--emerald);" id="cloud-oauth-title">Connected</div>
+                      <div style="font-size: 11px; color: var(--text-3); margin-top: 2px;" id="cloud-oauth-email">—</div>
+                    </div>
+                  </div>
+                  <div style="display:flex; gap: 8px;">
+                    <button type="button" id="btn-cloud-connect" class="btn-primary btn-sm hidden">Sign In</button>
+                    <button type="button" id="btn-cloud-disconnect" class="btn-secondary btn-sm">Disconnect</button>
+                  </div>
+                </div>
+
+                <!-- Local Directory Selection -->
+                <div id="cloud-form-local" class="hidden form-group">
+                  <label for="settings-cloud-local-dir">Local Backup Destination Folder</label>
+                  <div class="input-row">
+                    <input type="text" id="settings-cloud-local-dir" placeholder="e.g. D:\CloudSyncFolder">
+                    <button type="button" id="btn-browse-cloud-local-dir" class="btn-secondary btn-sm">Browse...</button>
+                  </div>
+                  <small>Select a local sync directory (like a Dropbox folder, Google Drive folder, or external storage drive) to mirror zips.</small>
+                </div>
+
+                <!-- WebDAV Config -->
+                <div id="cloud-form-webdav" class="hidden" style="display:flex; flex-direction:column; gap:12px;">
+                  <div class="form-group">
+                    <label for="settings-cloud-webdav-url">WebDAV Base Endpoint URL</label>
+                    <input type="url" id="settings-cloud-webdav-url" placeholder="e.g. https://my-nextcloud.com/remote.php/dav/files/user/backups">
+                  </div>
+                  <div class="form-group">
+                    <label for="settings-cloud-webdav-username">WebDAV Username</label>
+                    <input type="text" id="settings-cloud-webdav-username" placeholder="Enter username">
+                  </div>
+                  <div class="form-group">
+                    <label for="settings-cloud-webdav-password">WebDAV Password / App Token</label>
+                    <input type="password" id="settings-cloud-webdav-password" placeholder="Enter app password">
+                  </div>
+                </div>
+
+                <!-- Webhook Config -->
+                <div id="cloud-form-webhook" class="hidden" style="display:flex; flex-direction:column; gap:12px;">
+                  <div class="form-group">
+                    <label for="settings-cloud-webhook-url">Webhook Receiver URL</label>
+                    <input type="url" id="settings-cloud-webhook-url" placeholder="e.g. https://my-api.com/syncsave-receiver">
+                  </div>
+                  <div class="form-group">
+                    <label for="settings-cloud-webhook-headers">Custom HTTP Headers (JSON)</label>
+                    <textarea id="settings-cloud-webhook-headers" placeholder='e.g. {"Authorization": "Bearer TOKEN"}' rows="3" style="width:100%; background: #0c0d1b; color: #fff; border: 1px solid #2e305e; border-radius: 4px; padding: 8px; font-family: monospace;"></textarea>
+                    <small>Optional headers (JSON format) containing authorization credentials or user tokens.</small>
+                  </div>
+                </div>
+
+                <!-- Custom OAuth Credentials (Optional) -->
+                <div id="cloud-oauth-config" class="hidden" style="display:flex; flex-direction:column; gap:12px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: rgba(255,255,255,0.01);">
+                  <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">🛠️ Custom OAuth Client Credentials <span style="font-weight:400; font-size:11px; color:var(--text-muted);">(Optional)</span></div>
+                  <p style="font-size: 11px; color: var(--text-muted); margin: 0; line-height: 1.5;">
+                    SyncSave includes built-in app credentials for <strong>Google Drive</strong> and <strong>Dropbox</strong> — you can sign in immediately with zero setup.<br>
+                    For <strong>OneDrive</strong>, or if you'd prefer to use your own registered app, enter your Client ID below.
+                  </p>
+                  <div class="form-group" style="margin-bottom:0;">
+                    <label for="settings-cloud-client-id" id="lbl-custom-client-id">Custom Client ID for <span id="lbl-custom-provider-name">this provider</span></label>
+                    <input type="text" id="settings-cloud-client-id" placeholder="Leave blank to use built-in credentials" style="width:100%;">
+                    <small style="margin-top: 6px; display:block; color: var(--text-muted);">Changes take effect on next sign-in.</small>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div class="form-actions">
@@ -744,7 +914,7 @@
 
             <div class="content-card">
               <h3 class="settings-section-title">ℹ️ About</h3>
-              <div class="about-row"><span>Version</span><span class="text-muted">1.1.2</span></div>
+              <div class="about-row"><span>Version</span><span class="text-muted">1.1.3</span></div>
               <div class="about-row"><span>License</span><span class="text-muted">MIT</span></div>
               <div class="about-row"><span>Author</span><span class="text-muted">Siva Prakash</span></div>
             </div>
@@ -807,6 +977,7 @@
           <button id="btn-drawer-launch" class="btn-accent btn-launch-game hidden">Launch Game</button>
           <button id="btn-drawer-sync" class="btn-accent">⚡ Sync Now</button>
           <button id="btn-drawer-snapshot" class="btn-primary">📸 Save Snapshot</button>
+          <button id="btn-drawer-cloud-explorer" class="btn-secondary">☁️ Cloud Explorer</button>
         </div>
 
         <!-- Sync Progress Bar Overlay -->
@@ -1058,6 +1229,56 @@
             </thead>
             <tbody id="snapshot-files-table-body">
               <!-- Dynamically populated files -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POPUP MODAL: Cloud Backup Explorer -->
+  <div id="cloud-explorer-modal" class="modal-overlay hidden">
+    <div class="modal-card" style="width: 750px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <h3 id="cloud-explorer-title">☁️ Cloud Backup Explorer</h3>
+        <button id="btn-close-cloud-explorer" class="btn-close-submodal">&times;</button>
+      </div>
+      <div class="modal-body" style="overflow-y: auto; flex: 1; min-height: 300px; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 16px;">
+          <p style="font-size: 12px; color: var(--text-3); margin: 0; flex: 1;">
+            Below are the snapshots archived in your cloud storage for this game. You can restore any version directly to your active save folder. A safety rollback snapshot will be automatically created locally before restoring.
+          </p>
+          <button id="btn-cloud-sync-local" class="btn-accent btn-sm" style="white-space: nowrap; display: flex; align-items: center; gap: 6px;">
+            ⚡ Sync Local to Cloud
+          </button>
+        </div>
+        
+        <!-- Loading State -->
+        <div id="cloud-explorer-loading" class="hidden" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 200px;">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          <span style="font-size: 12px; color: var(--text-2);">Querying cloud storage snapshots...</span>
+        </div>
+
+        <!-- Empty State -->
+        <div id="cloud-explorer-empty" class="hidden" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 200px; text-align: center;">
+          <span style="font-size: 32px;">📭</span>
+          <h4 style="margin: 0; color: var(--text-2);">No Cloud Snapshots Found</h4>
+          <p style="font-size: 11px; color: var(--text-muted); max-width: 320px; margin: 4px 0 0 0;">Make sure Cloud Backup is configured and that snapshots have been auto-uploaded for this game.</p>
+        </div>
+
+        <!-- Content Table -->
+        <div id="cloud-explorer-content" class="hidden" style="border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.2);">
+          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12px;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); color: var(--text-2); font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;">
+                <th style="padding: 10px 14px;">Branch</th>
+                <th style="padding: 10px 14px;">Timestamp / Version</th>
+                <th style="padding: 10px 14px; width: 100px;">Size</th>
+                <th style="padding: 10px 14px; width: 100px; text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="cloud-explorer-table-body">
+              <!-- Dynamically populated remote snapshots -->
             </tbody>
           </table>
         </div>

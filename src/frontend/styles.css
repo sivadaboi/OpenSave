@@ -1856,3 +1856,352 @@ input, textarea, code, pre, [contenteditable="true"], .node-id-badge {
   background: var(--violet);
   color: #fff;
 }
+
+/* Cloud Storage Provider Grid Styling */
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+  margin-bottom: 20px;
+}
+
+.provider-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+}
+
+.provider-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--violet);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.provider-card.active {
+  border-color: var(--cyan);
+  background: rgba(6, 182, 212, 0.03);
+  box-shadow: 0 0 16px rgba(6, 182, 212, 0.12);
+}
+
+.provider-card.connected {
+  border-color: var(--emerald);
+  background: rgba(16, 185, 129, 0.06);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.18);
+  cursor: default;
+}
+
+/* Connected cards must not lift or change on hover — they are inert */
+.provider-card.connected:hover {
+  background: rgba(16, 185, 129, 0.06);
+  border-color: var(--emerald);
+  transform: none;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.18);
+}
+
+.provider-icon {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.25s ease;
+}
+
+.provider-card:hover .provider-icon {
+  transform: scale(1.1);
+}
+
+.provider-name {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 4px;
+}
+
+.provider-status {
+  font-size: 10px;
+  color: var(--text-3);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-card.connected .provider-status {
+  color: var(--emerald);
+  font-weight: 600;
+}
+
+.provider-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--emerald);
+  color: white;
+  font-size: 8px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ============================================
+   UI LAYOUT SWITCHER STYLE SYSTEM
+   ============================================ */
+
+/* UI Switcher sidebar item highlight */
+#nav-ui-toggle:hover {
+  background: rgba(6, 182, 212, 0.08) !important;
+  color: var(--cyan) !important;
+  box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.2);
+}
+
+/* Game Card hover action menus (layout-modern only) */
+.game-card-hover-actions {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(10, 11, 22, 0.94);
+  display: none; /* Controlled by body layout classes below */
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: var(--ease);
+  z-index: 10;
+  backdrop-filter: blur(8px);
+  padding: 10px;
+}
+
+body.layout-modern .game-card-hover-actions {
+  display: flex;
+}
+
+body.layout-classic .game-card-hover-actions {
+  display: none !important;
+}
+
+body.layout-modern .game-card:hover .game-card-hover-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.card-quick-action {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-1);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--ease-spring);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.card-quick-action:hover {
+  transform: scale(1.15);
+}
+
+.card-quick-action.btn-quick-launch {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+.card-quick-action.btn-quick-launch:hover {
+  background: var(--emerald-dim);
+  color: var(--emerald);
+  box-shadow: 0 0 12px var(--emerald-glow);
+  border-color: var(--emerald);
+}
+
+.card-quick-action.btn-quick-sync {
+  border-color: rgba(6, 182, 212, 0.4);
+}
+.card-quick-action.btn-quick-sync:hover {
+  background: var(--cyan-dim);
+  color: var(--cyan);
+  box-shadow: 0 0 12px var(--cyan-glow);
+  border-color: var(--cyan);
+}
+
+.card-quick-action.btn-quick-snapshot {
+  border-color: rgba(124, 58, 237, 0.4);
+}
+.card-quick-action.btn-quick-snapshot:hover {
+  background: var(--violet-dim);
+  color: #c084fc;
+  box-shadow: 0 0 12px var(--violet-glow);
+  border-color: var(--violet);
+}
+
+.card-quick-action.btn-quick-details {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.card-quick-action.btn-quick-details:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: #fff;
+}
+
+.card-quick-action.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Modern UI: Drawer Control Dashboard style */
+body.layout-modern .drawer-control-dashboard {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+body.layout-modern .drawer-control-dashboard h4 {
+  font-family: var(--font-display);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-2);
+  margin-bottom: -4px;
+}
+
+body.layout-modern .drawer-control-dashboard .drawer-controls {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+body.layout-modern .drawer-control-dashboard .branch-selector-container {
+  grid-column: 1 / -1;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+
+body.layout-modern .drawer-control-dashboard .btn-accent,
+body.layout-modern .drawer-control-dashboard .btn-primary,
+body.layout-modern .drawer-control-dashboard .btn-secondary {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+/* In Classic UI, make sure drawer-control-dashboard is ignored */
+body.layout-classic .drawer-control-dashboard {
+  display: none !important;
+}
+
+/* Settings and WAN Tabs */
+.settings-tabs, .wan-tabs {
+  display: none; /* Only flex in layout-modern */
+  gap: 8px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+body.layout-modern .settings-tabs,
+body.layout-modern .wan-tabs {
+  display: flex;
+}
+
+.settings-tab-btn, .wan-tab-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-2);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: var(--ease);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.settings-tab-btn:hover, .wan-tab-btn:hover {
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.settings-tab-btn.active, .wan-tab-btn.active {
+  background: var(--violet-dim);
+  color: var(--text-1);
+  border-color: var(--border-active);
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.25);
+  transform: none;
+}
+
+/* Tab contents visibility control */
+body.layout-modern .settings-tab-content.hidden,
+body.layout-modern .wan-tab-content.hidden {
+  display: none !important;
+}
+
+body.layout-classic .settings-tab-content {
+  display: block !important;
+  margin-bottom: 24px;
+}
+body.layout-classic .wan-tab-content {
+  display: block !important;
+}
+
+/* WAN Grid adjustments */
+body.layout-classic .wan-grid-sub {
+  display: contents;
+}
+
+body.layout-modern .wan-grid {
+  display: block; /* The tab contents themselves will be grids */
+}
+
+body.layout-modern .wan-grid-sub {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 900px) { body.layout-modern .wan-grid-sub { grid-template-columns: 1fr; } }
+

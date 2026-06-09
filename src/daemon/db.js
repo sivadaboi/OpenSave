@@ -60,7 +60,30 @@ const defaultState = {
     hostRelay: false,
     relayPort: 8386,
     startOnBoot: false,
-    speedLimit: 0
+    speedLimit: 0,
+    uiMode: 'modern',
+    cloudSync: {
+      enabled: false,
+      provider: 'local', // 'local' | 'webdav' | 'webhook' | 'google_drive' | 'onedrive' | 'dropbox'
+      url: '',
+      username: '',
+      password: '',
+      headers: '{}',
+      folderId: '',
+      // Per-provider custom OAuth Client IDs supplied by the user.
+      // Leave empty to use SyncSave's built-in registered app credentials.
+      customClientIds: {
+        google_drive: '',
+        onedrive: '',
+        dropbox: ''
+      },
+      tokens: {
+        accessToken: '',
+        refreshToken: '',
+        expiryTime: 0,
+        userEmail: ''
+      }
+    }
   },
   games: {},
   peers: {}
@@ -78,12 +101,41 @@ class Database {
       if (fs.existsSync(dbFile)) {
         const fileContent = fs.readFileSync(dbFile, 'utf8');
         this.data = JSON.parse(fileContent);
+
+        // Auto-migrate old paths in settings
+        const settings = this.data.settings || {};
+        if (settings.dataDir && settings.dataDir.includes('.savesync')) {
+          settings.dataDir = settings.dataDir.replace('.savesync', '.syncsave');
+        }
+        if (settings.backupsDir && settings.backupsDir.includes('.savesync')) {
+          settings.backupsDir = settings.backupsDir.replace('.savesync', '.syncsave');
+        }
+        if (settings.syncBackupsDir && settings.syncBackupsDir.includes('.savesync')) {
+          settings.syncBackupsDir = settings.syncBackupsDir.replace('.savesync', '.syncsave');
+        }
+
+        // Auto-migrate zipPaths for all snapshots of all games and branches
+        const games = this.data.games || {};
+        for (const gameId in games) {
+          const game = games[gameId];
+          for (const branchName in game.branches) {
+            const branch = game.branches[branchName];
+            if (branch.snapshots) {
+              branch.snapshots.forEach(snap => {
+                if (snap.zipPath && snap.zipPath.includes('.savesync')) {
+                  snap.zipPath = snap.zipPath.replace('.savesync', '.syncsave');
+                }
+              });
+            }
+          }
+        }
+
         // Fill in missing default structures if database is older
         this.data.settings = { ...defaultState.settings, ...this.data.settings };
         if (!this.data.settings.nodeId) {
           this.data.settings.nodeId = `node_${crypto.randomUUID().replace(/-/g, '')}`;
         }
-        this.data.games = this.data.games || {};
+        this.data.games = games;
         this.data.peers = this.data.peers || {};
         this.save();
       } else {

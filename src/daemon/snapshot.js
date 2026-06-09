@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import AdmZip from 'adm-zip';
 import db from './db.js';
+import { uploadToCloud } from './cloud.js';
 
 /**
  * Ensures a directory exists.
@@ -48,7 +49,7 @@ function zipDirectory(sourceDir, outPath) {
 /**
  * Unzips a snapshot to a directory or restores it as a single file.
  */
-function unzipDirectory(zipPath, targetDir) {
+export function unzipDirectory(zipPath, targetDir) {
   if (!fs.existsSync(zipPath)) {
     throw new Error(`Zip archive not found: ${zipPath}`);
   }
@@ -162,6 +163,13 @@ export function createSnapshot(gameId, comment = '', isSystemAuto = false) {
   db.updateGame(gameId, { branches });
 
   console.log(`[Snapshot] Created "${snapshotId}" for game "${game.name}" on branch "${game.activeBranch}" (${(sizeBytes / 1024).toFixed(1)} KB)`);
+  
+  // Trigger Cloud Sync in the background with a remote filename that encodes game metadata
+  const remoteFileName = `${gameId}__${game.activeBranch}__${zipName}`;
+  uploadToCloud(zipPath, remoteFileName).catch((err) => {
+    console.error('[Snapshot Cloud Hook] Background upload error:', err.message);
+  });
+
   return snapshotMetadata;
 }
 

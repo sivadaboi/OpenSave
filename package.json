@@ -1,7 +1,11 @@
 {
   "name": "syncsave",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Universal P2P game save synchronizer",
+  "author": {
+    "name": "Siva Prakash",
+    "email": "sivadaboi@gmail.com"
+  },
   "main": "src/main.js",
   "type": "module",
   "bin": {
@@ -14,7 +18,7 @@
     "dist:app": "electron-builder --win && electron-builder --linux",
     "port:forward": "node scripts/upnp-port-forward.js 8386",
     "port:unforward": "node scripts/upnp-port-forward.js 8386 --delete",
-    "test": "node test/test-path-translation.js && node test/test-security.js && node test/test-single-file.js && node test/test-sync.js && node test/test-qol-features.js",
+    "test": "node test/test-path-translation.js && node test/test-security.js && node test/test-single-file.js && node test/test-sync.js && node test/test-qol-features.js && node test/test-startup-errors.js && node test/test-linux-autostart.js && node test/test-cloud-sync.js && node test/test-oauth-flows.js && node test/test-cloud-explorer.js && node test/test-comprehensive-e2e.js",
     "test:wan": "node test/test-wan-relay.js",
     "deploy:relay": "echo 'Push to GitHub then go to https://render.com/deploy and connect your repo. render.yaml handles the rest.'"
   },

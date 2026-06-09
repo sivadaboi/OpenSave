@@ -245,6 +245,36 @@ app.post('/api/settings', (req, res) => {
       }
     }
 
+    if (req.body.cloudSync !== undefined && typeof req.body.cloudSync === 'object') {
+      const currentCloudSync = db.getSettings().cloudSync || {};
+      const newCloudSync = req.body.cloudSync;
+      
+      updateData.cloudSync = {
+        ...currentCloudSync,
+        enabled: newCloudSync.enabled !== undefined ? !!newCloudSync.enabled : currentCloudSync.enabled,
+        provider: newCloudSync.provider !== undefined ? String(newCloudSync.provider) : currentCloudSync.provider,
+        url: newCloudSync.url !== undefined ? String(newCloudSync.url) : currentCloudSync.url,
+        username: newCloudSync.username !== undefined ? String(newCloudSync.username) : currentCloudSync.username,
+        password: newCloudSync.password !== undefined ? String(newCloudSync.password) : currentCloudSync.password,
+        headers: newCloudSync.headers !== undefined ? String(newCloudSync.headers) : currentCloudSync.headers,
+        folderId: newCloudSync.folderId !== undefined ? String(newCloudSync.folderId) : currentCloudSync.folderId,
+      };
+
+      if (newCloudSync.customClientIds && typeof newCloudSync.customClientIds === 'object') {
+        updateData.cloudSync.customClientIds = {
+          ...(currentCloudSync.customClientIds || {}),
+          ...newCloudSync.customClientIds
+        };
+      }
+
+      if (newCloudSync.tokens && typeof newCloudSync.tokens === 'object') {
+        updateData.cloudSync.tokens = {
+          ...(currentCloudSync.tokens || {}),
+          ...newCloudSync.tokens
+        };
+      }
+    }
+
     const updated = db.updateSettings(updateData);
     const settings = db.getSettings();
     
@@ -277,6 +307,78 @@ app.post('/api/settings', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Start cloud OAuth login flow (pops up the BrowserWindow login dialog)
+app.post('/api/auth/start', async (req, res) => {
+  const { provider } = req.body;
+  if (!provider) return res.status(400).json({ error: 'Provider is required.' });
+
+  try {
+    const { generatePKCE, getAuthUrl, exchangeAuthCode } = await import('./cloud-auth.js');
+    const { verifier, challenge } = generatePKCE();
+    const authUrl = getAuthUrl(provider, challenge);
+
+    if (global.openAuthWindow) {
+      const code = await global.openAuthWindow(authUrl, 'http://localhost/callback');
+      const tokenData = await exchangeAuthCode(provider, code, verifier);
+
+      const settings = db.getSettings();
+      db.updateSettings({
+        cloudSync: {
+          ...settings.cloudSync,
+          enabled: true,
+          provider: provider,
+          tokens: {
+            accessToken: tokenData.accessToken,
+            refreshToken: tokenData.refreshToken,
+            expiryTime: tokenData.expiryTime,
+            userEmail: tokenData.userEmail
+          }
+        }
+      });
+
+      // Broadcast configuration updates to all dashboard clients
+      broadcast('init', {
+        settings: db.getSettings(),
+        games: db.getGames(),
+        peers: db.getPeers()
+      });
+
+      res.json({ success: true, email: tokenData.userEmail });
+    } else {
+      res.status(400).json({ error: 'OAuth login window requires the desktop application shell.' });
+    }
+  } catch (err) {
+    console.error('[OAuth API Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Disconnect authenticated cloud service
+app.post('/api/auth/disconnect', (req, res) => {
+  const settings = db.getSettings();
+  db.updateSettings({
+    cloudSync: {
+      ...settings.cloudSync,
+      enabled: false,
+      tokens: {
+        accessToken: '',
+        refreshToken: '',
+        expiryTime: 0,
+        userEmail: ''
+      }
+    }
+  });
+
+  // Broadcast configuration updates to all dashboard clients
+  broadcast('init', {
+    settings: db.getSettings(),
+    games: db.getGames(),
+    peers: db.getPeers()
+  });
+
+  res.json({ success: true });
 });
 
 // Scan installed emulator / repack game save directories
@@ -520,6 +622,171 @@ app.post('/api/games/:gameId/rollback', (req, res) => {
     broadcast('games-update', db.getGames());
     res.json({ success: true, restored: snap });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET list of snapshots from the cloud for a game
+app.get('/api/cloud/snapshots/:gameId', async (req, res) => {
+  const { gameId } = req.params;
+  const game = db.getGame(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+
+  try {
+    const { listCloudFiles } = await import('./cloud.js');
+    const remoteFiles = await listCloudFiles();
+
+    // Filter and parse prefixed filenames: ${gameId}__${branch}__${snapshotId}.zip
+    const prefix = `${gameId}__`;
+    const snapshots = remoteFiles
+      .filter(f => f.name.startsWith(prefix) && f.name.endsWith('.zip'))
+      .map(f => {
+        const rest = f.name.substring(prefix.length);
+        const parts = rest.split('__');
+        if (parts.length < 2) return null; // malformed remote name
+        
+        const branch = parts[0];
+        const snapshotId = parts[1].replace('.zip', '');
+        
+        let timestamp = f.createdTime;
+        const timestampMs = parseInt(snapshotId.replace('snap_', ''), 10);
+        if (!isNaN(timestampMs)) {
+          timestamp = new Date(timestampMs).toISOString();
+        }
+
+        return {
+          id: snapshotId,
+          branch,
+          timestamp,
+          sizeBytes: f.sizeBytes,
+          remoteName: f.name
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    res.json({ snapshots });
+  } catch (err) {
+    console.error('[Cloud List API Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST restore snapshot from the cloud
+app.post('/api/cloud/restore/:gameId', async (req, res) => {
+  const { gameId } = req.params;
+  const { remoteName, snapshotId } = req.body;
+
+  if (!remoteName || !snapshotId) {
+    return res.status(400).json({ error: 'remoteName and snapshotId are required.' });
+  }
+
+  const game = db.getGame(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+
+  try {
+    const settings = db.getSettings();
+    
+    // Parse remoteName: ${gameId}__${branch}__${snapshotId}.zip
+    const prefix = `${gameId}__`;
+    const rest = remoteName.substring(prefix.length);
+    const parts = rest.split('__');
+    if (parts.length < 2) {
+      return res.status(400).json({ error: 'Malformed remote snapshot name.' });
+    }
+    const branch = parts[0];
+
+    const gameBackupDir = path.join(settings.backupsDir, gameId, branch);
+    const localZipPath = path.join(gameBackupDir, `${snapshotId}.zip`);
+
+    // Ensure directory exists
+    if (!fs.existsSync(gameBackupDir)) {
+      fs.mkdirSync(gameBackupDir, { recursive: true });
+    }
+
+    // 1. Download file from cloud if it doesn't exist locally
+    if (!fs.existsSync(localZipPath)) {
+      const { downloadFromCloud } = await import('./cloud.js');
+      await downloadFromCloud(remoteName, localZipPath);
+
+      // 2. Add metadata to local db
+      const stats = fs.statSync(localZipPath);
+      const sizeBytes = stats.size;
+      
+      let timestamp = new Date().toISOString();
+      const timestampMs = parseInt(snapshotId.replace('snap_', ''), 10);
+      if (!isNaN(timestampMs)) {
+        timestamp = new Date(timestampMs).toISOString();
+      }
+
+      const snapshotMetadata = {
+        id: snapshotId,
+        timestamp,
+        comment: `Cloud restore: ${remoteName}`,
+        isSystemAuto: false,
+        zipPath: localZipPath,
+        sizeBytes,
+        branch
+      };
+
+      const branches = game.branches || {};
+      if (!branches[branch]) {
+        branches[branch] = { name: branch, snapshots: [] };
+      }
+      const exists = branches[branch].snapshots.some(s => s.id === snapshotId);
+      if (!exists) {
+        branches[branch].snapshots.push(snapshotMetadata);
+        db.updateGame(gameId, { branches });
+      }
+    }
+
+    // 3. Perform local restore (which handles safety snapshots and unzipping)
+    const snap = restoreSnapshot(gameId, snapshotId);
+
+    // Broadcast updates
+    broadcast('games-update', db.getGames());
+    
+    res.json({ success: true, restored: snap });
+  } catch (err) {
+    console.error('[Cloud Restore API Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST upload all local snapshots of a game's active branch to the cloud
+app.post('/api/cloud/sync-local/:gameId', async (req, res) => {
+  const { gameId } = req.params;
+  const game = db.getGame(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found.' });
+
+  try {
+    const { listCloudFiles, uploadToCloud } = await import('./cloud.js');
+    
+    // Get list of existing remote files to prevent double uploads
+    let remoteFiles = [];
+    try {
+      remoteFiles = await listCloudFiles();
+    } catch (e) {
+      console.warn('[Cloud Sync Local] Failed to list remote files, assuming empty:', e.message);
+    }
+    const remoteFileNames = new Set(remoteFiles.map(f => f.name));
+
+    // Get local snapshots for active branch
+    const branch = game.activeBranch;
+    const snapshots = game.branches?.[branch]?.snapshots || [];
+
+    let uploadCount = 0;
+    for (const snap of snapshots) {
+      const remoteFileName = `${gameId}__${branch}__${snap.id}.zip`;
+      if (!remoteFileNames.has(remoteFileName) && fs.existsSync(snap.zipPath)) {
+        await uploadToCloud(snap.zipPath, remoteFileName);
+        uploadCount++;
+      }
+    }
+
+    res.json({ success: true, uploaded: uploadCount });
+  } catch (err) {
+    console.error('[Cloud Sync Local API Error]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -908,7 +1175,8 @@ app.get('/api/peers', (req, res) => {
     paired: db.getPeers(),
     discovered: p2pEngine.getDiscoveredPeers(),
     requests: p2pEngine.getPairingRequests(),
-    wanRoom: p2pEngine.getWanRoomStatus()
+    wanRoom: p2pEngine.getWanRoomStatus(),
+    activeConflicts: p2pEngine.activeConflicts
   });
 });
 

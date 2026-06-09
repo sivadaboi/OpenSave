@@ -88,6 +88,26 @@ const settingsSyncBackupsDir    = document.getElementById('settings-sync-backups
 const settingsAutoDeleteBackups = document.getElementById('settings-auto-delete-backups');
 const settingsAutoDeleteDays    = document.getElementById('settings-auto-delete-days');
 const autoDeleteDaysContainer   = document.getElementById('auto-delete-days-container');
+const settingsCloudEnabled      = document.getElementById('settings-cloud-enabled');
+const cloudSyncFields           = document.getElementById('cloud-sync-fields');
+const cloudOauthDetails        = document.getElementById('cloud-oauth-details');
+const cloudOauthTitle          = document.getElementById('cloud-oauth-title');
+const cloudOauthEmail          = document.getElementById('cloud-oauth-email');
+const btnCloudConnect          = document.getElementById('btn-cloud-connect');
+const btnCloudDisconnect       = document.getElementById('btn-cloud-disconnect');
+
+const cloudFormLocal           = document.getElementById('cloud-form-local');
+const cloudFormWebdav          = document.getElementById('cloud-form-webdav');
+const cloudFormWebhook         = document.getElementById('cloud-form-webhook');
+
+const settingsCloudLocalDir     = document.getElementById('settings-cloud-local-dir');
+const settingsCloudWebdavUrl    = document.getElementById('settings-cloud-webdav-url');
+const settingsCloudWebdavUsername = document.getElementById('settings-cloud-webdav-username');
+const settingsCloudWebdavPassword = document.getElementById('settings-cloud-webdav-password');
+const settingsCloudWebhookUrl   = document.getElementById('settings-cloud-webhook-url');
+const settingsCloudWebhookHeaders = document.getElementById('settings-cloud-webhook-headers');
+
+let selectedCloudProvider = 'local';
 const pathTranslationsList = document.getElementById('path-translations-list');
 const formAddTranslation = document.getElementById('form-add-translation');
 const translationFromInput = document.getElementById('translation-from-input');
@@ -106,6 +126,14 @@ const btnEmptyAddGame    = document.getElementById('btn-empty-add-game');
 const createBranchModal  = document.getElementById('create-branch-modal');
 const rollbackConfirmModal = document.getElementById('rollback-confirm-modal');
 const snapshotCommentModal = document.getElementById('snapshot-comment-modal');
+const cloudExplorerModal = document.getElementById('cloud-explorer-modal');
+const btnDrawerCloudExplorer = document.getElementById('btn-drawer-cloud-explorer');
+const btnCloseCloudExplorer = document.getElementById('btn-close-cloud-explorer');
+const cloudExplorerTableBody = document.getElementById('cloud-explorer-table-body');
+const cloudExplorerLoading = document.getElementById('cloud-explorer-loading');
+const cloudExplorerEmpty = document.getElementById('cloud-explorer-empty');
+const cloudExplorerContent = document.getElementById('cloud-explorer-content');
+const btnCloudSyncLocal = document.getElementById('btn-cloud-sync-local');
 
 const gameDetailsDrawer  = document.getElementById('game-details-drawer');
 const btnCloseDrawer     = document.getElementById('btn-close-drawer');
@@ -216,6 +244,27 @@ function navigateTo(viewId) {
     }
     if (settingsAutoDeleteDays) settingsAutoDeleteDays.value = appState.settings.autoDeleteDays || '30';
     if (settingsAutoSyncOnTrack) settingsAutoSyncOnTrack.checked = appState.settings.autoSyncOnTrack !== false;
+    
+    if (settingsCloudEnabled) {
+      const cs = appState.settings.cloudSync || {};
+      settingsCloudEnabled.checked = !!cs.enabled;
+      selectedCloudProvider = cs.provider || 'local';
+      
+      if (cs.provider === 'local') {
+        if (settingsCloudLocalDir) settingsCloudLocalDir.value = cs.url || '';
+      } else if (cs.provider === 'webdav') {
+        if (settingsCloudWebdavUrl) settingsCloudWebdavUrl.value = cs.url || '';
+        if (settingsCloudWebdavUsername) settingsCloudWebdavUsername.value = cs.username || '';
+        if (settingsCloudWebdavPassword) settingsCloudWebdavPassword.value = cs.password || '';
+      } else if (cs.provider === 'webhook') {
+        if (settingsCloudWebhookUrl) settingsCloudWebhookUrl.value = cs.url || '';
+        if (settingsCloudWebhookHeaders) settingsCloudWebhookHeaders.value = cs.headers || '{}';
+      }
+
+      updateProviderCardsStatuses();
+      toggleCloudSyncFields();
+    }
+
     localCustomScanPaths = [...(appState.settings.customScanPaths || [])];
     renderCustomScanPaths();
     localPathTranslations = [...(appState.settings.pathTranslations || [])];
@@ -420,6 +469,45 @@ function setupEventListeners() {
     });
   });
 
+  // Cloud Backup Explorer Modal
+  btnDrawerCloudExplorer?.addEventListener('click', () => {
+    const hasCloud = appState.settings.cloudSync?.enabled;
+    if (!hasCloud) {
+      showToast('Cloud Backup is not enabled. Configure it in Settings first.', 'warning');
+      return;
+    }
+    openCloudExplorer(activeGameId);
+  });
+
+  btnCloseCloudExplorer?.addEventListener('click', () => {
+    closeModal(cloudExplorerModal);
+  });
+
+  btnCloudSyncLocal?.addEventListener('click', async () => {
+    if (!activeGameId) return;
+    
+    btnCloudSyncLocal.disabled = true;
+    const origText = btnCloudSyncLocal.textContent;
+    btnCloudSyncLocal.textContent = 'Syncing...';
+
+    try {
+      const res = await fetch(`/api/cloud/sync-local/${activeGameId}`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(`Successfully uploaded ${data.uploaded} snapshots to the cloud!`, 'success');
+        openCloudExplorer(activeGameId);
+      } else {
+        const err = await res.json();
+        showToast(`Sync failed: ${err.error}`, 'error');
+      }
+    } catch (err) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      btnCloudSyncLocal.disabled = false;
+      btnCloudSyncLocal.textContent = origText;
+    }
+  });
+
   // Browse Folder (Add Game)
   btnBrowseFolder.addEventListener('click', async () => {
     btnBrowseFolder.disabled = true;
@@ -452,6 +540,31 @@ function setupEventListeners() {
     closeModal(addGameModal);
   });
 
+
+  // Settings tab switching
+  document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const targetTab = btn.getAttribute('data-settings-tab');
+      document.querySelectorAll('.settings-tab-content').forEach(content => {
+        content.classList.toggle('hidden', content.id !== `settings-tab-${targetTab}`);
+      });
+    });
+  });
+
+  // WAN Sync tab switching
+  document.querySelectorAll('.wan-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.wan-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const targetTab = btn.getAttribute('data-wan-tab');
+      document.querySelectorAll('.wan-tab-content').forEach(content => {
+        content.classList.toggle('hidden', content.id !== `wan-tab-${targetTab}`);
+      });
+    });
+  });
+
   // Settings Submit
   formUpdateSettings.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -466,9 +579,40 @@ function setupEventListeners() {
     const autoDeleteBackups = settingsAutoDeleteBackups ? settingsAutoDeleteBackups.checked : false;
     const autoDeleteDays = settingsAutoDeleteDays ? parseInt(settingsAutoDeleteDays.value, 10) || 30 : 30;
     const autoSyncOnTrack = settingsAutoSyncOnTrack ? settingsAutoSyncOnTrack.checked : true;
+
+    // Collect current custom client ID for this provider (if OAuth)
+    const isOAuthProvider = ['google_drive', 'onedrive', 'dropbox'].includes(selectedCloudProvider);
+    const existingCustomIds = appState.settings.cloudSync?.customClientIds || {};
+    const customClientIdInput = document.getElementById('settings-cloud-client-id');
+    const currentCustomClientId = (isOAuthProvider && customClientIdInput) ? customClientIdInput.value.trim() : '';
+    const mergedCustomIds = {
+      ...existingCustomIds,
+      ...(isOAuthProvider ? { [selectedCloudProvider]: currentCustomClientId } : {})
+    };
+
+    const cloudSync = {
+      enabled: settingsCloudEnabled ? settingsCloudEnabled.checked : false,
+      provider: selectedCloudProvider,
+      url: selectedCloudProvider === 'local'
+        ? (settingsCloudLocalDir ? settingsCloudLocalDir.value.trim() : '')
+        : selectedCloudProvider === 'webdav'
+          ? (settingsCloudWebdavUrl ? settingsCloudWebdavUrl.value.trim() : '')
+          : selectedCloudProvider === 'webhook'
+            ? (settingsCloudWebhookUrl ? settingsCloudWebhookUrl.value.trim() : '')
+            : '',
+      username: selectedCloudProvider === 'webdav' && settingsCloudWebdavUsername ? settingsCloudWebdavUsername.value.trim() : '',
+      password: selectedCloudProvider === 'webdav' && settingsCloudWebdavPassword ? settingsCloudWebdavPassword.value : '',
+      headers: selectedCloudProvider === 'webhook' && settingsCloudWebhookHeaders ? settingsCloudWebhookHeaders.value.trim() : '{}',
+      customClientIds: mergedCustomIds,
+      tokens: appState.settings.cloudSync?.tokens || {}
+    };
+
+    const uiMode = 'modern';
+
     await saveSettings({
       deviceName,
       deviceType,
+      uiMode,
       relayUrl,
       syncCode: appState.settings.syncCode,
       hostRelay,
@@ -480,7 +624,8 @@ function setupEventListeners() {
       autoDeleteDays,
       autoSyncOnTrack,
       customScanPaths: localCustomScanPaths,
-      pathTranslations: localPathTranslations
+      pathTranslations: localPathTranslations,
+      cloudSync
     });
     await loadRelayIps();
   });
@@ -490,6 +635,86 @@ function setupEventListeners() {
 
   // Auto-Delete Backup Toggle
   settingsAutoDeleteBackups?.addEventListener('change', () => toggleAutoDeleteDays(settingsAutoDeleteBackups.checked));
+
+  // Cloud Sync Toggle
+  settingsCloudEnabled?.addEventListener('change', () => toggleCloudSyncFields());
+
+  // Cloud Storage Provider Card Click — OAuth cards immediately launch sign-in,
+  // already-connected OAuth cards do nothing, non-OAuth cards just select the provider.
+  document.querySelectorAll('.provider-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const provider = card.getAttribute('data-provider');
+      if (!provider) return;
+
+      const isOAuth = ['google_drive', 'onedrive', 'dropbox'].includes(provider);
+      if (!isOAuth) {
+        // Local / WebDAV / Webhook — just select
+        selectCloudProvider(provider);
+        return;
+      }
+
+      // OAuth card — if already connected, do nothing
+      const cs = appState.settings.cloudSync || {};
+      if (cs.provider === provider && cs.tokens?.userEmail && cs.enabled) {
+        return; // already connected, inert
+      }
+
+      // Not yet connected — trigger sign-in immediately
+      selectCloudProvider(provider);
+      triggerOAuthConnect(provider);
+    });
+  });
+
+  // Cloud Connect / Disconnect Buttons
+  // The connect button is now kept as a fallback for keyboard/accessibility users.
+  document.getElementById('btn-cloud-connect')?.addEventListener('click', () => {
+    triggerOAuthConnect(selectedCloudProvider);
+  });
+
+  document.getElementById('btn-cloud-disconnect')?.addEventListener('click', async () => {
+    const origText = btnCloudDisconnect.textContent;
+    btnCloudDisconnect.disabled = true;
+    btnCloudDisconnect.textContent = 'Disconnecting...';
+    try {
+      const res = await fetch('/api/auth/disconnect', { method: 'POST' });
+      if (!res.ok) {
+        throw new Error('Failed to disconnect service.');
+      }
+      showToast(`Disconnected ${selectedCloudProvider.replace('_', ' ')} successfully.`, 'info');
+      
+      // Update local state immediately
+      appState.settings.cloudSync = {
+        ...appState.settings.cloudSync,
+        enabled: false,
+        tokens: {
+          accessToken: '',
+          refreshToken: '',
+          expiryTime: 0,
+          userEmail: ''
+        }
+      };
+      updateProviderCardsStatuses();
+      selectCloudProvider(selectedCloudProvider);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      btnCloudDisconnect.disabled = false;
+      btnCloudDisconnect.textContent = origText;
+    }
+  });
+
+  // Browse Button for local cloud backup directory
+  document.getElementById('btn-browse-cloud-local-dir')?.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/browse-directory');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.path && settingsCloudLocalDir) {
+          settingsCloudLocalDir.value = data.path;
+        }
+      }
+    } catch (e) {}
+  });
 
   // Browse for Sync Backup Dir
   document.getElementById('btn-browse-sync-backups-dir')?.addEventListener('click', async () => {
@@ -1174,6 +1399,222 @@ function toggleAutoDeleteDays(enabled) {
   autoDeleteDaysContainer?.classList.toggle('hidden', !enabled);
 }
 
+function toggleCloudSyncFields() {
+  if (!settingsCloudEnabled || !cloudSyncFields) return;
+  const enabled = settingsCloudEnabled.checked;
+  cloudSyncFields.classList.toggle('hidden', !enabled);
+  if (enabled) {
+    selectCloudProvider(selectedCloudProvider);
+  }
+}
+
+/**
+ * Triggers the OAuth sign-in popup for the given cloud provider.
+ * Shows a loading state on the card itself during the auth flow.
+ */
+async function triggerOAuthConnect(provider) {
+  const card = document.querySelector(`.provider-card[data-provider="${provider}"]`);
+  const statusEl = card?.querySelector('.provider-status');
+  const iconEl = card?.querySelector('.provider-icon');
+
+  // Show loading state on card
+  if (card) card.style.pointerEvents = 'none';
+  const origStatusText = statusEl?.textContent || '';
+  const origIconHtml = iconEl?.innerHTML || '';
+  if (statusEl) statusEl.textContent = 'Connecting...';
+  if (iconEl) iconEl.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite;opacity:0.6"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+
+  try {
+    const res = await fetch('/api/auth/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Authentication failed.');
+
+    const providerLabel = provider === 'google_drive' ? 'Google Drive' : provider === 'onedrive' ? 'OneDrive' : 'Dropbox';
+    showToast(`✅ Connected to ${providerLabel}!`, 'success');
+
+    // Restore original card icon before updating statuses
+    if (iconEl) iconEl.innerHTML = origIconHtml;
+
+    // Update local state immediately so card turns green without a page reload
+    appState.settings.cloudSync = {
+      ...appState.settings.cloudSync,
+      enabled: true,
+      provider,
+      tokens: { userEmail: data.email }
+    };
+    updateProviderCardsStatuses();
+    selectCloudProvider(provider);
+  } catch (err) {
+    showToast(err.message, 'error');
+    // Restore original card appearance on failure
+    if (statusEl) statusEl.textContent = origStatusText;
+    if (iconEl) iconEl.innerHTML = origIconHtml;
+  } finally {
+    if (card) card.style.pointerEvents = '';
+  }
+}
+
+
+function selectCloudProvider(provider) {
+  selectedCloudProvider = provider;
+
+  const isOAuth = provider === 'google_drive' || provider === 'onedrive' || provider === 'dropbox';
+
+  // Only highlight non-OAuth cards with the cyan .active ring.
+  // OAuth cards use .connected (green) when signed in, or just look clickable when not.
+  document.querySelectorAll('.provider-card').forEach(card => {
+    const p = card.getAttribute('data-provider');
+    card.classList.toggle('active', !isOAuth && p === provider);
+  });
+
+  // Toggle visibility of configuration sub-forms
+  cloudFormLocal?.classList.toggle('hidden', provider !== 'local');
+  cloudFormWebdav?.classList.toggle('hidden', provider !== 'webdav');
+  cloudFormWebhook?.classList.toggle('hidden', provider !== 'webhook');
+
+  // Show the custom OAuth config section for OAuth providers
+  const cloudOauthConfig = document.getElementById('cloud-oauth-config');
+  cloudOauthConfig?.classList.toggle('hidden', !isOAuth);
+
+  if (isOAuth) {
+    let providerLabel = provider;
+    if (provider === 'google_drive') providerLabel = 'Google Drive';
+    else if (provider === 'onedrive') providerLabel = 'OneDrive';
+    else if (provider === 'dropbox') providerLabel = 'Dropbox';
+
+    // Update label in custom credentials section
+    const lblProviderName = document.getElementById('lbl-custom-provider-name');
+    if (lblProviderName) lblProviderName.textContent = providerLabel;
+
+    // Load any saved custom client ID for this provider
+    const cs = appState.settings.cloudSync || {};
+    const customIds = cs.customClientIds || {};
+    const customClientIdInput = document.getElementById('settings-cloud-client-id');
+    if (customClientIdInput) {
+      customClientIdInput.value = customIds[provider] || '';
+      customClientIdInput.placeholder = provider === 'onedrive'
+        ? 'Required: Enter your Azure App Client ID'
+        : 'Leave blank to use SyncSave built-in credentials';
+    }
+
+    // Connected status bar: only show if this provider is the active, connected one
+    const hasActiveCredentials = cs.provider === provider && cs.tokens?.userEmail && cs.enabled;
+    cloudOauthDetails?.classList.toggle('hidden', !hasActiveCredentials);
+
+    if (hasActiveCredentials) {
+      if (cloudOauthTitle) cloudOauthTitle.textContent = `${providerLabel} Connected`;
+      if (cloudOauthEmail) cloudOauthEmail.textContent = cs.tokens.userEmail;
+    }
+  } else {
+    // Hide the connected status bar for non-OAuth providers
+    cloudOauthDetails?.classList.add('hidden');
+  }
+}
+
+function updateProviderCardsStatuses() {
+  const cs = appState.settings.cloudSync || {};
+  
+  // Clean classes from all cards
+  const cards = document.querySelectorAll('.provider-card');
+  cards.forEach(card => {
+    card.classList.remove('connected');
+    const badge = card.querySelector('.provider-badge');
+    if (badge) badge.remove();
+  });
+
+  // Update status labels
+  // Google Drive
+  const googleStatus = document.getElementById('status-google');
+  if (googleStatus) {
+    if (cs.provider === 'google_drive' && cs.tokens?.userEmail && cs.enabled) {
+      googleStatus.textContent = cs.tokens.userEmail;
+      const card = document.getElementById('card-provider-google');
+      card?.classList.add('connected');
+      addCardBadge(card, 'ON');
+    } else {
+      googleStatus.textContent = 'Click to sign in';
+    }
+  }
+
+  // OneDrive
+  const onedriveStatus = document.getElementById('status-onedrive');
+  if (onedriveStatus) {
+    if (cs.provider === 'onedrive' && cs.tokens?.userEmail && cs.enabled) {
+      onedriveStatus.textContent = cs.tokens.userEmail;
+      const card = document.getElementById('card-provider-onedrive');
+      card?.classList.add('connected');
+      addCardBadge(card, 'ON');
+    } else {
+      onedriveStatus.textContent = 'Click to sign in';
+    }
+  }
+
+  // Dropbox
+  const dropboxStatus = document.getElementById('status-dropbox');
+  if (dropboxStatus) {
+    if (cs.provider === 'dropbox' && cs.tokens?.userEmail && cs.enabled) {
+      dropboxStatus.textContent = cs.tokens.userEmail;
+      const card = document.getElementById('card-provider-dropbox');
+      card?.classList.add('connected');
+      addCardBadge(card, 'ON');
+    } else {
+      dropboxStatus.textContent = 'Click to sign in';
+    }
+  }
+
+
+  // Local Folder
+  const localStatus = document.getElementById('status-local');
+  if (localStatus) {
+    if (cs.provider === 'local' && cs.url && cs.enabled) {
+      localStatus.textContent = `Configured`;
+      const card = document.getElementById('card-provider-local');
+      card?.classList.add('connected');
+      addCardBadge(card, 'ON');
+    } else {
+      localStatus.textContent = cs.url ? 'Not enabled' : 'Not configured';
+    }
+  }
+
+  // WebDAV
+  const webdavStatus = document.getElementById('status-webdav');
+  if (webdavStatus) {
+    if (cs.provider === 'webdav' && cs.url && cs.enabled) {
+      webdavStatus.textContent = `Configured`;
+      const card = document.getElementById('card-provider-webdav');
+      card?.classList.add('connected');
+      addCardBadge(card, 'ON');
+    } else {
+      webdavStatus.textContent = cs.url ? 'Not enabled' : 'Not configured';
+    }
+  }
+
+  // Webhook
+  const webhookStatus = document.getElementById('status-webhook');
+  if (webhookStatus) {
+    if (cs.provider === 'webhook' && cs.url && cs.enabled) {
+      webhookStatus.textContent = `Configured`;
+      const card = document.getElementById('card-provider-webhook');
+      card?.classList.add('connected');
+      addCardBadge(card, 'ON');
+    } else {
+      webhookStatus.textContent = cs.url ? 'Not enabled' : 'Not configured';
+    }
+  }
+}
+
+function addCardBadge(card, text) {
+  if (!card) return;
+  const badge = document.createElement('div');
+  badge.className = 'provider-badge';
+  badge.textContent = text;
+  card.appendChild(badge);
+}
+
 function encodePin(ip, port) {
   if (!ip) return null;
   const parts = ip.split('.').map(Number);
@@ -1335,6 +1776,9 @@ async function loadRelayHealth() {
 // RENDERING
 // ============================================================
 function renderAll() {
+  // Apply UI mode layout styling and shunts
+  applyUiMode();
+
   // Device name
   if (localDeviceName) localDeviceName.textContent = appState.settings.deviceName || 'Local PC';
   syncWanControls();
@@ -1360,6 +1804,41 @@ function renderAll() {
   if (activeGameId) renderDrawerDetails();
   updateConsoleDevices();
 }
+
+function applyUiMode() {
+  const body = document.body;
+  
+  // 1. Apply body class
+  body.classList.remove('layout-classic');
+  body.classList.add('layout-modern');
+  
+  // 2. Move drawer controls DOM node
+  const drawerHeader = document.querySelector('.drawer-header');
+  const drawerControls = document.querySelector('.drawer-controls');
+  const timelineTree = document.getElementById('timeline-tree');
+  
+  if (drawerHeader && drawerControls && timelineTree) {
+    // Make sure drawer-control-dashboard container exists
+    let dashboard = document.getElementById('drawer-control-dashboard');
+    if (!dashboard) {
+      dashboard = document.createElement('div');
+      dashboard.id = 'drawer-control-dashboard';
+      dashboard.className = 'drawer-control-dashboard';
+      // Add a title header
+      const header = document.createElement('h4');
+      header.textContent = 'Control Panel';
+      dashboard.appendChild(header);
+      
+      // Insert it right before timelineTree inside its parent
+      timelineTree.parentNode.insertBefore(dashboard, timelineTree);
+    }
+    // Move controls inside dashboard if it isn't already
+    if (drawerControls.parentNode !== dashboard) {
+      dashboard.appendChild(drawerControls);
+    }
+  }
+}
+
 
 function renderGames() {
   const gamesList = Object.values(appState.games);
@@ -1413,6 +1892,8 @@ function renderGames() {
       indicatorColor = 'var(--orange)';
     }
 
+    const canLaunch = !!(game.appId || game.exePath);
+
     card.innerHTML = `
       ${coverHtml}
       <div class="game-card-body">
@@ -1428,10 +1909,71 @@ function renderGames() {
           </span>
         </div>
       </div>
+      <!-- Hover quick-action buttons -->
+      <div class="game-card-hover-actions">
+        <button class="card-quick-action btn-quick-launch ${canLaunch ? '' : 'disabled'}" data-game-id="${game.id}" title="${canLaunch ? 'Launch Game' : 'No launch executable configured'}" ${canLaunch ? '' : 'disabled'}>🎮</button>
+        <button class="card-quick-action btn-quick-sync" data-game-id="${game.id}" title="Sync P2P Now">⚡</button>
+        <button class="card-quick-action btn-quick-snapshot" data-game-id="${game.id}" title="Save Snapshot">📸</button>
+        <button class="card-quick-action btn-quick-details" data-game-id="${game.id}" title="View Timeline & Settings">ℹ️</button>
+      </div>
     `;
-    card.addEventListener('click', () => openDrawer(game.id));
+
+    card.addEventListener('click', (e) => {
+      const btn = e.target.closest('.card-quick-action');
+      if (btn) {
+        e.stopPropagation();
+        e.preventDefault();
+        const gameId = btn.getAttribute('data-game-id');
+        if (btn.classList.contains('btn-quick-launch')) {
+          triggerGameLaunch(gameId);
+        } else if (btn.classList.contains('btn-quick-sync')) {
+          triggerGameSync(gameId);
+        } else if (btn.classList.contains('btn-quick-snapshot')) {
+          triggerGameSnapshot(gameId);
+        } else if (btn.classList.contains('btn-quick-details')) {
+          openDrawer(gameId);
+        }
+        return;
+      }
+      openDrawer(game.id);
+    });
     gamesGrid.appendChild(card);
   });
+}
+
+// QUICK-ACTION HELPERS FOR GAME CARDS
+async function triggerGameLaunch(gameId) {
+  try {
+    const res = await fetch(`/api/games/${gameId}/launch`, { method: 'POST' });
+    if (res.ok) {
+      showToast('Game launch requested.', 'success');
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'Launch failed', 'error');
+    }
+  } catch (err) {
+    showToast('Launch error: ' + err.message, 'error');
+  }
+}
+
+async function triggerGameSync(gameId) {
+  try {
+    showToast('Sync started...', 'info');
+    const res = await fetch(`/api/games/${gameId}/sync`, { method: 'POST' });
+    if (res.ok) {
+      showToast('Sync triggered successfully.', 'success');
+    } else {
+      const err = await res.json();
+      showToast(`Sync failed: ${err.error}`, 'error');
+    }
+  } catch (err) {
+    showToast('Sync error: ' + err.message, 'error');
+  }
+}
+
+function triggerGameSnapshot(gameId) {
+  activeGameId = gameId;
+  openModal(snapshotCommentModal);
 }
 
 function renderScanResults(discovered) {
@@ -1709,6 +2251,13 @@ function closeDrawer() {
 function renderDrawerDetails() {
   const game = appState.games[activeGameId];
   if (!game) { closeDrawer(); return; }
+
+  // Toggle Cloud Explorer button state
+  if (btnDrawerCloudExplorer) {
+    const hasCloud = appState.settings.cloudSync?.enabled;
+    btnDrawerCloudExplorer.classList.toggle('disabled', !hasCloud);
+    btnDrawerCloudExplorer.title = hasCloud ? 'Browse cloud backup snapshots' : 'Enable Cloud Backup in Settings to browse cloud snapshots';
+  }
 
   drawerGameName.textContent = game.name;
   drawerGamePath.textContent = game.savePath;
@@ -2226,6 +2775,90 @@ window.restoreSnapshotFile = async (gameId, snapshotId, relPath) => {
     }
   } catch (err) {
     showToast(`Error: ${err.message}`, 'error');
+  }
+};
+
+async function openCloudExplorer(gameId) {
+  const game = appState.games[gameId];
+  if (!game) return;
+
+  document.getElementById('cloud-explorer-title').textContent = `☁️ Cloud Backup Explorer - ${game.name}`;
+  openModal(cloudExplorerModal);
+
+  // Show loading state
+  cloudExplorerLoading.classList.remove('hidden');
+  cloudExplorerEmpty.classList.add('hidden');
+  cloudExplorerContent.classList.add('hidden');
+  cloudExplorerTableBody.innerHTML = '';
+
+  try {
+    const res = await fetch(`/api/cloud/snapshots/${gameId}`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to fetch cloud snapshots.');
+    }
+    const data = await res.json();
+    const snapshots = data.snapshots || [];
+
+    cloudExplorerLoading.classList.add('hidden');
+
+    if (snapshots.length === 0) {
+      cloudExplorerEmpty.classList.remove('hidden');
+      return;
+    }
+
+    cloudExplorerContent.classList.remove('hidden');
+    snapshots.forEach(snap => {
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid var(--border)';
+      
+      const dateStr = new Date(snap.timestamp).toLocaleString();
+      const sizeStr = (snap.sizeBytes / 1024).toFixed(1) + ' KB';
+
+      tr.innerHTML = `
+        <td style="padding: 10px 14px;"><span class="badge" style="background: rgba(6,182,212,0.1); color: var(--cyan); border: 1px solid rgba(6,182,212,0.2); font-family: var(--font-mono);">${snap.branch}</span></td>
+        <td style="padding: 10px 14px; color: var(--text-2); font-family: var(--font-mono); font-size: 11px;">${dateStr}</td>
+        <td style="padding: 10px 14px; color: var(--text-3); font-family: var(--font-mono);">${sizeStr}</td>
+        <td style="padding: 10px 14px; text-align: right;">
+          <button class="btn-primary btn-sm" onclick="restoreCloudSnapshot('${gameId}', '${snap.id}', '${snap.remoteName}')">Restore</button>
+        </td>
+      `;
+      cloudExplorerTableBody.appendChild(tr);
+    });
+  } catch (err) {
+    cloudExplorerLoading.classList.add('hidden');
+    cloudExplorerTableBody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 20px; color:var(--red);">Error: ${err.message}</td></tr>`;
+    cloudExplorerContent.classList.remove('hidden');
+  }
+}
+
+window.restoreCloudSnapshot = async (gameId, snapshotId, remoteName) => {
+  if (!confirm(`Are you sure you want to download and restore cloud snapshot "${snapshotId}"?\nThis will overwrite your active save files.`)) {
+    return;
+  }
+
+  closeModal(cloudExplorerModal);
+  showToast(`Downloading and restoring cloud snapshot...`, 'info');
+
+  try {
+    const res = await fetch(`/api/cloud/restore/${gameId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remoteName, snapshotId })
+    });
+
+    if (res.ok) {
+      showToast('Successfully restored cloud snapshot!', 'success');
+      // Refresh details drawer if active
+      if (activeGameId === gameId) {
+        renderDrawerDetails();
+      }
+    } else {
+      const err = await res.json();
+      showToast(`Restore failed: ${err.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`Error restoring snapshot: ${err.message}`, 'error');
   }
 };
 
