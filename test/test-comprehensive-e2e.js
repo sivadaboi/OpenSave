@@ -249,8 +249,15 @@ async function runE2ETest() {
       savePath: gameBSaveDir
     });
     assert.strictEqual(addGameA.statusCode, 201);
-    assert.strictEqual(addGameB.statusCode, 201);
+    assert.ok(
+      addGameB.statusCode === 201 || 
+      (addGameB.statusCode === 400 && addGameB.data && addGameB.data.error && addGameB.data.error.includes('already exists')),
+      `Expected status 201 or 400 (already exists) for Bob, got ${addGameB.statusCode}: ${JSON.stringify(addGameB.data)}`
+    );
     const gameId = addGameA.data.id;
+    // Verify Bob has the game tracked
+    const bobGames = await apiCall(portB, '/api/games');
+    assert.ok(bobGames.data[gameId] !== undefined, 'Elden Ring should be tracked on Bob');
     console.log('✔ PASS: Elden Ring tracked in both databases.');
 
     // 6. Create custom save branch

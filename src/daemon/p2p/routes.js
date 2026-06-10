@@ -18,11 +18,19 @@ function requirePairedPeer(req, res, next) {
 
   // Check if the client IP matches one of our active paired peers
   const peers = db.getPeers();
-  const isPaired = Object.values(peers).some(p => p.address === clientIp || (clientIp === 'localhost' && p.address === '127.0.0.1'));
+  const matchedPeer = Object.values(peers).find(p => p.address === clientIp || (clientIp === 'localhost' && p.address === '127.0.0.1'));
   
-  if (!isPaired) {
+  if (!matchedPeer) {
     console.warn(`[P2P Guard] Blocked unauthorized request from unpaired LAN IP: ${clientIp}`);
     return res.status(401).json({ error: 'Unauthorized: Requesting peer is not paired.' });
+  }
+
+  // Mark peer as online since we received a valid request from them (with throttle to prevent redundant writes)
+  const lastSeenLimit = 10000; // 10 seconds
+  const lastSeenTime = typeof matchedPeer.lastSeen === 'string' ? new Date(matchedPeer.lastSeen).getTime() : (matchedPeer.lastSeen || 0);
+  const shouldUpdate = matchedPeer.status !== 'online' || (Date.now() - lastSeenTime > lastSeenLimit);
+  if (shouldUpdate) {
+    db.updatePeer(matchedPeer.id, { status: 'online', lastSeen: Date.now() });
   }
   
   next();
