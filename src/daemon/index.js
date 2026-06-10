@@ -205,6 +205,11 @@ app.post('/api/games/sync-all', async (req, res) => {
   }
 });
 
+// Get current settings
+app.get('/api/settings', (req, res) => {
+  res.json(db.getSettings());
+});
+
 // Update Settings (Relay server url, room syncCode, deviceName, hostRelay, relayPort, startOnBoot, speedLimit)
 app.post('/api/settings', (req, res) => {
   try {
@@ -1255,7 +1260,25 @@ app.post('/api/peers/reject', (req, res) => {
   res.json({ success: true });
 });
 
-// Remove pairing
+// Remove pairing (POST alias — for UI contexts that can't send DELETE)
+app.post('/api/peers/unpair', async (req, res) => {
+  const { peerId } = req.body;
+  if (!peerId) return res.status(400).json({ error: 'peerId is required.' });
+  try {
+    await p2pEngine.unpairPeer(peerId);
+    broadcast('peers-update', {
+      paired: db.getPeers(),
+      discovered: p2pEngine.getDiscoveredPeers(),
+      requests: p2pEngine.getPairingRequests(),
+      wanRoom: p2pEngine.getWanRoomStatus()
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Remove pairing (DELETE — canonical REST endpoint)
 app.delete('/api/peers/:peerId', async (req, res) => {
   const { peerId } = req.params;
   try {

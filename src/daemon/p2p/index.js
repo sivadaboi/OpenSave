@@ -284,14 +284,22 @@ class P2PEngine {
       fetch(`http://${request.address}:${request.port}/api/p2p/approve-confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(8000),
         body: JSON.stringify({
           peerId: localPeerId,
           deviceName: settings.deviceName,
           deviceType: settings.deviceType || 'desktop',
           port: this.localPort
         })
-      }).catch(() => {});
+      }).then(r => {
+        if (!r.ok) {
+          log('warn', `approve-confirm rejected by ${request.deviceName}`, `HTTP ${r.status} — peer may not have our handshake registered.`);
+        } else {
+          log('info', `Pairing confirmed`, `${request.deviceName} accepted our confirmation.`);
+        }
+      }).catch(err => {
+        log('warn', `approve-confirm to ${request.deviceName} failed`, err.message);
+      });
     }
 
     delete this.pairingRequests[peerId];

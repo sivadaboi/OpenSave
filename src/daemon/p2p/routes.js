@@ -45,23 +45,64 @@ export function registerExpressRoutes(app, p2pEngine) {
     const { peerId, deviceName, deviceType, port } = req.body;
     let clientIp = (req.ip || '').replace('::ffff:', '');
     if (clientIp === '::1' || clientIp === '127.0.0.1') clientIp = 'localhost';
-    
-    // Verify pairing confirmation request matches a handshake we initiated
+
+    // ── Validate this confirm matches a handshake we initiated ────────────
+    // Check 1: sentPairingRequests — set when we called /api/peers/pair
     const sentRequests = p2pEngine.sentPairingRequests || {};
-    const keyByIp = `${clientIp}:${port}`;
-    const isValid = sentRequests[peerId] || 
-                    sentRequests[clientIp] || 
-                    sentRequests[keyByIp] ||
-                    (clientIp === 'localhost' && (sentRequests['127.0.0.1'] || sentRequests[`127.0.0.1:${port}`])) ||
-                    (clientIp === '127.0.0.1' && (sentRequests['localhost'] || sentRequests[`localhost:${port}`]));
+    const GRACE_MS = 120000; // 2-minute window
+    const now = Date.now();
+
+    const keyByIp     = `${clientIp}:${port}`;
+    const sentByPeer  = sentRequests[peerId]  && (now - sentRequests[peerId])  < GRACE_MS;
+    const sentByIp    = sentRequests[clientIp] && (now - sentRequests[clientIp]) < GRACE_MS;
+    const sentByKey   = sentRequests[keyByIp]  && (now - sentRequests[keyByIp])  < GRACE_MS;
+
+    // localhost alias cross-checks (same machine testing / loopback)
+    const sentByLocalAlias =
+      (clientIp === 'localhost' && (
+        (sentRequests['127.0.0.1'] && (now - sentRequests['127.0.0.1']) < GRACE_MS) ||
+        (sentRequests[`127.0.0.1:${port}`] && (now - sentRequests[`127.0.0.1:${port}`]) < GRACE_MS)
+      )) ||
+      (clientIp === '127.0.0.1' && (
+        (sentRequests['localhost'] && (now - sentRequests['localhost']) < GRACE_MS) ||
+        (sentRequests[`localhost:${port}`] && (now - sentRequests[`localhost:${port}`]) < GRACE_MS)
+      ));
+
+    // Check 2: pairingRequests — if we have an active handshake from this peer
+    // (covers the case where they sent us a handshake AND we approved, then they
+    //  send approve-confirm back — both sides initiated simultaneously or they
+    //  replied to our handshake by approving and confirming back)
+    const hasPairingRecord = !!(p2pEngine.pairingRequests && p2pEngine.pairingRequests[peerId]);
+
+    // Check 3: already paired (idempotent re-confirm after reconnect)
+    const alreadyPaired = !!db.getPeers()[peerId];
+
+    const isValid = sentByPeer || sentByIp || sentByKey || sentByLocalAlias || hasPairingRecord || alreadyPaired;
 
     if (!isValid) {
       console.warn(`[P2P Guard] Blocked unsolicited /approve-confirm from IP: ${clientIp}, peerId: ${peerId}`);
       return res.status(400).json({ error: 'Pairing confirmation rejected: no matching handshake initiated.' });
     }
 
-    db.addPeer(peerId, deviceName, clientIp, port, deviceType || 'desktop');
+    // Clean up consumed sentPairingRequests entries to prevent stale accumulation
+    delete sentRequests[peerId];
+    delete sentRequests[clientIp];
+    delete sentRequests[keyByIp];
+
+    // Use the real client IP as peer address (not 'localhost' — that only applies on same machine)
+    const peerAddress = (clientIp === 'localhost' || clientIp === '127.0.0.1')
+      ? clientIp
+      : clientIp;
+
+    db.addPeer(peerId, deviceName, peerAddress, port, deviceType || 'desktop');
     db.updatePeer(peerId, { status: 'online', lastSeen: Date.now() });
+
+    // Clean up the pairing request record if it exists
+    if (p2pEngine.pairingRequests && p2pEngine.pairingRequests[peerId]) {
+      delete p2pEngine.pairingRequests[peerId];
+    }
+
+    console.log(`[P2P] Pairing confirmed with ${deviceName} (${peerId}) from ${clientIp}:${port}`);
 
     if (typeof p2pEngine.onPeerUpdate === 'function') {
       p2pEngine.onPeerUpdate();
@@ -73,7 +114,7 @@ export function registerExpressRoutes(app, p2pEngine) {
   app.post('/api/p2p/handshake', (req, res) => {
     const { peerId, deviceName, deviceType, port } = req.body;
     let clientIp = (req.ip || '').replace('::ffff:', '');
-    if (clientIp === '::1') clientIp = 'localhost';
+    if (clientIp === '::1' || clientIp === '127.0.0.1') clientIp = 'localhost';
 
     p2pEngine.pairingRequests[peerId] = {
       peerId,
@@ -83,6 +124,15 @@ export function registerExpressRoutes(app, p2pEngine) {
       port,
       isWan: false
     };
+
+    // Register a sentPairingRequests entry so that when we approve and the
+    // remote peer sends approve-confirm back, the guard accepts it.
+    // This covers the case where the remote initiated the handshake directly
+    // (without going through /api/peers/pair on our side).
+    if (!p2pEngine.sentPairingRequests) p2pEngine.sentPairingRequests = {};
+    p2pEngine.sentPairingRequests[peerId]  = Date.now();
+    p2pEngine.sentPairingRequests[clientIp] = Date.now();
+    p2pEngine.sentPairingRequests[`${clientIp}:${port}`] = Date.now();
 
     if (typeof p2pEngine.onPeerUpdate === 'function') {
       p2pEngine.onPeerUpdate();
