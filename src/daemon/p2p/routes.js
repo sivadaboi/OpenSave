@@ -171,13 +171,21 @@ export function registerExpressRoutes(app, p2pEngine) {
     const { gameId } = req.params;
     let game = db.getGame(gameId);
     if (!game) {
-      const { name, savePath } = req.query;
+      const { name, savePath, isFile } = req.query;
       if (name && savePath) {
         try {
           const localSavePath = translatePathToLocal(savePath);
-          console.log(`[P2P] Auto-tracking game "${name}" at "${localSavePath}" (original: "${savePath}") requested by peer.`);
+          const isFileBool = isFile === 'true';
+          console.log(`[P2P] Auto-tracking game "${name}" at "${localSavePath}" (original: "${savePath}", isFile: ${isFileBool}) requested by peer.`);
           if (!fs.existsSync(localSavePath)) {
-            fs.mkdirSync(localSavePath, { recursive: true });
+            if (isFileBool) {
+              const parentDir = path.dirname(localSavePath);
+              if (!fs.existsSync(parentDir)) {
+                fs.mkdirSync(parentDir, { recursive: true });
+              }
+            } else {
+              fs.mkdirSync(localSavePath, { recursive: true });
+            }
           }
           game = db.addGame(name, localSavePath);
           watcherEngine.watchGame(game);

@@ -83,7 +83,16 @@ export class SyncEngine {
     // 1. Fetch remote manifest & branch info
     const nameParam = encodeURIComponent(game.name);
     const pathParam = encodeURIComponent(game.savePath);
-    const remoteData = await this.p2pEngine.p2pRequest(peer, `/manifest/${gameId}?name=${nameParam}&savePath=${pathParam}`);
+    let isFile = false;
+    if (fs.existsSync(game.savePath)) {
+      isFile = fs.statSync(game.savePath).isFile();
+    } else {
+      const ext = path.extname(game.savePath);
+      if (ext && ext.length > 1) {
+        isFile = true;
+      }
+    }
+    const remoteData = await this.p2pEngine.p2pRequest(peer, `/manifest/${gameId}?name=${nameParam}&savePath=${pathParam}&isFile=${isFile}`);
     
     // Check branch compatibility
     if (game.activeBranch !== remoteData.activeBranch) {

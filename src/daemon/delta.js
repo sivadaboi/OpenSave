@@ -86,19 +86,22 @@ export function computeFileHash(filePath) {
 export function resolveLocalSaveFilePath(savePath, relPath) {
   if (!savePath) return '';
   const normalized = path.normalize(savePath);
-  try {
-    if (fs.existsSync(normalized) && fs.statSync(normalized).isFile()) {
+  
+  if (fs.existsSync(normalized)) {
+    if (fs.statSync(normalized).isFile()) {
       return normalized;
+    } else {
+      return path.join(normalized, relPath);
     }
-  } catch (e) {}
+  }
 
-  // If savePath does not exist, check if it has a file extension
-  const ext = path.extname(normalized);
-  if (ext && ext.length > 1) {
+  // If it doesn't exist on disk, infer if it is a single-file save or folder save.
+  // If the relative path matches the file basename of the savePath, it's a single file.
+  if (relPath === path.basename(normalized)) {
     return normalized;
   }
 
-  return path.join(savePath, relPath);
+  return path.join(normalized, relPath);
 }
 
 export function getBlockSizeForFile(fileSize) {
