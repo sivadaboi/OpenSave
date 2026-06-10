@@ -28,9 +28,13 @@ function requirePairedPeer(req, res, next) {
   // Mark peer as online since we received a valid request from them (with throttle to prevent redundant writes)
   const lastSeenLimit = 10000; // 10 seconds
   const lastSeenTime = typeof matchedPeer.lastSeen === 'string' ? new Date(matchedPeer.lastSeen).getTime() : (matchedPeer.lastSeen || 0);
-  const shouldUpdate = matchedPeer.status !== 'online' || (Date.now() - lastSeenTime > lastSeenLimit);
+  const shouldUpdate = matchedPeer.status !== 'online' || matchedPeer.address !== clientIp || (Date.now() - lastSeenTime > lastSeenLimit);
   if (shouldUpdate) {
-    db.updatePeer(matchedPeer.id, { status: 'online', lastSeen: Date.now() });
+    db.updatePeer(matchedPeer.id, { 
+      status: 'online', 
+      address: clientIp, 
+      lastSeen: Date.now() 
+    });
   }
   
   next();

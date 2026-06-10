@@ -213,10 +213,16 @@ export class WanClientManager {
       let changed = false;
       if (pairedPeers[msg.from]) {
         const wasOffline = pairedPeers[msg.from].status !== 'online';
-        db.updatePeer(msg.from, {
+        const updateData = {
           status: 'online',
           lastSeen: Date.now()
-        });
+        };
+        // Fallback: If their address in DB is currently a LAN IP, switch to 'relay' to route over WAN.
+        if (pairedPeers[msg.from].address !== 'relay') {
+          updateData.address = 'relay';
+          changed = true; // Address changed, trigger peer list UI update
+        }
+        db.updatePeer(msg.from, updateData);
         if (wasOffline) changed = true;
       }
       if (this.p2pEngine.discoveredPeers[msg.from]) {

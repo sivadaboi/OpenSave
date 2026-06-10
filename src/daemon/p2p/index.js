@@ -198,10 +198,26 @@ class P2PEngine {
               this.peerGameStates[peerId] = data.games;
             }
           } else {
-            db.updatePeer(peerId, { status: 'offline' });
+            // LAN ping failed. Fallback to WAN if peer is active on WAN
+            const disc = this.discoveredPeers[peerId];
+            const isOnlineOnWan = disc && (disc.address === 'relay' || disc.isWan) && (Date.now() - disc.lastSeen < 20000);
+            if (isOnlineOnWan) {
+              log('info', `LAN ping failed for ${peer.name}, but peer is online via WAN. Switching address to 'relay'.`);
+              db.updatePeer(peerId, { address: 'relay', status: 'online', lastSeen: Date.now() });
+            } else {
+              db.updatePeer(peerId, { status: 'offline' });
+            }
           }
         } catch (err) {
-          db.updatePeer(peerId, { status: 'offline' });
+          // LAN ping failed. Fallback to WAN if peer is active on WAN
+          const disc = this.discoveredPeers[peerId];
+          const isOnlineOnWan = disc && (disc.address === 'relay' || disc.isWan) && (Date.now() - disc.lastSeen < 20000);
+          if (isOnlineOnWan) {
+            log('info', `LAN ping failed for ${peer.name}, but peer is online via WAN. Switching address to 'relay'.`);
+            db.updatePeer(peerId, { address: 'relay', status: 'online', lastSeen: Date.now() });
+          } else {
+            db.updatePeer(peerId, { status: 'offline' });
+          }
         }
       }
     }
