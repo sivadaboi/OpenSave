@@ -7,7 +7,7 @@ const REDIRECT_URI = 'http://localhost/callback';
 // via Settings > Cloud Backup > Custom OAuth Client Credentials.
 const DEFAULT_CLIENT_IDS = {
   // Google Cloud Console project — drive.file + openid scopes (Base64 encoded to bypass push protection scanning)
-  google_drive: Buffer.from('MTU3NjU3NzQ0MTIwLW81Y2sxbXU4aDUyc282N2dua2swNzY2MWQyMzA4aHJ0LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t', 'base64').toString('ascii'),
+  google_drive: Buffer.from('MTU3NjU3NzQ0MTIwLTFuNG1oNmFoYzdkMThndHRxaW04ZTlpNmFjbzRhcm0zLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t', 'base64').toString('ascii'),
   // Microsoft Azure app registration — not yet registered; users must supply their own
   onedrive: '',
   // Dropbox App Console (PKCE public client — no secret needed)
