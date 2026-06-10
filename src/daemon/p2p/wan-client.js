@@ -435,6 +435,11 @@ export class WanClientManager {
           db.addPeer(peerId, deviceName, 'relay', port, deviceType || 'desktop');
           db.updatePeer(peerId, { status: 'online', lastSeen: Date.now() });
 
+          // Clean up consumed sentPairingRequests entries to prevent stale accumulation
+          delete sentRequests[peerId];
+          delete sentRequests[from];
+          delete sentRequests['relay'];
+
           if (typeof this.p2pEngine.onPeerUpdate === 'function') {
             this.p2pEngine.onPeerUpdate();
           }
