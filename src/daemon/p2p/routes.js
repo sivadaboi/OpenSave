@@ -30,11 +30,16 @@ function requirePairedPeer(req, res, next) {
   const lastSeenTime = typeof matchedPeer.lastSeen === 'string' ? new Date(matchedPeer.lastSeen).getTime() : (matchedPeer.lastSeen || 0);
   const shouldUpdate = matchedPeer.status !== 'online' || matchedPeer.address !== clientIp || (Date.now() - lastSeenTime > lastSeenLimit);
   if (shouldUpdate) {
+    const wasOffline = matchedPeer.status !== 'online';
     db.updatePeer(matchedPeer.id, { 
       status: 'online', 
       address: clientIp, 
       lastSeen: Date.now() 
     });
+    if (wasOffline) {
+      log('info', `Peer ${matchedPeer.name} connected locally. Triggering automatic synchronization for all games.`);
+      p2pEngine.syncAllGames();
+    }
   }
   
   next();

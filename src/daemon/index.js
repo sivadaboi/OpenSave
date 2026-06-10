@@ -272,6 +272,13 @@ app.post('/api/settings', (req, res) => {
         };
       }
 
+      if (newCloudSync.customClientSecrets && typeof newCloudSync.customClientSecrets === 'object') {
+        updateData.cloudSync.customClientSecrets = {
+          ...(currentCloudSync.customClientSecrets || {}),
+          ...newCloudSync.customClientSecrets
+        };
+      }
+
       if (newCloudSync.tokens && typeof newCloudSync.tokens === 'object') {
         updateData.cloudSync.tokens = {
           ...(currentCloudSync.tokens || {}),

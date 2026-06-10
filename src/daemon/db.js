@@ -77,6 +77,11 @@ const defaultState = {
         onedrive: '',
         dropbox: ''
       },
+      customClientSecrets: {
+        google_drive: '',
+        onedrive: '',
+        dropbox: ''
+      },
       tokens: {
         accessToken: '',
         refreshToken: '',

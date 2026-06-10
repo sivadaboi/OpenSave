@@ -136,7 +136,11 @@ export async function exchangeAuthCode(provider, code, codeVerifier) {
 
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`Token exchange failed: ${res.status} - ${errorText}`);
+    let errMsg = `Token exchange failed: ${res.status} - ${errorText}`;
+    if (provider === 'google_drive' && errorText.includes('invalid_client')) {
+      errMsg = `Token exchange failed: The default Google Drive application credentials are invalid or have been revoked by Google. To fix this, please configure your own Custom Client ID and Client Secret under Settings > Cloud Backup.`;
+    }
+    throw new Error(errMsg);
   }
 
   const data = await res.json();
@@ -206,7 +210,11 @@ export async function getOrRefreshAccessToken(provider) {
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Failed to refresh token: ${res.status} - ${errText}`);
+    let errMsg = `Failed to refresh token: ${res.status} - ${errText}`;
+    if (provider === 'google_drive' && errText.includes('invalid_client')) {
+      errMsg = `Failed to refresh token: The default Google Drive application credentials are invalid or have been revoked by Google. To fix this, please configure your own Custom Client ID and Client Secret under Settings > Cloud Backup.`;
+    }
+    throw new Error(errMsg);
   }
 
   const data = await res.json();

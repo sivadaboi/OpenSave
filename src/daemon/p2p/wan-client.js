@@ -223,7 +223,11 @@ export class WanClientManager {
           changed = true; // Address changed, trigger peer list UI update
         }
         db.updatePeer(msg.from, updateData);
-        if (wasOffline) changed = true;
+        if (wasOffline) {
+          changed = true;
+          log('info', `Peer ${pairedPeers[msg.from].name} came online (WAN presence). Triggering automatic synchronization for all games.`);
+          this.p2pEngine.syncAllGames();
+        }
       }
       if (this.p2pEngine.discoveredPeers[msg.from]) {
         this.p2pEngine.discoveredPeers[msg.from].lastSeen = Date.now();
