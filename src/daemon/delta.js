@@ -200,6 +200,22 @@ export function getFolderManifest(dirPath) {
     statsList.push({ relPath, fullPath, size, mtimeMs });
   }
 
+  // Also incorporate directories in the cache key if it's a directory save
+  if (!isFile) {
+    const relDirs = getAllDirs(dirPath);
+    for (const relDir of relDirs) {
+      const fullPath = path.join(dirPath, relDir);
+      try {
+        const dirStat = fs.statSync(fullPath);
+        const mtimeMs = dirStat.mtimeMs || 0;
+        if (mtimeMs > maxMtime) maxMtime = mtimeMs;
+        cacheKeyParts.push(`${relDir}:dir:${mtimeMs}`);
+      } catch (e) {
+        cacheKeyParts.push(`${relDir}:dir:deleted`);
+      }
+    }
+  }
+
   const cacheKey = cacheKeyParts.join('|');
   const cached = manifestCache.get(dirPath);
   if (cached && cached.cacheKey === cacheKey) {

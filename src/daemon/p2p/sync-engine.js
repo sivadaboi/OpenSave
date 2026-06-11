@@ -259,6 +259,7 @@ export class SyncEngine {
       }
     }
 
+
     const hasChanges = filesToPull.length > 0 ||
                        filesToPush.length > 0 ||
                        filesToDeleteOnPeer.length > 0 ||
@@ -598,9 +599,9 @@ export class SyncEngine {
       }
     }
 
-    // 3. Trigger peer pull if we have files to push
-    if (filesToPush.length > 0) {
-      log('event', 'Detected changes', `Local has newer/different files than remote "${peer.name}". Triggering peer pull.`);
+    // 3. Trigger peer pull if we have files or directories to push
+    if (filesToPush.length > 0 || dirsToPush.length > 0) {
+      log('event', 'Detected changes', `Local has newer/different files or folders than remote "${peer.name}". Triggering peer pull.`);
       
       if (peer.address === 'relay' || peer.isWan) {
         this.p2pEngine.wanClient.sendRelayMessage({
@@ -617,11 +618,16 @@ export class SyncEngine {
       }
     }
 
-    if (filesToPull.length > 0 && filesToPush.length > 0) {
+    const hasPull = filesToPull.length > 0 || dirsToPull.length > 0;
+    const hasPush = filesToPush.length > 0 || dirsToPush.length > 0;
+    const hasDeletions = filesToDeleteLocally.length > 0 || filesToDeleteOnPeer.length > 0 ||
+                         dirsToDeleteLocally.length > 0 || dirsToDeleteOnPeer.length > 0;
+
+    if (hasPull && hasPush) {
       log('success', 'Sync complete (bidirectional)', `Updated local from "${peer.name}" and triggered peer to pull`);
-    } else if (filesToPull.length > 0) {
+    } else if (hasPull) {
       log('success', 'Sync complete (pulled)', `Updated "${game.name}" from "${peer.name}"`);
-    } else if (filesToDeleteLocally.length > 0 || filesToDeleteOnPeer.length > 0) {
+    } else if (hasDeletions) {
       log('success', 'Sync complete (deletions applied)', `Synced deletions for "${game.name}" with "${peer.name}"`);
     } else {
       log('success', 'Sync complete (triggered push)', `Triggered "${peer.name}" to pull updates for "${game.name}"`);
@@ -639,12 +645,12 @@ export class SyncEngine {
     });
 
     return {
-      status: filesToPull.length > 0 && filesToPush.length > 0 ? 'updated_bidirectional'
-        : filesToPull.length > 0 ? 'updated'
-        : filesToDeleteLocally.length > 0 || filesToDeleteOnPeer.length > 0 ? 'deletions_synced'
+      status: hasPull && hasPush ? 'updated_bidirectional'
+        : hasPull ? 'updated'
+        : hasDeletions ? 'deletions_synced'
         : 'triggered_peer_pull',
-      direction: filesToPull.length > 0 && filesToPush.length > 0 ? 'bidirectional'
-        : filesToPull.length > 0 ? 'pull'
+      direction: hasPull && hasPush ? 'bidirectional'
+        : hasPull ? 'pull'
         : 'push'
     };
   }
