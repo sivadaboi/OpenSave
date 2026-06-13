@@ -19,6 +19,11 @@
 
 ---
 
+> [!WARNING]
+> **Important Note:** If you are experiencing any issues with syncing or cloud backups, please download and use **pre-release version 1.1.4** from the [GitHub Releases](https://github.com/sivadaboi/SyncSave/releases/tag/v1.1.4) page. This pre-release version includes critical stability patches for connection reliability, block-level sync, and cloud backup providers.
+
+---
+
 ## The problem
 
 Most games don't have cloud saves. Some are DRM-free. Some are emulated. Some are on a cracked copy your friend gave you ten years ago. Some just use a random folder buried deep in `AppData`.
@@ -167,6 +172,9 @@ Don't want to rely on the public relay? Host your own with one command. The rela
 ---
 
 ## Installation
+
+> [!IMPORTANT]
+> **Stable Prerelease:** If you experience any syncing, peer pairing, or cloud backup issues on the release builds, please install **pre-release version 1.1.4** from [GitHub Releases](https://github.com/sivadaboi/SyncSave/releases/tag/v1.1.4).
 
 ### Windows
 

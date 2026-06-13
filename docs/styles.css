@@ -984,7 +984,7 @@ body {
 
 .guide-layout {
   max-width: 1200px;
-  margin: 110px auto 60px;
+  margin: 140px auto 60px;
   padding: 0 24px;
   display: grid;
   grid-template-columns: 260px 1fr;
@@ -1320,7 +1320,7 @@ kbd {
   .guide-layout {
     grid-template-columns: 1fr;
     gap: 32px;
-    margin-top: 100px;
+    margin-top: 135px;
   }
 
   .guide-sidebar {
@@ -1355,4 +1355,58 @@ kbd {
     border-bottom-color: var(--cyan);
     background: none;
   }
+}
+
+/* Announcement Banner styling */
+.announcement-banner {
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.15), rgba(239, 68, 68, 0.15));
+  border-bottom: 1px solid rgba(239, 68, 68, 0.25);
+  padding: 10px 24px;
+  position: relative;
+  z-index: 101;
+  font-family: var(--font-sans);
+}
+
+.banner-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.banner-badge {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.banner-text {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.banner-text strong {
+  color: var(--text-primary);
+}
+
+.banner-link {
+  color: var(--cyan);
+  text-decoration: underline;
+  font-weight: 600;
+  transition: var(--ease);
+}
+
+.banner-link:hover {
+  color: #22d3ee;
 }
