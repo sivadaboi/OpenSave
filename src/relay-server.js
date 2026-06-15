@@ -110,7 +110,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify({
       status:           'ok',
-      version:          '1.1.3',
+      version:          '1.1.4',
       uptime:           process.uptime(),
       startedAt:        serverStartedAt,
       rooms:            roomCount,
@@ -218,7 +218,7 @@ process.on('SIGINT',  shutdown);
 // ── Start listening ────────────────────────────────────────────────────────
 server.listen(PORT, '0.0.0.0', () => {
   console.log('════════════════════════════════════════════════════');
-  console.log(`  OpenSave WAN Relay Server v1.1.3`);
+  console.log(`  OpenSave WAN Relay Server v1.1.4`);
   console.log(`  Listening on port ${PORT}`);
   console.log(`  Health: http://localhost:${PORT}/health`);
   console.log(`  Max per room: ${MAX_PER_ROOM}  |  Heartbeat: ${HEARTBEAT_MS}ms`);

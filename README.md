@@ -13,7 +13,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue?style=flat-square)](https://github.com/sivadaboi/OpenSave/releases/latest)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](CONTRIBUTING.md)
 
-[**Download for Windows**](https://github.com/sivadaboi/OpenSave/releases/download/v1.1.3/OpenSave.Setup.1.1.3.exe) · [**Download for Linux**](https://github.com/sivadaboi/OpenSave/releases/download/v1.1.3/opensave-1.1.3.tar.gz) · [**Website**](https://sivadaboi.github.io/OpenSave)
+[**Download for Windows**](https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/OpenSave.Setup.1.1.4.exe) · [**Download for Linux**](https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/opensave-1.1.4.tar.gz) · [**Website**](https://sivadaboi.github.io/OpenSave)
 
 </div>
 
@@ -180,13 +180,13 @@ Don't want to rely on the public relay? Host your own with one command. The rela
 
 **Installer (recommended)**
 ```
-https://github.com/sivadaboi/OpenSave/releases/download/v1.1.3/OpenSave.Setup.1.1.3.exe
+https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/OpenSave.Setup.1.1.4.exe
 ```
 Run the installer. OpenSave starts in the system tray.
 
 **Portable ZIP**
 ```
-https://github.com/sivadaboi/OpenSave/releases/download/v1.1.3/OpenSave-1.1.3-win.zip
+https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/OpenSave-1.1.4-win.zip
 ```
 Extract and run `OpenSave.exe`. No installation required.
 
@@ -196,13 +196,13 @@ Extract and run `OpenSave.exe`. No installation required.
 
 ```bash
 # Download the release
-wget https://github.com/sivadaboi/OpenSave/releases/download/v1.1.3/opensave-1.1.3.tar.gz
+wget https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/opensave-1.1.4.tar.gz
 
 # Extract
-tar -xzf opensave-1.1.3.tar.gz
+tar -xzf opensave-1.1.4.tar.gz
 
 # Run
-cd opensave-1.1.3
+cd opensave-1.1.4
 ./opensave
 ```
 
