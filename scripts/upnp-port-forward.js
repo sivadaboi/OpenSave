@@ -4,7 +4,7 @@ import os from 'os';
 const DEFAULT_PORT = 8386;
 const port = Number.parseInt(process.argv.find(arg => /^\d+$/.test(arg)) || DEFAULT_PORT, 10);
 const shouldDelete = process.argv.includes('--delete') || process.argv.includes('delete');
-const description = 'SyncSave WAN Relay';
+const description = 'OpenSave WAN Relay';
 
 function getLocalIPv4() {
   const interfaces = os.networkInterfaces();
@@ -153,7 +153,7 @@ async function main() {
   const localIp = getLocalIPv4();
   if (!localIp) throw new Error('Could not find a local IPv4 address for this PC.');
 
-  console.log(`SyncSave UPnP port ${shouldDelete ? 'removal' : 'forwarding'} helper`);
+  console.log(`OpenSave UPnP port ${shouldDelete ? 'removal' : 'forwarding'} helper`);
   console.log(`Local PC: ${localIp}`);
   console.log(`TCP port: ${port}`);
   console.log('Searching for router UPnP service...');
@@ -174,9 +174,9 @@ async function main() {
   const externalIp = await getExternalIp(endpoint);
   console.log(`Forwarded TCP ${port} to ${localIp}:${port}.`);
   if (externalIp) {
-    console.log(`Use this SyncSave relay URL from outside your network: ws://${externalIp}:${port}`);
+    console.log(`Use this OpenSave relay URL from outside your network: ws://${externalIp}:${port}`);
   } else {
-    console.log('Could not read public IP from router. Use the public IP shown in SyncSave or an IP lookup site.');
+    console.log('Could not read public IP from router. Use the public IP shown in OpenSave or an IP lookup site.');
   }
 }
 

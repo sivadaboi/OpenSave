@@ -1,5 +1,5 @@
 {
-  "name": "syncsave",
+  "name": "opensave",
   "version": "1.1.4",
   "description": "Universal P2P game save synchronizer",
   "author": {
@@ -9,7 +9,7 @@
   "main": "src/main.js",
   "type": "module",
   "bin": {
-    "syncsave": "./bin/syncsave.js"
+    "opensave": "./bin/opensave.js"
   },
   "scripts": {
     "start": "node src/daemon/index.js",
@@ -38,8 +38,8 @@
     "electron-builder": "^26.8.1"
   },
   "build": {
-    "appId": "com.syncsave.app",
-    "productName": "SyncSave",
+    "appId": "com.opensave.app",
+    "productName": "OpenSave",
     "afterPack": "./scripts/after-pack.cjs",
     "win": {
       "target": [
@@ -64,7 +64,8 @@
       "installerHeaderIcon": "src/tray-icon.png",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "SyncSave"
+      "shortcutName": "OpenSave",
+      "artifactName": "${productName}.Setup.${version}.${ext}"
     },
     "files": [
       "src/**/*",

@@ -72,7 +72,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function runWanTest() {
   console.log('====================================================');
-  console.log('Starting SyncSave WAN Relay Synchronization Test...');
+  console.log('Starting OpenSave WAN Relay Synchronization Test...');
   console.log('====================================================');
   
   cleanup();

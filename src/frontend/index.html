@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SyncSave — Universal P2P Game Save Synchronizer</title>
-  <meta name="description" content="SyncSave is a free, open-source peer-to-peer game save synchronization utility. Sync, version, and backup your game saves across devices.">
+  <title>OpenSave — Universal P2P Game Save Synchronizer</title>
+  <meta name="description" content="OpenSave is a free, open-source peer-to-peer game save synchronization utility. Sync, version, and backup your game saves across devices.">
   <!-- Modern Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +18,7 @@
     <div class="titlebar-drag-region"></div>
     <div class="titlebar-logo">
       <img src="logo.png" alt="Logo" class="titlebar-logo-img">
-      <span class="titlebar-name">Sync<span>Save</span></span>
+      <span class="titlebar-name">Open<span>Save</span></span>
     </div>
     <div class="titlebar-center">
       <div class="status-indicator online" id="titlebar-status">
@@ -50,7 +50,7 @@
       <div class="nav-brand">
         <img src="logo.png" alt="Logo" class="brand-logo-img">
         <div class="brand-text">
-          <span class="brand-name">Sync<span>Save</span></span>
+          <span class="brand-name">Open<span>Save</span></span>
           <span class="brand-sub" id="local-device-name">Loading...</span>
         </div>
       </div>
@@ -262,7 +262,7 @@
                 <span class="badge-pill badge-cloud">RECOMMENDED</span>
               </div>
               <p class="card-desc">
-                SyncSave hosts a <strong>free public relay</strong> — no setup required.
+                OpenSave hosts a <strong>free public relay</strong> — no setup required.
                 Just generate a code, share it with the other device, and join.
               </p>
 
@@ -279,7 +279,7 @@
               <!-- Relay URL display (editable, advanced) -->
               <div class="form-group" style="margin-bottom:12px; margin-top:12px;">
                 <label for="wan-relay-url-input">Relay URL</label>
-                <input type="text" id="wan-relay-url-input" placeholder="wss://syncsave-relay.onrender.com">
+                <input type="text" id="wan-relay-url-input" placeholder="wss://opensave-relay.onrender.com">
                 <small>Cloud relay is WSS (encrypted). Self-hosted relays use WS. Both devices must use the same URL.</small>
               </div>
 
@@ -342,14 +342,14 @@
                   <div class="hiw-num">2</div>
                   <div>
                     <strong>Both devices join the room</strong>
-                    <p>Enter the same code on both machines. The SyncSave cloud relay passes traffic between room members — no port forwarding needed.</p>
+                    <p>Enter the same code on both machines. The OpenSave cloud relay passes traffic between room members — no port forwarding needed.</p>
                   </div>
                 </div>
                 <div class="hiw-step">
                   <div class="hiw-num">3</div>
                   <div>
                     <strong>Pair &amp; sync automatically</strong>
-                    <p>Once in the same room, SyncSave handles pairing and keeps your saves in sync — even across continents.</p>
+                    <p>Once in the same room, OpenSave handles pairing and keeps your saves in sync — even across continents.</p>
                   </div>
                 </div>
                 <div class="hiw-step">
@@ -377,7 +377,7 @@
                 <input type="checkbox" id="wan-host-relay">
                 <label for="wan-host-relay">
                   <strong>Host relay on this PC</strong>
-                  <span>Starts the room broker inside SyncSave on TCP port 8386.</span>
+                  <span>Starts the room broker inside OpenSave on TCP port 8386.</span>
                 </label>
               </div>
 
@@ -445,12 +445,12 @@
               <span class="badge-pill" style="background:rgba(6,182,212,0.12);color:#67e8f9;border-color:rgba(6,182,212,0.25);">DECOMPRESS</span>
             </div>
             <p class="card-desc">
-              Select a SyncSave backup folder (containing <code>.sscb</code> files and <code>backup-metadata.json</code>). Files will be decompressed and restored to their original save paths.
+              Select a OpenSave backup folder (containing <code>.sscb</code> files and <code>backup-metadata.json</code>). Files will be decompressed and restored to their original save paths.
             </p>
             <div class="form-group">
               <label for="restore-backup-dir">Backup Folder to Restore</label>
               <div class="input-row">
-                <input type="text" id="restore-backup-dir" placeholder="e.g. D:\SaveBackups\2026-05-24_18-00-00-syncsave-backup">
+                <input type="text" id="restore-backup-dir" placeholder="e.g. D:\SaveBackups\2026-05-24_18-00-00-opensave-backup">
                 <button type="button" id="btn-browse-restore-dir" class="btn-secondary btn-sm">Browse...</button>
               </div>
             </div>
@@ -559,14 +559,14 @@
               <span class="dot-yellow"></span>
               <span class="dot-green"></span>
             </div>
-            <div class="terminal-title">syncsave@local:~</div>
+            <div class="terminal-title">opensave@local:~</div>
             <button id="btn-clear-console" class="btn-clear-console" title="Clear console">🧹 Clear</button>
           </div>
           <div class="terminal-body" id="console-logs-area">
             <!-- logs appended here -->
           </div>
           <div class="terminal-footer">
-            <span class="version-lbl">syncsave v1.1.3</span>
+            <span class="version-lbl">opensave v1.1.3</span>
             <span class="sync-status-lbl" id="console-sync-status">● All devices synchronized</span>
           </div>
         </div>
@@ -647,7 +647,7 @@
                 <input type="checkbox" id="settings-start-on-boot">
                 <label for="settings-start-on-boot">
                   <strong>Launch on System Startup</strong>
-                  <span>Automatically run SyncSave in the system tray when Windows starts.</span>
+                  <span>Automatically run OpenSave in the system tray when Windows starts.</span>
                 </label>
               </div>
 
@@ -676,7 +676,7 @@
               <div class="form-group">
                 <label for="settings-sync-backups-dir">Sync Snapshots Directory</label>
                 <div class="input-row">
-                  <input type="text" id="settings-sync-backups-dir" placeholder="Default: ~/.syncsave/backups">
+                  <input type="text" id="settings-sync-backups-dir" placeholder="Default: ~/.opensave/backups">
                   <button type="button" id="btn-browse-sync-backups-dir" class="btn-secondary btn-sm">Browse...</button>
                 </div>
                 <small>Where P2P sync snapshots are stored (separate from manual backups).</small>
@@ -713,7 +713,7 @@
                   <button type="button" id="btn-browse-scan-path" class="btn-secondary btn-sm" style="white-space:nowrap;">Browse...</button>
                   <button type="button" id="btn-add-scan-path" class="btn-primary btn-sm" style="white-space:nowrap;">Add Path</button>
                 </div>
-                <small>Additional directories where SyncSave will search for emulator or custom saves.</small>
+                <small>Additional directories where OpenSave will search for emulator or custom saves.</small>
               </div>
             </div>
 
@@ -838,7 +838,7 @@
                 <div id="cloud-form-webhook" class="hidden" style="display:flex; flex-direction:column; gap:12px;">
                   <div class="form-group">
                     <label for="settings-cloud-webhook-url">Webhook Receiver URL</label>
-                    <input type="url" id="settings-cloud-webhook-url" placeholder="e.g. https://my-api.com/syncsave-receiver">
+                    <input type="url" id="settings-cloud-webhook-url" placeholder="e.g. https://my-api.com/opensave-receiver">
                   </div>
                   <div class="form-group">
                     <label for="settings-cloud-webhook-headers">Custom HTTP Headers (JSON)</label>
@@ -851,7 +851,7 @@
                 <div id="cloud-oauth-config" class="hidden" style="display:flex; flex-direction:column; gap:12px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: rgba(255,255,255,0.01);">
                   <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">🛠️ Custom OAuth Client Credentials <span style="font-weight:400; font-size:11px; color:var(--text-muted);">(Optional)</span></div>
                   <p style="font-size: 11px; color: var(--text-muted); margin: 0; line-height: 1.5;">
-                    SyncSave includes built-in app credentials for <strong>Google Drive</strong> and <strong>Dropbox</strong> — you can sign in immediately with zero setup.<br>
+                    OpenSave includes built-in app credentials for <strong>Google Drive</strong> and <strong>Dropbox</strong> — you can sign in immediately with zero setup.<br>
                     For <strong>OneDrive</strong>, or if you'd prefer to use your own registered app, enter your Client ID below.
                   </p>
                   <div class="form-group" style="margin-bottom:0;">
@@ -905,7 +905,7 @@
             <div class="content-card">
               <h3 class="settings-section-title">🔒 Privacy</h3>
               <p style="font-size:13px; color:var(--text-muted); line-height:1.5; margin-bottom:12px;">
-                SyncSave collects <strong style="color:var(--color-emerald);">zero personal data</strong>. No accounts, no telemetry, no cloud uploads. All saves stay on your machine.
+                OpenSave collects <strong style="color:var(--color-emerald);">zero personal data</strong>. No accounts, no telemetry, no cloud uploads. All saves stay on your machine.
               </p>
               <div style="font-size:12px; color:var(--text-muted);">
                 Open-source · Local-first · Self-hostable
@@ -945,7 +945,7 @@
             <input type="text" id="game-path-input" placeholder="e.g. C:\Users\...\My Games\EldenRing" required>
             <button type="button" id="btn-browse-folder" class="btn-secondary btn-sm">Browse...</button>
           </div>
-          <small>Choose any save directory. SyncSave monitors and syncs all files inside it.</small>
+          <small>Choose any save directory. OpenSave monitors and syncs all files inside it.</small>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn-secondary btn-close-modal">Cancel</button>
@@ -1105,7 +1105,7 @@
       </div>
       <div class="modal-body">
         <p>You are about to roll back your save folder to snapshot: <strong id="rollback-target-id">snap_12345</strong>.</p>
-        <p class="text-warning" style="margin-top:10px;">⚠️ WARNING: This will overwrite files in your active game save folder. SyncSave will automatically create a safety rollback point before writing.</p>
+        <p class="text-warning" style="margin-top:10px;">⚠️ WARNING: This will overwrite files in your active game save folder. OpenSave will automatically create a safety rollback point before writing.</p>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-secondary btn-close-submodal">Cancel Rollback</button>

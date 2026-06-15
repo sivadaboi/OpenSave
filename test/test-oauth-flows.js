@@ -9,11 +9,11 @@ console.log('====================================================');
 console.log('Running Cloud OAuth Flow Tests...');
 console.log('====================================================');
 
-const tempDir = path.join(os.tmpdir(), `syncsave-test-oauth-${Date.now()}`);
+const tempDir = path.join(os.tmpdir(), `opensave-test-oauth-${Date.now()}`);
 fs.mkdirSync(tempDir, { recursive: true });
 
 // Redirect database save/load logic to a temporary test database
-db.setDbFileForTesting(path.join(tempDir, 'syncsave-db.json'), tempDir);
+db.setDbFileForTesting(path.join(tempDir, 'opensave-db.json'), tempDir);
 
 let fetchCalls = [];
 const originalFetch = global.fetch;
@@ -37,7 +37,7 @@ global.fetch = async (url, options) => {
     }
   }
 
-  if (url === 'https://oauth2.googleapis.com/token' || url === 'https://syncsave-relay.onrender.com/api/oauth/token') {
+  if (url === 'https://oauth2.googleapis.com/token' || url === 'https://opensave-relay.onrender.com/api/oauth/token') {
     if (bodyParams.grant_type === 'authorization_code') {
       assert.strictEqual(bodyParams.code, 'google-auth-code');
       assert.strictEqual(bodyParams.code_verifier, 'google-verifier');
@@ -274,7 +274,7 @@ try {
   const refreshedToken = await getOrRefreshAccessToken('google_drive');
   assert.strictEqual(refreshedToken, 'google-refreshed-access-token-789');
   assert.strictEqual(fetchCalls.length, 1);
-  assert.ok(fetchCalls[0].url === 'https://oauth2.googleapis.com/token' || fetchCalls[0].url === 'https://syncsave-relay.onrender.com/api/oauth/token');
+  assert.ok(fetchCalls[0].url === 'https://oauth2.googleapis.com/token' || fetchCalls[0].url === 'https://opensave-relay.onrender.com/api/oauth/token');
   
   // DB should be updated with new token and new expiry time
   const updatedSettings = db.getSettings();

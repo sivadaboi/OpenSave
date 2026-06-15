@@ -103,7 +103,7 @@ export async function uploadToCloud(filePath, fileName) {
     } else if (provider === 'dropbox') {
       const token = await getOrRefreshAccessToken('dropbox');
       const args = {
-        path: `/SyncSave/${fileName}`,
+        path: `/OpenSave/${fileName}`,
         mode: 'overwrite',
         mute: true
       };
@@ -258,7 +258,7 @@ export async function listCloudFiles() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ path: '/SyncSave' })
+        body: JSON.stringify({ path: '/OpenSave' })
       });
       
       if (res.status === 409) {
@@ -391,7 +391,7 @@ export async function downloadFromCloud(fileName, localPath) {
 
     } else if (provider === 'dropbox') {
       const token = await getOrRefreshAccessToken('dropbox');
-      const args = { path: `/SyncSave/${fileName}` };
+      const args = { path: `/OpenSave/${fileName}` };
       const res = await fetch('https://content.dropboxapi.com/2/files/download', {
         method: 'POST',
         headers: {

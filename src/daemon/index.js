@@ -53,7 +53,7 @@ app.use((req, res, next) => {
   }
 
   console.warn(`[Localhost Guard] Blocked external access to ${req.path} from IP: ${ip || remoteAddress}`);
-  return res.status(403).json({ error: 'Access denied: SyncSave dashboard is only accessible from localhost.' });
+  return res.status(403).json({ error: 'Access denied: OpenSave dashboard is only accessible from localhost.' });
 });
 
 // 2. Strict CORS policy middleware
@@ -976,7 +976,7 @@ app.post('/api/backup/export', async (req, res) => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-    const backupFolderName = `${timestamp}-syncsave-backup`;
+    const backupFolderName = `${timestamp}-opensave-backup`;
     const backupFolderPath = path.join(exportDir, backupFolderName);
 
     // Create backup folder
@@ -1084,7 +1084,7 @@ app.post('/api/backup/restore', async (req, res) => {
     // Read metadata file for original save paths
     const metadataPath = path.join(backupPath, 'backup-metadata.json');
     if (!fs.existsSync(metadataPath)) {
-      return res.status(400).json({ error: 'No backup-metadata.json found in folder. This may not be a valid SyncSave backup.' });
+      return res.status(400).json({ error: 'No backup-metadata.json found in folder. This may not be a valid OpenSave backup.' });
     }
 
     const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
@@ -1217,7 +1217,7 @@ app.post('/api/peers/probe', async (req, res) => {
   } catch (err) {
     res.status(504).json({
       reachable: false,
-      error: `Could not reach SyncSave at ${address}:${port}. Check the IP, port, network profile, and firewall.`
+      error: `Could not reach OpenSave at ${address}:${port}. Check the IP, port, network profile, and firewall.`
     });
   }
 });
@@ -1414,7 +1414,7 @@ function cleanupOldSyncBackups() {
 }
 
 server.listen(port, host, () => {
-  log('info', 'SyncSave Daemon Started!', `Dashboard: http://localhost:${port}`);
+  log('info', 'OpenSave Daemon Started!', `Dashboard: http://localhost:${port}`);
   log('info', `P2P Node Address: Binding to all interfaces on port ${port}`);
   
   // Start database and engines
@@ -1447,7 +1447,7 @@ process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
 function shutdown() {
-  console.log('\n[Daemon] Shutting down SyncSave daemon...');
+  console.log('\n[Daemon] Shutting down OpenSave daemon...');
   watcherEngine.stop();
   p2pEngine.stopDiscovery();
   server.close(() => {

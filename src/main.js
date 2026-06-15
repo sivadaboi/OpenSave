@@ -45,7 +45,7 @@ global.updateStartupSettings = (enabled) => {
     if (process.platform === 'linux') {
       const homeDir = app.getPath('home');
       const autostartDir = path.join(homeDir, '.config', 'autostart');
-      const desktopPath = path.join(autostartDir, 'syncsave.desktop');
+      const desktopPath = path.join(autostartDir, 'opensave.desktop');
 
       if (enabled) {
         if (!fs.existsSync(autostartDir)) {
@@ -55,10 +55,10 @@ global.updateStartupSettings = (enabled) => {
         const desktopContent = `[Desktop Entry]
 Type=Application
 Version=1.0
-Name=SyncSave
-Comment=SyncSave background game save synchronizer daemon
+Name=OpenSave
+Comment=OpenSave background game save synchronizer daemon
 Exec="${execPath}" --hidden
-Icon=syncsave
+Icon=opensave
 Terminal=false
 Categories=Utility;
 X-GNOME-Autostart-enabled=true
@@ -177,7 +177,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 650,
     frame: false,
-    title: 'SyncSave — Universal Save Synchronizer',
+    title: 'OpenSave — Universal Save Synchronizer',
     backgroundColor: '#05060f', // Match dashboard background
     show: !shouldHide,
     webPreferences: {
@@ -225,11 +225,11 @@ function createTray() {
     tray = new Tray(nativeImage.createEmpty());
   }
 
-  tray.setToolTip('SyncSave — Running in background');
+  tray.setToolTip('OpenSave — Running in background');
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Open SyncSave',
+      label: 'Open OpenSave',
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -307,11 +307,11 @@ if (!gotTheLock) {
       });
     })
     .catch((err) => {
-      console.error('Failed to start SyncSave background daemon:', err);
+      console.error('Failed to start OpenSave background daemon:', err);
       logErrorToFile(err);
       try {
         dialog.showErrorBox(
-          'SyncSave Daemon Startup Error',
+          'OpenSave Daemon Startup Error',
           `The background database/server daemon failed to initialize.\n\nError details:\n${err.stack || err.message || err}`
         );
       } catch (dialogErr) {}

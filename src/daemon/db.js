@@ -5,8 +5,8 @@ import crypto from 'crypto';
 
 const DEFAULT_PORT = 8383;
 const OLD_HOME_DIR = path.join(os.homedir(), '.savesync');
-const HOME_DIR = path.join(os.homedir(), '.syncsave');
-const DB_FILE = path.join(HOME_DIR, 'syncsave-db.json');
+const HOME_DIR = path.join(os.homedir(), '.opensave');
+const DB_FILE = path.join(HOME_DIR, 'opensave-db.json');
 
 // Migrate old folder if it exists
 if (fs.existsSync(OLD_HOME_DIR) && !fs.existsSync(HOME_DIR)) {
@@ -14,9 +14,9 @@ if (fs.existsSync(OLD_HOME_DIR) && !fs.existsSync(HOME_DIR)) {
     fs.renameSync(OLD_HOME_DIR, HOME_DIR);
     console.log(`[Migration] Automatically migrated user database folder from ${OLD_HOME_DIR} to ${HOME_DIR}`);
     
-    // Also rename savesync-db.json to syncsave-db.json inside it if present
+    // Also rename savesync-db.json to opensave-db.json inside it if present
     const oldDbFile = path.join(HOME_DIR, 'savesync-db.json');
-    const newDbFile = path.join(HOME_DIR, 'syncsave-db.json');
+    const newDbFile = path.join(HOME_DIR, 'opensave-db.json');
     if (fs.existsSync(oldDbFile)) {
       fs.renameSync(oldDbFile, newDbFile);
       console.log(`[Migration] Automatically renamed database file to ${newDbFile}`);
@@ -35,9 +35,9 @@ if (!fs.existsSync(BACKUPS_DIR)) {
   fs.mkdirSync(BACKUPS_DIR, { recursive: true });
 }
 
-// Public SyncSave cloud relay — deployed on Render.com free tier.
+// Public OpenSave cloud relay — deployed on Render.com free tier.
 // Users who self-host can override this in Settings > Internet Sync.
-const CLOUD_RELAY_URL = 'wss://syncsave-relay.onrender.com';
+const CLOUD_RELAY_URL = 'wss://opensave-relay.onrender.com';
 
 const defaultState = {
   settings: {
@@ -71,7 +71,7 @@ const defaultState = {
       headers: '{}',
       folderId: '',
       // Per-provider custom OAuth Client IDs supplied by the user.
-      // Leave empty to use SyncSave's built-in registered app credentials.
+      // Leave empty to use OpenSave's built-in registered app credentials.
       customClientIds: {
         google_drive: '',
         onedrive: '',
@@ -110,13 +110,13 @@ class Database {
         // Auto-migrate old paths in settings
         const settings = this.data.settings || {};
         if (settings.dataDir && settings.dataDir.includes('.savesync')) {
-          settings.dataDir = settings.dataDir.replace('.savesync', '.syncsave');
+          settings.dataDir = settings.dataDir.replace('.savesync', '.opensave');
         }
         if (settings.backupsDir && settings.backupsDir.includes('.savesync')) {
-          settings.backupsDir = settings.backupsDir.replace('.savesync', '.syncsave');
+          settings.backupsDir = settings.backupsDir.replace('.savesync', '.opensave');
         }
         if (settings.syncBackupsDir && settings.syncBackupsDir.includes('.savesync')) {
-          settings.syncBackupsDir = settings.syncBackupsDir.replace('.savesync', '.syncsave');
+          settings.syncBackupsDir = settings.syncBackupsDir.replace('.savesync', '.opensave');
         }
 
         // Auto-migrate zipPaths for all snapshots of all games and branches
@@ -128,7 +128,7 @@ class Database {
             if (branch.snapshots) {
               branch.snapshots.forEach(snap => {
                 if (snap.zipPath && snap.zipPath.includes('.savesync')) {
-                  snap.zipPath = snap.zipPath.replace('.savesync', '.syncsave');
+                  snap.zipPath = snap.zipPath.replace('.savesync', '.opensave');
                 }
               });
             }

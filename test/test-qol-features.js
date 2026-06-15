@@ -81,8 +81,8 @@ function decodePin(pin) {
 
 try {
   // Use temporary isolated database for settings tests
-  const testDbFile = path.join(os.tmpdir(), `syncsave-qol-test-db-${Date.now()}.json`);
-  const testHomeDir = path.join(os.tmpdir(), `syncsave-qol-test-home-${Date.now()}`);
+  const testDbFile = path.join(os.tmpdir(), `opensave-qol-test-db-${Date.now()}.json`);
+  const testHomeDir = path.join(os.tmpdir(), `opensave-qol-test-home-${Date.now()}`);
   db.setDbFileForTesting(testDbFile, testHomeDir);
 
   // 1. Test Base36 PIN Codec
@@ -167,7 +167,7 @@ try {
   assert.strictEqual(getBlockSizeForFile(25 * 1024 * 1024), 512 * 1024, '25MB should use 512KB blocks');
   assert.strictEqual(getBlockSizeForFile(120 * 1024 * 1024), 2 * 1024 * 1024, '120MB should use 2MB blocks');
 
-  const tempTestFile = path.join(os.tmpdir(), `syncsave-blocksize-test-${Date.now()}.dat`);
+  const tempTestFile = path.join(os.tmpdir(), `opensave-blocksize-test-${Date.now()}.dat`);
   const testData = Buffer.alloc(100 * 1024);
   fs.writeFileSync(tempTestFile, testData);
 

@@ -8,7 +8,7 @@ console.log('Running Linux Autostart Manager Unit Tests...');
 console.log('====================================================');
 
 // Mock a temporary home directory for testing desktop file creation
-const tempHome = path.join(os.tmpdir(), `syncsave-test-autostart-${Date.now()}`);
+const tempHome = path.join(os.tmpdir(), `opensave-test-autostart-${Date.now()}`);
 fs.mkdirSync(tempHome, { recursive: true });
 
 // Mock the Electron app dependency
@@ -32,20 +32,20 @@ const testUpdateStartupSettings = (enabled, platformOverride) => {
     if (platform === 'linux') {
       const homeDir = mockApp.getPath('home');
       const autostartDir = path.join(homeDir, '.config', 'autostart');
-      const desktopPath = path.join(autostartDir, 'syncsave.desktop');
+      const desktopPath = path.join(autostartDir, 'opensave.desktop');
 
       if (enabled) {
         if (!fs.existsSync(autostartDir)) {
           fs.mkdirSync(autostartDir, { recursive: true });
         }
-        const execPath = '/usr/bin/syncsave';
+        const execPath = '/usr/bin/opensave';
         const desktopContent = `[Desktop Entry]
 Type=Application
 Version=1.0
-Name=SyncSave
-Comment=SyncSave background game save synchronizer daemon
+Name=OpenSave
+Comment=OpenSave background game save synchronizer daemon
 Exec="${execPath}" --hidden
-Icon=syncsave
+Icon=opensave
 Terminal=false
 Categories=Utility;
 X-GNOME-Autostart-enabled=true
@@ -64,14 +64,14 @@ X-GNOME-Autostart-enabled=true
 
 try {
   const autostartDir = path.join(tempHome, '.config', 'autostart');
-  const desktopFile = path.join(autostartDir, 'syncsave.desktop');
+  const desktopFile = path.join(autostartDir, 'opensave.desktop');
 
   // Test Case 1: Enabling Autostart on Linux
   testUpdateStartupSettings(true, 'linux');
   assert.strictEqual(fs.existsSync(desktopFile), true, 'Desktop autostart file should be created');
   const content = fs.readFileSync(desktopFile, 'utf8');
-  assert.ok(content.includes('Name=SyncSave'), 'Desktop file should have correct name');
-  assert.ok(content.includes('Exec="/usr/bin/syncsave" --hidden'), 'Desktop file should have correct exec path');
+  assert.ok(content.includes('Name=OpenSave'), 'Desktop file should have correct name');
+  assert.ok(content.includes('Exec="/usr/bin/opensave" --hidden'), 'Desktop file should have correct exec path');
   console.log('✔ PASS: Successfully created and verified Linux desktop entry on enable.');
 
   // Test Case 2: Disabling Autostart on Linux

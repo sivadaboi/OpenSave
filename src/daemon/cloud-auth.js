@@ -25,7 +25,7 @@ const DEFAULT_CLIENT_SECRETS = {
 
 function getRelayHttpUrl() {
   const settings = db.getSettings();
-  const wsUrl = settings.relayUrl || 'wss://syncsave-relay.onrender.com';
+  const wsUrl = settings.relayUrl || 'wss://opensave-relay.onrender.com';
   return wsUrl.replace(/^ws/, 'http');
 }
 

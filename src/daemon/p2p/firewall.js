@@ -15,20 +15,20 @@ export function setupWindowsFirewall() {
   }
 
   // Check if our rules exist
-  exec('netsh advfirewall firewall show rule name="SyncSave TCP"', (err, stdout) => {
-    if (err || !stdout.includes('SyncSave TCP')) {
-      log('warn', 'SyncSave Windows Firewall rules not found. Requesting permission to configure rules...');
+  exec('netsh advfirewall firewall show rule name="OpenSave TCP"', (err, stdout) => {
+    if (err || !stdout.includes('OpenSave TCP')) {
+      log('warn', 'OpenSave Windows Firewall rules not found. Requesting permission to configure rules...');
 
       const tempDir = os.tmpdir();
-      const psScriptPath = path.join(tempDir, `syncsave-firewall-${Date.now()}.ps1`);
+      const psScriptPath = path.join(tempDir, `opensave-firewall-${Date.now()}.ps1`);
       
-      const psScriptContent = `# SyncSave Firewall Configuration Script
+      const psScriptContent = `# OpenSave Firewall Configuration Script
 netsh advfirewall firewall delete rule name="SaveSync TCP"
 netsh advfirewall firewall delete rule name="SaveSync UDP"
-netsh advfirewall firewall delete rule name="SyncSave TCP"
-netsh advfirewall firewall delete rule name="SyncSave UDP"
-netsh advfirewall firewall add rule name="SyncSave TCP" dir=in action=allow protocol=TCP localport=8383-8395 profile=any enable=yes description="SyncSave P2P sync and relay TCP traffic"
-netsh advfirewall firewall add rule name="SyncSave UDP" dir=in action=allow protocol=UDP localport=8383-8395 profile=any enable=yes description="SyncSave LAN peer discovery UDP broadcast"
+netsh advfirewall firewall delete rule name="OpenSave TCP"
+netsh advfirewall firewall delete rule name="OpenSave UDP"
+netsh advfirewall firewall add rule name="OpenSave TCP" dir=in action=allow protocol=TCP localport=8383-8395 profile=any enable=yes description="OpenSave P2P sync and relay TCP traffic"
+netsh advfirewall firewall add rule name="OpenSave UDP" dir=in action=allow protocol=UDP localport=8383-8395 profile=any enable=yes description="OpenSave LAN peer discovery UDP broadcast"
 `;
 
       try {
@@ -49,14 +49,14 @@ netsh advfirewall firewall add rule name="SyncSave UDP" dir=in action=allow prot
             log('error', 'User rejected or Windows failed to apply firewall rules. We will skip prompting again.');
             db.updateSettings({ skipFirewallSetup: true });
           } else {
-            log('success', 'Windows Firewall configured successfully! SyncSave is ready for out-of-the-box local connections.');
+            log('success', 'Windows Firewall configured successfully! OpenSave is ready for out-of-the-box local connections.');
           }
         });
       } catch (writeErr) {
         log('error', `Failed to write temporary firewall script: ${writeErr.message}`);
       }
     } else {
-      log('info', 'SyncSave Windows Firewall rules verified successfully.');
+      log('info', 'OpenSave Windows Firewall rules verified successfully.');
     }
   });
 }

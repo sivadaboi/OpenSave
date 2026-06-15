@@ -77,7 +77,7 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({ serverApi }) => {
   };
 
   return (
-    <PanelSection title="SyncSave Panel">
+    <PanelSection title="OpenSave Panel">
       <PanelSectionRow>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span>Daemon Status</span>
@@ -140,7 +140,7 @@ const Content: VFC<{ serverApi: ServerAPI }> = ({ serverApi }) => {
 
 export default definePlugin((serverApi: ServerAPI) => {
   return {
-    title: <div className={staticClasses.Title}>SyncSave</div>,
+    title: <div className={staticClasses.Title}>OpenSave</div>,
     content: <Content serverApi={serverApi} />,
     icon: <div>⚡</div>,
   };

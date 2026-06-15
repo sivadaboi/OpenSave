@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const HOME_DIR = path.join(os.homedir(), '.syncsave');
+const HOME_DIR = path.join(os.homedir(), '.opensave');
 const ERROR_LOG_FILE = path.join(HOME_DIR, 'startup-error.log');
 
 // Ensure home directory exists for log file
@@ -37,7 +37,7 @@ process.on('uncaughtException', async (error) => {
     const { app, dialog } = await import('electron');
     const detail = error && (error.stack || error.message || String(error));
     dialog.showErrorBox(
-      'SyncSave Startup Crash',
+      'OpenSave Startup Crash',
       `An unexpected main process crash occurred.\n\nError Details:\n${detail}\n\nThis error has been logged to:\n${ERROR_LOG_FILE}`
     );
     app.quit();
@@ -55,7 +55,7 @@ process.on('unhandledRejection', async (reason) => {
     const { app, dialog } = await import('electron');
     const detail = reason && (reason.stack || reason.message || String(reason));
     dialog.showErrorBox(
-      'SyncSave Unhandled Rejection',
+      'OpenSave Unhandled Rejection',
       `An unhandled promise rejection occurred in the main process.\n\nError Details:\n${detail}\n\nThis error has been logged to:\n${ERROR_LOG_FILE}`
     );
     app.quit();
