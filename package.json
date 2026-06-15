@@ -64,7 +64,8 @@
       "installerHeaderIcon": "src/tray-icon.png",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "OpenSave"
+      "shortcutName": "OpenSave",
+      "artifactName": "${productName}.Setup.${version}.${ext}"
     },
     "files": [
       "src/**/*",
