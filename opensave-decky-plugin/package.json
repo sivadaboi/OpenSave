@@ -1,7 +1,7 @@
 {
-  "name": "syncsave-decky-plugin",
+  "name": "opensave-decky-plugin",
   "version": "1.0.0",
-  "description": "SyncSave Decky Loader Plugin UI",
+  "description": "OpenSave Decky Loader Plugin UI",
   "scripts": {
     "build": "rollup -c"
   },

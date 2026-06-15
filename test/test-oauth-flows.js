@@ -9,11 +9,11 @@ console.log('====================================================');
 console.log('Running Cloud OAuth Flow Tests...');
 console.log('====================================================');
 
-const tempDir = path.join(os.tmpdir(), `syncsave-test-oauth-${Date.now()}`);
+const tempDir = path.join(os.tmpdir(), `opensave-test-oauth-${Date.now()}`);
 fs.mkdirSync(tempDir, { recursive: true });
 
 // Redirect database save/load logic to a temporary test database
-db.setDbFileForTesting(path.join(tempDir, 'syncsave-db.json'), tempDir);
+db.setDbFileForTesting(path.join(tempDir, 'opensave-db.json'), tempDir);
 
 let fetchCalls = [];
 const originalFetch = global.fetch;

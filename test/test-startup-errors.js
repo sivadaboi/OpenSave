@@ -8,7 +8,7 @@ console.log('====================================================');
 console.log('Running Startup Error Diagnostics Unit Tests...');
 console.log('====================================================');
 
-const HOME_DIR = path.join(os.homedir(), '.syncsave');
+const HOME_DIR = path.join(os.homedir(), '.opensave');
 const ERROR_LOG_FILE = path.join(HOME_DIR, 'startup-error.log');
 
 try {

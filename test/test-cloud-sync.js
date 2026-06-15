@@ -102,9 +102,9 @@ global.fetch = async (url, options) => {
 };
 
 const server = app.listen(MOCK_PORT, async () => {
-  const tempDir = path.join(os.tmpdir(), `syncsave-test-cloud-${Date.now()}`);
+  const tempDir = path.join(os.tmpdir(), `opensave-test-cloud-${Date.now()}`);
   fs.mkdirSync(tempDir, { recursive: true });
-  db.setDbFileForTesting(path.join(tempDir, 'syncsave-db.json'), tempDir);
+  db.setDbFileForTesting(path.join(tempDir, 'opensave-db.json'), tempDir);
 
   const testFile = path.join(tempDir, 'test-cloud-save.zip');
   fs.writeFileSync(testFile, 'ZIP_DATA_FOOTPRINT', 'utf8');
@@ -232,7 +232,7 @@ const server = app.listen(MOCK_PORT, async () => {
     assert.strictEqual(lastRequest.headers['Content-Type'], 'application/octet-stream');
     
     const dropboxArgs = JSON.parse(lastRequest.headers['Dropbox-API-Arg']);
-    assert.strictEqual(dropboxArgs.path, '/SyncSave/test-cloud-save.zip');
+    assert.strictEqual(dropboxArgs.path, '/OpenSave/test-cloud-save.zip');
     assert.strictEqual(dropboxArgs.mode, 'overwrite');
     assert.strictEqual(dropboxArgs.mute, true);
     assert.strictEqual(lastRequest.body.toString('utf8'), 'ZIP_DATA_FOOTPRINT');

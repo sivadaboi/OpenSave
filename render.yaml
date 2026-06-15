@@ -16,7 +16,7 @@
 
 services:
   - type: web
-    name: syncsave-relay
+    name: opensave-relay
     runtime: node
     buildCommand: "cp package-relay.json package.json && npm install --omit=dev"
     startCommand: "node src/relay-server.js"

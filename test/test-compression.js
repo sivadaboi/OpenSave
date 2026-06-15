@@ -4,7 +4,7 @@ import zlib from 'zlib';
 import AdmZip from 'adm-zip';
 
 console.log("====================================================");
-console.log("Starting SyncSave Brotli Compression Exporter Test...");
+console.log("Starting OpenSave Brotli Compression Exporter Test...");
 console.log("====================================================");
 
 const testDir = path.resolve('test-temp-compression');

@@ -10,10 +10,10 @@ console.log('====================================================');
 console.log('Running Single-File Save Configuration Unit Tests...');
 console.log('====================================================');
 
-const tempDir = path.join(os.tmpdir(), `syncsave-test-single-${Date.now()}`);
+const tempDir = path.join(os.tmpdir(), `opensave-test-single-${Date.now()}`);
 fs.mkdirSync(tempDir, { recursive: true });
 
-const testDbPath = path.join(tempDir, 'syncsave-test-db.json');
+const testDbPath = path.join(tempDir, 'opensave-test-db.json');
 const testHomeDir = path.join(tempDir, 'home');
 fs.mkdirSync(testHomeDir, { recursive: true });
 

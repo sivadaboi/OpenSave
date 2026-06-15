@@ -5,14 +5,14 @@ import urllib.request
 import json
 
 # Setup logging inside a writeable directory on SteamOS
-log_file = "/tmp/syncsave-decky.log"
+log_file = "/tmp/opensave-decky.log"
 logging.basicConfig(filename=log_file, format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
 
 DAEMON_URL = "http://127.0.0.1:8383"
 
 class Plugin:
     async def get_daemon_status(self):
-        """Checks if the SyncSave daemon is active and running."""
+        """Checks if the OpenSave daemon is active and running."""
         try:
             req = urllib.request.Request(f"{DAEMON_URL}/api/status")
             with urllib.request.urlopen(req, timeout=2) as response:
@@ -54,4 +54,4 @@ class Plugin:
             }
 
     async def _main(self):
-        logging.info("SyncSave Decky Loader Plugin Backend Started.")
+        logging.info("OpenSave Decky Loader Plugin Backend Started.")

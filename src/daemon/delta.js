@@ -332,7 +332,7 @@ export function patchFile(filePath, blockChunks, remoteManifestFile) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  const tempFilePath = `${filePath}.syncsave.tmp`;
+  const tempFilePath = `${filePath}.opensave.tmp`;
   const fdWrite = fs.openSync(tempFilePath, 'w');
   
   // Reconstruct file block by block using either local file blocks or updated remote blockChunks

@@ -89,7 +89,7 @@ const POPULAR_STEAM_GAMES = {
 };
 
 // Simple cache file path for Steam AppID names to avoid repeating queries
-const APP_CACHE_FILE = path.join(os.homedir(), '.syncsave', 'steam-app-cache.json');
+const APP_CACHE_FILE = path.join(os.homedir(), '.opensave', 'steam-app-cache.json');
 
 function loadAppCache() {
   try {

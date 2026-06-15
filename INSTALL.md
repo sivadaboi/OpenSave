@@ -1,11 +1,11 @@
-# SyncSave Compilation, Packaging, & Server Hosting Guide
+# OpenSave Compilation, Packaging, & Server Hosting Guide
 
-SyncSave is a fully decentralized, self-contained game save synchronization engine. This guide explains how to package it as a native desktop application, compile standard installers, and run WAN synchronization without external cloud servers.
+OpenSave is a fully decentralized, self-contained game save synchronization engine. This guide explains how to package it as a native desktop application, compile standard installers, and run WAN synchronization without external cloud servers.
 
 ---
 
 ## 1. Native Desktop App (Electron)
-You can run SyncSave inside a borderless native window instead of hosting it on a web browser.
+You can run OpenSave inside a borderless native window instead of hosting it on a web browser.
 
 ### Run in Dev Mode
 Run the following in the project workspace:
@@ -18,10 +18,10 @@ This spawns the daemon in the background and renders the dashboard directly as a
 ---
 
 ## 2. Packaging Standalone Installers
-To distribute SyncSave to other gamers, you have two options depending on how lightweight you want the application to be:
+To distribute OpenSave to other gamers, you have two options depending on how lightweight you want the application to be:
 
 ### Option A: Standard Setup Wizard (Electron Builder — Recommended)
-This packages the app into a standard Windows installer setup wizard (e.g. `SyncSave_1.0.0_Setup.exe`) that installs the app to Program Files, adds Windows Firewall allow rules for private/domain networks, adds registry start entries, and places shortcuts on the desktop.
+This packages the app into a standard Windows installer setup wizard (e.g. `OpenSave_1.0.0_Setup.exe`) that installs the app to Program Files, adds Windows Firewall allow rules for private/domain networks, adds registry start entries, and places shortcuts on the desktop.
 
 1. **Install `electron-builder` as a development package**:
    ```powershell
@@ -46,7 +46,7 @@ If you want to compile the CLI and Daemon into a single `.exe` file without the 
    pkg . --targets node20-win-x64 --out-path dist
    ```
 3. **Output**:
-   Creates `dist/syncsave.exe`. This bundles the Node.js runtime, backend logic, and frontend HTML/CSS/JS assets inside a single file. Users can just double-click it.
+   Creates `dist/opensave.exe`. This bundles the Node.js runtime, backend logic, and frontend HTML/CSS/JS assets inside a single file. Users can just double-click it.
 
 ---
 
@@ -56,9 +56,9 @@ If you want to compile the CLI and Daemon into a single `.exe` file without the 
 
 For peer-to-peer sync on the same local network:
 
-1. Install SyncSave on both devices using the setup wizard.
+1. Install OpenSave on both devices using the setup wizard.
 2. Make sure both devices are on a **Private** Windows network profile, not Public.
-3. If Windows asks for firewall access, allow SyncSave on Private networks.
+3. If Windows asks for firewall access, allow OpenSave on Private networks.
 4. Open **Connected Devices**. Devices should appear automatically through UDP discovery.
 5. If discovery is blocked by the router, use **Connect via IP Address** with the other device's LAN IP and port `8383`.
 
@@ -68,7 +68,7 @@ The installer adds firewall rules for the app, but some antivirus suites or mana
 
 **No! You do not need to pay for any cloud servers.**
 
-- **On LAN (Local Network)**: SyncSave works 100% serverless. It uses UDP multicast to auto-discover peers on the same Wi-Fi/Ethernet network.
+- **On LAN (Local Network)**: OpenSave works 100% serverless. It uses UDP multicast to auto-discover peers on the same Wi-Fi/Ethernet network.
 - **On WAN (Across the Internet)**: You can use your **own local computer as the relay server**, but that relay machine must be reachable by both devices.
 
 ### How to use your PC as the WAN Server:
@@ -85,9 +85,9 @@ The installer adds firewall rules for the app, but some antivirus suites or mana
    npm run port:unforward
    ```
 3. **Find your Public IP**:
-   SyncSave shows the public relay address in **Internet Sync -> Relay Server**. If unavailable, visit [WhatIsMyIP](https://www.whatismyip.com/) to get your public IP (e.g. `203.0.113.88`).
+   OpenSave shows the public relay address in **Internet Sync -> Relay Server**. If unavailable, visit [WhatIsMyIP](https://www.whatismyip.com/) to get your public IP (e.g. `203.0.113.88`).
 4. **Link both PCs**:
-   - On your PC: In SyncSave settings, enable **Host a Local WAN Relay Server**, set the **WAN WebSocket Relay URL** to `ws://localhost:8386`, and generate a Sync Code (e.g., `ss-alaska-99`).
-   - On the Alaska PC: In SyncSave settings, set the **WAN WebSocket Relay URL** to your public IP: `ws://203.0.113.88:8386`. Under WAN Sync, enter the room code `ss-alaska-99` and click **Join**.
+   - On your PC: In OpenSave settings, enable **Host a Local WAN Relay Server**, set the **WAN WebSocket Relay URL** to `ws://localhost:8386`, and generate a Sync Code (e.g., `ss-alaska-99`).
+   - On the Alaska PC: In OpenSave settings, set the **WAN WebSocket Relay URL** to your public IP: `ws://203.0.113.88:8386`. Under WAN Sync, enter the room code `ss-alaska-99` and click **Join**.
    
 Both devices will connect to the relay server running **on your PC** to establish the P2P connection and sync saves securely, without any third-party cloud costs!

@@ -1,5 +1,5 @@
 // ============================================================
-// SyncSave Landing Page Interactive Orchestrator
+// OpenSave Landing Page Interactive Orchestrator
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {

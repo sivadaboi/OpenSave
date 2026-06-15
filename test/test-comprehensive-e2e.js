@@ -77,7 +77,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function runE2ETest() {
   console.log('====================================================');
-  console.log('Starting SyncSave RIGOROUS Comprehensive E2E Test...');
+  console.log('Starting OpenSave RIGOROUS Comprehensive E2E Test...');
   console.log('====================================================');
   
   cleanup();

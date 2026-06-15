@@ -1,5 +1,5 @@
 /**
- * SyncSave WAN Relay Server
+ * OpenSave WAN Relay Server
  * ─────────────────────────────────────────────────────────────
  * Lightweight WebSocket message broker.  Every client that
  * connects with the same ?room= code is placed in a room and
@@ -30,7 +30,7 @@ const serverStartedAt = new Date().toISOString();
 
 // ── HTTP Server ────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
-  // Health-check endpoint used by cloud platforms and the SyncSave UI
+  // Health-check endpoint used by cloud platforms and the OpenSave UI
   if (req.url === '/health' || req.url === '/') {
     const roomCount   = rooms.size;
     const clientCount = [...rooms.values()].reduce((s, r) => s + r.size, 0);
@@ -145,7 +145,7 @@ process.on('SIGINT',  shutdown);
 // ── Start listening ────────────────────────────────────────────────────────
 server.listen(PORT, '0.0.0.0', () => {
   console.log('════════════════════════════════════════════════════');
-  console.log(`  SyncSave WAN Relay Server v1.1.3`);
+  console.log(`  OpenSave WAN Relay Server v1.1.3`);
   console.log(`  Listening on port ${PORT}`);
   console.log(`  Health: http://localhost:${PORT}/health`);
   console.log(`  Max per room: ${MAX_PER_ROOM}  |  Heartbeat: ${HEARTBEAT_MS}ms`);

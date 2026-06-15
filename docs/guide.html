@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SyncSave Guide — Getting Started & User Manual</title>
-  <meta name="description" content="Learn how to pair devices, sync game saves, manage snapshots, resolve conflicts, and configure cross-platform paths with SyncSave.">
+  <title>OpenSave Guide — Getting Started & User Manual</title>
+  <meta name="description" content="Learn how to pair devices, sync game saves, manage snapshots, resolve conflicts, and configure cross-platform paths with OpenSave.">
   
   <!-- Modern Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,7 +21,7 @@
     <div class="announcement-banner">
       <div class="banner-container">
         <span class="banner-badge">Notice</span>
-        <span class="banner-text">If you experience syncing or cloud backup issues, please download and use <a href="https://github.com/sivadaboi/SyncSave/releases/tag/v1.1.4" target="_blank" class="banner-link">pre-release version 1.1.4</a>.</span>
+        <span class="banner-text">If you experience syncing or cloud backup issues, please download and use <a href="https://github.com/sivadaboi/OpenSave/releases/tag/v1.1.4" target="_blank" class="banner-link">pre-release version 1.1.4</a>.</span>
       </div>
     </div>
     <div class="nav-container">
@@ -35,7 +35,7 @@
         <a href="index.html#install">Install Guide</a>
         <a href="guide.html" class="active">User Guide</a>
         <a href="linux.html">Linux Build</a>
-        <a href="https://github.com/sivadaboi/SyncSave" target="_blank" class="github-link">
+        <a href="https://github.com/sivadaboi/OpenSave" target="_blank" class="github-link">
           <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
           GitHub
         </a>
@@ -75,7 +75,7 @@
       <!-- Intro Section -->
       <header style="margin-bottom: 40px;">
         <h1 class="hero-title" style="font-size: 42px; margin-bottom: 12px; line-height: 1.2;">
-          SyncSave <span>User Guide</span>
+          OpenSave <span>User Guide</span>
         </h1>
         <p style="color: var(--text-secondary); font-size: 17px; max-width: 700px; line-height: 1.6;">
           Everything you need to configure peer-to-peer save synchronization, resolve conflict states, and set up cross-platform translations like a pro.
@@ -85,7 +85,7 @@
       <!-- Welcome Banner -->
       <div class="guide-intro-card">
         <p>
-          Welcome to <strong>SyncSave</strong>! This guide will walk you through setting up and using the app step-by-step. By the end of this guide, you will be syncing save files between your PC, Steam Deck, or emulator configurations reliably and securely.
+          Welcome to <strong>OpenSave</strong>! This guide will walk you through setting up and using the app step-by-step. By the end of this guide, you will be syncing save files between your PC, Steam Deck, or emulator configurations reliably and securely.
         </p>
       </div>
 
@@ -93,7 +93,7 @@
       <section id="concepts" class="guide-section">
         <h2 class="guide-section-title">🧭 Core <span>Concepts</span></h2>
         <p style="color: var(--text-secondary); margin-bottom: 24px;">
-          SyncSave runs in the background as a lightweight system tray service (the "Daemon") and opens a dashboard in your browser.
+          OpenSave runs in the background as a lightweight system tray service (the "Daemon") and opens a dashboard in your browser.
         </p>
         
         <div class="guide-card-grid">
@@ -103,7 +103,7 @@
               <h3>LAN Sync (Local Network)</h3>
             </div>
             <p>
-              Automatically detects other devices running SyncSave on your local Wi-Fi or Ethernet network. It copies and synchronizes saves directly peer-to-peer over your local network at maximum speed without routing files to external servers.
+              Automatically detects other devices running OpenSave on your local Wi-Fi or Ethernet network. It copies and synchronizes saves directly peer-to-peer over your local network at maximum speed without routing files to external servers.
             </p>
           </div>
 
@@ -123,7 +123,7 @@
               <h3>Automatic Snapshots</h3>
             </div>
             <p>
-              Every time a file change is made, SyncSave takes a tiny <code>.zip</code> backup snapshot of your save folder. If a save gets corrupted by a game crash, or if you want to undo your latest play session, you can restore any snapshot with a single click.
+              Every time a file change is made, OpenSave takes a tiny <code>.zip</code> backup snapshot of your save folder. If a save gets corrupted by a game crash, or if you want to undo your latest play session, you can restore any snapshot with a single click.
             </p>
           </div>
         </div>
@@ -131,15 +131,15 @@
 
       <!-- Step 1 -->
       <section id="step-1" class="guide-section">
-        <h2 class="guide-section-title">🚀 Step 1: <span>Launching SyncSave</span></h2>
+        <h2 class="guide-section-title">🚀 Step 1: <span>Launching OpenSave</span></h2>
         <div class="guide-step-card">
           <p style="margin-bottom: 16px;">Set up the service on your first machine:</p>
           <ol class="guide-step-list-numbered">
             <li data-step="1">
-              Download and run the <strong>SyncSave Setup</strong> installer on your devices.
+              Download and run the <strong>OpenSave Setup</strong> installer on your devices.
             </li>
             <li data-step="2">
-              Once installed, launch <strong>SyncSave</strong>. You will see the SyncSave icon in your system tray (bottom-right on Windows, top-bar on Linux/Steam Deck).
+              Once installed, launch <strong>OpenSave</strong>. You will see the OpenSave icon in your system tray (bottom-right on Windows, top-bar on Linux/Steam Deck).
             </li>
             <li data-step="3">
               Right-click the tray icon and select <strong>Open Dashboard</strong> (or open your web browser and go to <code>http://localhost:8383</code>).
@@ -152,7 +152,7 @@
       <section id="step-2" class="guide-section">
         <h2 class="guide-section-title">📂 Step 2: <span>Tracking Game Saves</span></h2>
         <div class="guide-step-card">
-          <p style="margin-bottom: 16px;">To synchronize a game, SyncSave needs to know where its save files are stored on your disk:</p>
+          <p style="margin-bottom: 16px;">To synchronize a game, OpenSave needs to know where its save files are stored on your disk:</p>
           <ol class="guide-step-list-numbered">
             <li data-step="1">On the <strong>Games</strong> tab of the dashboard, click <strong>Track New Folder</strong>.</li>
             <li data-step="2"><strong>Game Title</strong>: Enter the name of the game (e.g. <code>Elden Ring</code>).</li>
@@ -168,7 +168,7 @@
           
           <ol class="guide-step-list-numbered" style="margin-top: 12px;">
             <li data-step="4">Click <strong>Track Game</strong>.</li>
-            <li data-step="5">SyncSave will scan the folder, catalog your files, and create your initial baseline snapshot backup automatically.</li>
+            <li data-step="5">OpenSave will scan the folder, catalog your files, and create your initial baseline snapshot backup automatically.</li>
           </ol>
         </div>
       </section>
@@ -188,7 +188,7 @@
               <li data-step="1">Go to the <strong>Devices</strong> tab on both machines.</li>
               <li data-step="2">Look at the <strong>Discovered on LAN</strong> section. If automatic discovery is working, you will see the other device listed. Click <strong>Pair</strong>.</li>
               <li data-step="3">A approval modal will appear on the target device. Click <strong>Approve</strong> to establish the link.</li>
-              <li data-step="4"><strong>Done!</strong> Your devices are now paired. Whenever you exit a game, SyncSave will automatically sync it to the other machine.</li>
+              <li data-step="4"><strong>Done!</strong> Your devices are now paired. Whenever you exit a game, OpenSave will automatically sync it to the other machine.</li>
             </ol>
             
             <div class="guide-alert warning">
@@ -223,12 +223,12 @@
         <div class="guide-card-grid">
           <div class="guide-step-card">
             <h3>Automatic Syncing Pipeline</h3>
-            <p style="margin-top: 12px; margin-bottom: 12px;">Once paired, SyncSave handles directories automatically in the background:</p>
+            <p style="margin-top: 12px; margin-bottom: 12px;">Once paired, OpenSave handles directories automatically in the background:</p>
             <ul class="guide-step-list">
-              <li>SyncSave detects when files in a tracked directory are modified.</li>
+              <li>OpenSave detects when files in a tracked directory are modified.</li>
               <li>It waits for write operations to stop (a 2-second debounce timer) to prevent copying partial saves.</li>
               <li>It generates a backup ZIP snapshot locally.</li>
-              <li>It queries the paired peer. If online, SyncSave divides files into blocks and transfers only modified content blocks (reducing WAN/LAN usage).</li>
+              <li>It queries the paired peer. If online, OpenSave divides files into blocks and transfers only modified content blocks (reducing WAN/LAN usage).</li>
             </ul>
           </div>
 
@@ -238,7 +238,7 @@
               If you play a game offline on your PC, and also play it offline on your Steam Deck, both devices will have save files that are newer than the last sync. This creates a <strong>Conflict</strong>.
             </p>
             <p style="margin-bottom: 16px;">
-              SyncSave will display a **Version Conflict Modal** showing:
+              OpenSave will display a **Version Conflict Modal** showing:
             </p>
             <ul class="guide-step-list" style="margin-bottom: 20px;">
               <li>Local Version details (Comment, Timestamp, Snapshot ID).</li>
@@ -272,7 +272,7 @@
             <li data-step="2">Scroll down to the <strong>Backup History</strong> timeline.</li>
             <li data-step="3">You will see a chronological list of backups.</li>
             <li data-step="4">
-              <strong>Full Rollback</strong>: Click <strong>Rollback</strong> on any snapshot to reset the entire save folder to that exact moment. SyncSave automatically takes a safety backup of your current files before doing this so you can't lose anything.
+              <strong>Full Rollback</strong>: Click <strong>Rollback</strong> on any snapshot to reset the entire save folder to that exact moment. OpenSave automatically takes a safety backup of your current files before doing this so you can't lose anything.
             </li>
             <li data-step="5">
               <strong>Granular Restore</strong>: Click <strong>Browse Files</strong> on a snapshot to view all files contained inside that backup ZIP. Click <strong>Restore File</strong> next to a specific file to restore *only* that file, leaving the rest of your save folder untouched.
@@ -286,7 +286,7 @@
         <h2 class="guide-section-title">🛠️ Advanced: <span>Path Translations</span></h2>
         <div class="guide-step-card">
           <p style="margin-bottom: 16px;">
-            If you sync between a Windows PC and a Linux Steam Deck, SyncSave automatically translates standard user folder prefixes (e.g. mapping <code>C:\Users\John\Documents</code> to <code>/home/deck/Documents</code>).
+            If you sync between a Windows PC and a Linux Steam Deck, OpenSave automatically translates standard user folder prefixes (e.g. mapping <code>C:\Users\John\Documents</code> to <code>/home/deck/Documents</code>).
           </p>
           <p style="margin-bottom: 16px;">
             For custom game folders or emulators:
@@ -305,8 +305,8 @@
       <!-- Bottom Box -->
       <div class="bottom-download-box" style="margin-top: 60px;">
         <h3>Need more help?</h3>
-        <p>SyncSave is free and open-source. For issues, source code compilation, or bug reports, visit our GitHub page.</p>
-        <a href="https://github.com/sivadaboi/SyncSave" target="_blank" class="btn-primary">
+        <p>OpenSave is free and open-source. For issues, source code compilation, or bug reports, visit our GitHub page.</p>
+        <a href="https://github.com/sivadaboi/OpenSave" target="_blank" class="btn-primary">
           ⭐ Star on GitHub
         </a>
       </div>
@@ -331,7 +331,7 @@
         <a href="index.html#install">Install</a>
         <a href="guide.html">User Guide</a>
         <a href="linux.html">Linux Build</a>
-        <a href="https://github.com/sivadaboi/SyncSave" target="_blank">GitHub</a>
+        <a href="https://github.com/sivadaboi/OpenSave" target="_blank">GitHub</a>
       </div>
     </div>
   </footer>

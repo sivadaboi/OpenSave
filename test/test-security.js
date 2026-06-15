@@ -95,7 +95,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function runSecurityTests() {
   console.log('====================================================');
-  console.log('Starting SyncSave Security Hardening Test Suite...');
+  console.log('Starting OpenSave Security Hardening Test Suite...');
   console.log('====================================================');
   
   cleanup();

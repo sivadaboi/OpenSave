@@ -76,7 +76,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function runTest() {
   console.log('====================================================');
-  console.log('Starting SyncSave Integrated P2P Sync Test...');
+  console.log('Starting OpenSave Integrated P2P Sync Test...');
   console.log('====================================================');
   
   cleanup();

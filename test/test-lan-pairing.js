@@ -91,7 +91,7 @@ async function test(label, fn) {
 // ─────────────────────────────────────────────────────────────
 async function run() {
   console.log('\n═══════════════════════════════════════════════════');
-  console.log('   SyncSave — LAN Pairing Comprehensive Test Suite');
+  console.log('   OpenSave — LAN Pairing Comprehensive Test Suite');
   console.log('═══════════════════════════════════════════════════\n');
 
   cleanup();
@@ -199,17 +199,17 @@ async function run() {
     });
   });
 
-  await test('Alice is broadcasting syncsave-ping on the network', async () => {
+  await test('Alice is broadcasting opensave-ping on the network', async () => {
     // The daemon broadcasts on all active LAN interfaces. On the test machine
     // we can hear our own broadcast because we bind reuseAddr and don't filter by sender.
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('No syncsave-ping from Alice within 5s')), 5000);
+      const timer = setTimeout(() => reject(new Error('No opensave-ping from Alice within 5s')), 5000);
       const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
       sock.bind({ port: DISCOVERY_UDP_PORT, address: '0.0.0.0' }, () => sock.setBroadcast(true));
       sock.on('message', msg => {
         try {
           const d = JSON.parse(msg.toString());
-          if (d.type === 'syncsave-ping' && d.nodeId === aliceId) {
+          if (d.type === 'opensave-ping' && d.nodeId === aliceId) {
             clearTimeout(timer); sock.close();
             assert.ok(d.port > 0, 'ping must include valid port');
             assert.strictEqual(d.deviceName, 'Alice-PC');
@@ -221,15 +221,15 @@ async function run() {
     });
   });
 
-  await test('Bob is broadcasting syncsave-ping on the network', async () => {
+  await test('Bob is broadcasting opensave-ping on the network', async () => {
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('No syncsave-ping from Bob within 5s')), 5000);
+      const timer = setTimeout(() => reject(new Error('No opensave-ping from Bob within 5s')), 5000);
       const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
       sock.bind({ port: DISCOVERY_UDP_PORT, address: '0.0.0.0' }, () => sock.setBroadcast(true));
       sock.on('message', msg => {
         try {
           const d = JSON.parse(msg.toString());
-          if (d.type === 'syncsave-ping' && d.nodeId === bobId) {
+          if (d.type === 'opensave-ping' && d.nodeId === bobId) {
             clearTimeout(timer); sock.close();
             assert.strictEqual(d.deviceName, 'Bob-Deck');
             resolve();

@@ -157,9 +157,9 @@ global.fetch = async (url, options = {}) => {
 };
 
 const server = app.listen(MOCK_PORT, async () => {
-  const tempDir = path.join(os.tmpdir(), `syncsave-test-explorer-${Date.now()}`);
+  const tempDir = path.join(os.tmpdir(), `opensave-test-explorer-${Date.now()}`);
   fs.mkdirSync(tempDir, { recursive: true });
-  db.setDbFileForTesting(path.join(tempDir, 'syncsave-db.json'), tempDir);
+  db.setDbFileForTesting(path.join(tempDir, 'opensave-db.json'), tempDir);
 
   try {
     // ----------------------------------------------------
