@@ -25,14 +25,19 @@ global.fetch = async (url, options) => {
   let bodyParams = {};
   if (options && options.body) {
     if (typeof options.body === 'string') {
-      const parsed = new URLSearchParams(options.body);
-      for (const [key, val] of parsed.entries()) {
-        bodyParams[key] = val;
+      try {
+        bodyParams = JSON.parse(options.body);
+      } catch (e) {
+        // Fallback to URLSearchParams for standard form submissions
+        const parsed = new URLSearchParams(options.body);
+        for (const [key, val] of parsed.entries()) {
+          bodyParams[key] = val;
+        }
       }
     }
   }
 
-  if (url === 'https://oauth2.googleapis.com/token') {
+  if (url === 'https://oauth2.googleapis.com/token' || url === 'https://opensave-relay.onrender.com/api/oauth/token') {
     if (bodyParams.grant_type === 'authorization_code') {
       assert.strictEqual(bodyParams.code, 'google-auth-code');
       assert.strictEqual(bodyParams.code_verifier, 'google-verifier');
@@ -269,7 +274,7 @@ try {
   const refreshedToken = await getOrRefreshAccessToken('google_drive');
   assert.strictEqual(refreshedToken, 'google-refreshed-access-token-789');
   assert.strictEqual(fetchCalls.length, 1);
-  assert.strictEqual(fetchCalls[0].url, 'https://oauth2.googleapis.com/token');
+  assert.ok(fetchCalls[0].url === 'https://oauth2.googleapis.com/token' || fetchCalls[0].url === 'https://opensave-relay.onrender.com/api/oauth/token');
   
   // DB should be updated with new token and new expiry time
   const updatedSettings = db.getSettings();

@@ -213,11 +213,21 @@ export class WanClientManager {
       let changed = false;
       if (pairedPeers[msg.from]) {
         const wasOffline = pairedPeers[msg.from].status !== 'online';
-        db.updatePeer(msg.from, {
+        const updateData = {
           status: 'online',
           lastSeen: Date.now()
-        });
-        if (wasOffline) changed = true;
+        };
+        // Fallback: If their address in DB is currently a LAN IP, switch to 'relay' to route over WAN.
+        if (pairedPeers[msg.from].address !== 'relay') {
+          updateData.address = 'relay';
+          changed = true; // Address changed, trigger peer list UI update
+        }
+        db.updatePeer(msg.from, updateData);
+        if (wasOffline) {
+          changed = true;
+          log('info', `Peer ${pairedPeers[msg.from].name} came online (WAN presence). Triggering automatic synchronization for all games.`);
+          this.p2pEngine.syncAllGames();
+        }
       }
       if (this.p2pEngine.discoveredPeers[msg.from]) {
         this.p2pEngine.discoveredPeers[msg.from].lastSeen = Date.now();

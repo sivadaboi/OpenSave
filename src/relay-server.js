@@ -30,6 +30,79 @@ const serverStartedAt = new Date().toISOString();
 
 // ── HTTP Server ────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
+  // CORS Preflight Options handler
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.end();
+    return;
+  }
+
+  // OAuth Proxy Endpoint to securely exchange and refresh Google Drive tokens
+  if (req.method === 'POST' && req.url === '/api/oauth/token') {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body);
+        const { provider, client_id, grant_type, code, code_verifier, redirect_uri, refresh_token } = payload;
+
+        if (provider !== 'google_drive') {
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type' });
+          res.end(JSON.stringify({ error: `Provider "${provider}" is not supported by this proxy.` }));
+          return;
+        }
+
+        const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
+        if (!clientSecret) {
+          console.error('[Relay OAuth] GOOGLE_DRIVE_CLIENT_SECRET environment variable is not set on this server.');
+          res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type' });
+          res.end(JSON.stringify({ error: 'OAuth Proxy configuration error: Client Secret is not set on the relay server.' }));
+          return;
+        }
+
+        // Assemble request payload for Google token endpoint
+        const googleBody = new URLSearchParams({
+          client_id,
+          client_secret: clientSecret,
+          grant_type
+        });
+
+        if (grant_type === 'authorization_code') {
+          googleBody.append('code', code);
+          googleBody.append('code_verifier', code_verifier);
+          googleBody.append('redirect_uri', redirect_uri);
+        } else if (grant_type === 'refresh_token') {
+          googleBody.append('refresh_token', refresh_token);
+        }
+
+        const googleRes = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: googleBody.toString()
+        });
+
+        const googleData = await googleRes.json();
+        res.writeHead(googleRes.status, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type'
+        });
+        res.end(JSON.stringify(googleData));
+      } catch (err) {
+        console.error('[Relay OAuth] Proxy token exchange failed:', err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type' });
+        res.end(JSON.stringify({ error: `OAuth Proxy failed to exchange token: ${err.message}` }));
+      }
+    });
+    return;
+  }
+
   // Health-check endpoint used by cloud platforms and the OpenSave UI
   if (req.url === '/health' || req.url === '/') {
     const roomCount   = rooms.size;

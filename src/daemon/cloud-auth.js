@@ -7,7 +7,7 @@ const REDIRECT_URI = 'http://localhost/callback';
 // via Settings > Cloud Backup > Custom OAuth Client Credentials.
 const DEFAULT_CLIENT_IDS = {
   // Google Cloud Console project — drive.file + openid scopes (Base64 encoded to bypass push protection scanning)
-  google_drive: Buffer.from('MTU3NjU3NzQ0MTIwLW81Y2sxbXU4aDUyc282N2dua2swNzY2MWQyMzA4aHJ0LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t', 'base64').toString('ascii'),
+  google_drive: Buffer.from('MTU3NjU3NzQ0MTIwLTFuNG1oNmFoYzdkMThndHRxaW04ZTlpNmFjbzRhcm0zLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t', 'base64').toString('ascii'),
   // Microsoft Azure app registration — not yet registered; users must supply their own
   onedrive: '',
   // Dropbox App Console (PKCE public client — no secret needed)
@@ -16,12 +16,18 @@ const DEFAULT_CLIENT_IDS = {
 
 // Client secrets for providers that require them at token exchange.
 // Dropbox uses pure PKCE and does NOT need a secret.
+// Google Drive default secret is empty here, as it is handled securely by the OAuth Proxy Server.
 const DEFAULT_CLIENT_SECRETS = {
-  // Base64 encoded to bypass push protection scanning
-  google_drive: Buffer.from('R0NTUFgtTGw3OUh0QThhTjVMTklrT0MzUC15c2FzNTlr', 'base64').toString('ascii'),
+  google_drive: '',
   onedrive: '',
   dropbox: ''
 };
+
+function getRelayHttpUrl() {
+  const settings = db.getSettings();
+  const wsUrl = settings.relayUrl || 'wss://opensave-relay.onrender.com';
+  return wsUrl.replace(/^ws/, 'http');
+}
 
 /**
  * Returns the effective Client ID for a provider.
@@ -106,6 +112,48 @@ export function getAuthUrl(provider, codeChallenge) {
 export async function exchangeAuthCode(provider, code, codeVerifier) {
   const clientId = getClientId(provider);
   const clientSecret = getClientSecret(provider);
+
+  // If using Google Drive default credentials, route via our secure OAuth Proxy Server
+  if (provider === 'google_drive' && !clientSecret) {
+    const proxyUrl = `${getRelayHttpUrl()}/api/oauth/token`;
+    const res = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider,
+        client_id: clientId,
+        grant_type: 'authorization_code',
+        code,
+        code_verifier: codeVerifier,
+        redirect_uri: REDIRECT_URI
+      })
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      let errMsg = `Token exchange failed: ${res.status} - ${errorText}`;
+      if (errorText.includes('invalid_client')) {
+        errMsg = `Token exchange failed: The default Google Drive application credentials are invalid or have been revoked by Google. To fix this, please configure your own Custom Client ID and Client Secret under Settings > Cloud Backup.`;
+      }
+      throw new Error(errMsg);
+    }
+
+    const data = await res.json();
+    const accessToken = data.access_token;
+    const refreshToken = data.refresh_token;
+    const expiryTime = Date.now() + (data.expires_in * 1000);
+
+    // Fetch profile email to present in Settings UI
+    const userEmail = await fetchUserProfile(provider, accessToken);
+
+    return {
+      accessToken,
+      refreshToken,
+      expiryTime,
+      userEmail
+    };
+  }
+
   let tokenUrl = '';
   let body = new URLSearchParams({
     client_id: clientId,
@@ -136,7 +184,11 @@ export async function exchangeAuthCode(provider, code, codeVerifier) {
 
   if (!res.ok) {
     const errorText = await res.text();
-    throw new Error(`Token exchange failed: ${res.status} - ${errorText}`);
+    let errMsg = `Token exchange failed: ${res.status} - ${errorText}`;
+    if (provider === 'google_drive' && errorText.includes('invalid_client')) {
+      errMsg = `Token exchange failed: The default Google Drive application credentials are invalid or have been revoked by Google. To fix this, please configure your own Custom Client ID and Client Secret under Settings > Cloud Backup.`;
+    }
+    throw new Error(errMsg);
   }
 
   const data = await res.json();
@@ -178,6 +230,50 @@ export async function getOrRefreshAccessToken(provider) {
 
   const clientId = getClientId(provider);
   const clientSecret = getClientSecret(provider);
+
+  // If using Google Drive default credentials, route via our secure OAuth Proxy Server
+  if (provider === 'google_drive' && !clientSecret) {
+    const proxyUrl = `${getRelayHttpUrl()}/api/oauth/token`;
+    const res = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider,
+        client_id: clientId,
+        grant_type: 'refresh_token',
+        refresh_token: tokens.refreshToken
+      })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      let errMsg = `Failed to refresh token: ${res.status} - ${errText}`;
+      if (errText.includes('invalid_client')) {
+        errMsg = `Failed to refresh token: The default Google Drive application credentials are invalid or have been revoked by Google. To fix this, please configure your own Custom Client ID and Client Secret under Settings > Cloud Backup.`;
+      }
+      throw new Error(errMsg);
+    }
+
+    const data = await res.json();
+    const newTokens = {
+      ...tokens,
+      accessToken: data.access_token,
+      expiryTime: Date.now() + (data.expires_in * 1000)
+    };
+    if (data.refresh_token) {
+      newTokens.refreshToken = data.refresh_token;
+    }
+
+    db.updateSettings({
+      cloudSync: {
+        ...cloudSync,
+        tokens: newTokens
+      }
+    });
+
+    return data.access_token;
+  }
+
   let refreshUrl = '';
   let body = new URLSearchParams({
     client_id: clientId,
@@ -206,7 +302,11 @@ export async function getOrRefreshAccessToken(provider) {
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Failed to refresh token: ${res.status} - ${errText}`);
+    let errMsg = `Failed to refresh token: ${res.status} - ${errText}`;
+    if (provider === 'google_drive' && errText.includes('invalid_client')) {
+      errMsg = `Failed to refresh token: The default Google Drive application credentials are invalid or have been revoked by Google. To fix this, please configure your own Custom Client ID and Client Secret under Settings > Cloud Backup.`;
+    }
+    throw new Error(errMsg);
   }
 
   const data = await res.json();

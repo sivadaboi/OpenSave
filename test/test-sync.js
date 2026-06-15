@@ -283,6 +283,27 @@ async function runTest() {
     }
     console.log('✔ Rollback reset the save state files successfully!');
 
+    // 9. Empty Directory Sync Test
+    console.log('[Test] Testing empty directory synchronization...');
+    const testSubDir = path.join(gameASaveDir, 'empty_folder_test');
+    fs.mkdirSync(testSubDir);
+
+    console.log('[Test] Waiting for Daemon A to snapshot directory creation...');
+    await sleep(4500);
+
+    console.log('[Test] Syncing empty directory...');
+    const syncDirRes = await apiCall(portA, `/api/games/${gameId}/sync`, 'POST');
+    if (syncDirRes.statusCode !== 200) {
+      throw new Error('Syncing directory failed.');
+    }
+    await sleep(2000);
+
+    const peerBDirExists = fs.existsSync(path.join(gameBSaveDir, 'empty_folder_test'));
+    if (!peerBDirExists) {
+      throw new Error('Empty directory was not synchronized to Peer B.');
+    }
+    console.log('✔ Empty directory synchronized successfully!');
+
     success = true;
     console.log('\n====================================================');
     console.log('✅ ALL INTEGRATED TESTS PASSED SUCCESSFULLY!');

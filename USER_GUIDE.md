@@ -2,8 +2,6 @@
 
 Welcome to **OpenSave**! This guide will walk you through setting up and using the app step-by-step. By the end of this guide, you will be syncing save files between your PC, Steam Deck, or emulator configurations like a pro.
 
-> [!WARNING]
-> **Important Note:** If you are experiencing any issues with syncing or cloud backups, please download and use **pre-release version 1.1.4** from the [GitHub Releases](https://github.com/sivadaboi/OpenSave/releases/tag/v1.1.4) page to resolve these issues.
 
 ---
 

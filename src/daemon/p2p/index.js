@@ -181,7 +181,12 @@ class P2PEngine {
       if (peer.address === 'relay' || peer.isWan) {
         const disc = this.discoveredPeers[peerId];
         if (disc && Date.now() - disc.lastSeen < 20000) {
+          const wasOffline = peer.status !== 'online';
           db.updatePeer(peerId, { status: 'online', lastSeen: Date.now() });
+          if (wasOffline) {
+            log('info', `Peer ${peer.name} came online (WAN). Triggering automatic synchronization for all games.`);
+            this.syncAllGames();
+          }
         } else {
           db.updatePeer(peerId, { status: 'offline' });
         }
@@ -193,15 +198,46 @@ class P2PEngine {
           });
           if (response.ok) {
             const data = await response.json();
+            const wasOffline = peer.status !== 'online';
             db.updatePeer(peerId, { status: 'online', lastSeen: Date.now() });
             if (data.games) {
               this.peerGameStates[peerId] = data.games;
             }
+            if (wasOffline) {
+              log('info', `Peer ${peer.name} came online (LAN). Triggering automatic synchronization for all games.`);
+              this.syncAllGames();
+            }
+          } else {
+            // LAN ping failed. Fallback to WAN if peer is active on WAN
+            const disc = this.discoveredPeers[peerId];
+            const isOnlineOnWan = disc && (disc.address === 'relay' || disc.isWan) && (Date.now() - disc.lastSeen < 20000);
+            if (isOnlineOnWan) {
+              log('info', `LAN ping failed for ${peer.name}, but peer is online via WAN. Switching address to 'relay'.`);
+              const wasOffline = peer.status !== 'online';
+              db.updatePeer(peerId, { address: 'relay', status: 'online', lastSeen: Date.now() });
+              if (wasOffline) {
+                log('info', `Peer ${peer.name} came online (WAN fallback). Triggering automatic synchronization for all games.`);
+                this.syncAllGames();
+              }
+            } else {
+              db.updatePeer(peerId, { status: 'offline' });
+            }
+          }
+        } catch (err) {
+          // LAN ping failed. Fallback to WAN if peer is active on WAN
+          const disc = this.discoveredPeers[peerId];
+          const isOnlineOnWan = disc && (disc.address === 'relay' || disc.isWan) && (Date.now() - disc.lastSeen < 20000);
+          if (isOnlineOnWan) {
+            log('info', `LAN ping failed for ${peer.name}, but peer is online via WAN. Switching address to 'relay'.`);
+            const wasOffline = peer.status !== 'online';
+            db.updatePeer(peerId, { address: 'relay', status: 'online', lastSeen: Date.now() });
+            if (wasOffline) {
+              log('info', `Peer ${peer.name} came online (WAN fallback). Triggering automatic synchronization for all games.`);
+              this.syncAllGames();
+            }
           } else {
             db.updatePeer(peerId, { status: 'offline' });
           }
-        } catch (err) {
-          db.updatePeer(peerId, { status: 'offline' });
         }
       }
     }
@@ -339,6 +375,15 @@ class P2PEngine {
 
   async syncGame(gameId) {
     return this.syncEngine.syncGame(gameId);
+  }
+
+  async syncAllGames() {
+    const games = db.getGames();
+    for (const gameId in games) {
+      this.syncGame(gameId).catch(err => {
+        log('error', `Auto-sync failed for ${gameId} on peer connection:`, err.message);
+      });
+    }
   }
 
   async resolveConflict(gameId, peerId, resolution) {

@@ -83,7 +83,16 @@ export class SyncEngine {
     // 1. Fetch remote manifest & branch info
     const nameParam = encodeURIComponent(game.name);
     const pathParam = encodeURIComponent(game.savePath);
-    const remoteData = await this.p2pEngine.p2pRequest(peer, `/manifest/${gameId}?name=${nameParam}&savePath=${pathParam}`);
+    let isFile = false;
+    if (fs.existsSync(game.savePath)) {
+      isFile = fs.statSync(game.savePath).isFile();
+    } else {
+      const ext = path.extname(game.savePath);
+      if (ext && ext.length > 1) {
+        isFile = true;
+      }
+    }
+    const remoteData = await this.p2pEngine.p2pRequest(peer, `/manifest/${gameId}?name=${nameParam}&savePath=${pathParam}&isFile=${isFile}`);
     
     // Check branch compatibility
     if (game.activeBranch !== remoteData.activeBranch) {
@@ -166,15 +175,26 @@ export class SyncEngine {
     const remoteFiles = remoteManifest.files || {};
     const allFiles = new Set([...Object.keys(localFiles), ...Object.keys(remoteFiles)]);
 
-    // Load last known synced file list for this game/peer pair
+    const localDirs = localManifest.dirs || [];
+    const remoteDirs = remoteManifest.dirs || [];
+    const allDirs = new Set([...localDirs, ...remoteDirs]);
+
+    // Load last known synced file/directory lists for this game/peer pair
     // This allows us to distinguish "deleted locally" vs "new on remote"
     const lastSyncedFiles = new Set(game.lastSyncedFilesByPeer?.[peer.id] || []);
+    const lastSyncedDirs = new Set(game.lastSyncedDirsByPeer?.[peer.id] || []);
 
     const filesToPull = [];
     const filesToPush = [];
     const filesToDeleteOnPeer = []; // files we deleted locally that peer still has
-    const filesToDeleteLocally = []; // files peer deleted that we still have (peer will trigger delete on us via /delete-file)
+    const filesToDeleteLocally = []; // files peer deleted that we still have
 
+    const dirsToPull = [];
+    const dirsToPush = [];
+    const dirsToDeleteOnPeer = []; // directories we deleted locally that peer still has
+    const dirsToDeleteLocally = []; // directories peer deleted that we still have
+
+    // Diff files
     for (const relPath of allFiles) {
       const localFile = localFiles[relPath];
       const remoteFile = remoteFiles[relPath];
@@ -213,18 +233,57 @@ export class SyncEngine {
       }
     }
 
-    const hasChanges = filesToPull.length > 0 || filesToPush.length > 0 || filesToDeleteOnPeer.length > 0 || filesToDeleteLocally.length > 0;
+    // Diff directories
+    for (const relDir of allDirs) {
+      const localHasDir = localDirs.includes(relDir);
+      const remoteHasDir = remoteDirs.includes(relDir);
+
+      if (remoteHasDir && !localHasDir) {
+        // On remote, missing locally
+        if (lastSyncedDirs.has(relDir)) {
+          // Was in last sync — it was deleted locally → ask peer to delete it
+          dirsToDeleteOnPeer.push(relDir);
+        } else {
+          // Was NOT in last sync — it's new on remote → create it locally
+          dirsToPull.push(relDir);
+        }
+      } else if (localHasDir && !remoteHasDir) {
+        // On local, missing remotely
+        if (lastSyncedDirs.has(relDir)) {
+          // Was in last sync — it was deleted on remote → delete locally
+          dirsToDeleteLocally.push(relDir);
+        } else {
+          // Was NOT in last sync — it's new locally → push to remote
+          dirsToPush.push(relDir);
+        }
+      }
+    }
+
+
+    const hasChanges = filesToPull.length > 0 ||
+                       filesToPush.length > 0 ||
+                       filesToDeleteOnPeer.length > 0 ||
+                       filesToDeleteLocally.length > 0 ||
+                       dirsToPull.length > 0 ||
+                       dirsToPush.length > 0 ||
+                       dirsToDeleteOnPeer.length > 0 ||
+                       dirsToDeleteLocally.length > 0;
 
     if (!hasChanges) {
       log('success', `Peer "${peer.name}" is already in sync`, `Game: "${game.name}"`);
-      // Refresh lastSyncedFiles even on no-change to ensure they're up to date
+      // Refresh lastSyncedFiles and lastSyncedDirs even on no-change to ensure they're up to date
       const currentFileList = Object.keys(localFiles);
+      const currentDirList = localDirs;
       const updatedSyncState = { ...(game.lastSyncedFilesByPeer || {}), [peer.id]: currentFileList };
-      db.updateGame(gameId, { lastSyncedFilesByPeer: updatedSyncState });
+      const updatedDirSyncState = { ...(game.lastSyncedDirsByPeer || {}), [peer.id]: currentDirList };
+      db.updateGame(gameId, {
+        lastSyncedFilesByPeer: updatedSyncState,
+        lastSyncedDirsByPeer: updatedDirSyncState
+      });
       return { status: 'in_sync', direction: 'none' };
     }
 
-    // Handle local deletions: delete files locally that peer deleted
+    // Handle local file deletions: delete files locally that peer deleted
     if (filesToDeleteLocally.length > 0) {
       log('event', 'Applying remote deletions', `Removing ${filesToDeleteLocally.length} file(s) deleted on peer "${peer.name}"`);
       for (const relPath of filesToDeleteLocally) {
@@ -244,6 +303,31 @@ export class SyncEngine {
       }
     }
 
+    // Handle local directory deletions: delete empty directories locally that peer deleted
+    if (dirsToDeleteLocally.length > 0) {
+      log('event', 'Applying remote directory deletions', `Removing ${dirsToDeleteLocally.length} directory/directories deleted on peer "${peer.name}"`);
+      // Sort length descending to delete nested subdirectories before parent directories
+      const sortedDirsToDelete = [...dirsToDeleteLocally].sort((a, b) => b.length - a.length);
+      for (const relDir of sortedDirsToDelete) {
+        if (!isSafePath(game.savePath, relDir)) {
+          log('warn', `Path traversal directory deletion denied: ${relDir}`);
+          continue;
+        }
+        const fullPath = resolveLocalSaveFilePath(game.savePath, relDir);
+        try {
+          if (fs.existsSync(fullPath)) {
+            const stat = fs.statSync(fullPath);
+            if (stat.isDirectory()) {
+              fs.rmdirSync(fullPath);
+              log('info', `Deleted directory locally (peer deleted): ${relDir}`);
+            }
+          }
+        } catch (e) {
+          log('warn', `Could not delete directory ${relDir}:`, e.message);
+        }
+      }
+    }
+
     // Handle deletion propagation to peer: ask peer to delete files we deleted
     if (filesToDeleteOnPeer.length > 0) {
       log('event', 'Propagating local deletions', `Asking "${peer.name}" to delete ${filesToDeleteOnPeer.length} file(s)`);
@@ -257,6 +341,43 @@ export class SyncEngine {
           log('info', `Peer deleted: ${relPath}`);
         } catch (e) {
           log('warn', `Could not propagate deletion of ${relPath} to peer:`, e.message);
+        }
+      }
+    }
+
+    // Handle directory deletion propagation to peer: ask peer to delete directories we deleted
+    if (dirsToDeleteOnPeer.length > 0) {
+      log('event', 'Propagating local directory deletions', `Asking "${peer.name}" to delete ${dirsToDeleteOnPeer.length} directory/directories`);
+      // Sort length descending to delete nested subdirectories first on peer
+      const sortedDirsToDeleteOnPeer = [...dirsToDeleteOnPeer].sort((a, b) => b.length - a.length);
+      for (const relDir of sortedDirsToDeleteOnPeer) {
+        if (!isSafePath(game.savePath, relDir)) {
+          log('warn', `Path traversal directory deletion propagation denied: ${relDir}`);
+          continue;
+        }
+        try {
+          await this.p2pEngine.p2pRequest(peer, `/delete-file/${gameId}`, 'POST', { relPath: relDir });
+          log('info', `Peer deleted directory: ${relDir}`);
+        } catch (e) {
+          log('warn', `Could not propagate deletion of directory ${relDir} to peer:`, e.message);
+        }
+      }
+    }
+
+    // Ensure all remote directories to pull exist locally
+    if (dirsToPull.length > 0) {
+      log('event', 'Creating remote directories', `Creating ${dirsToPull.length} directory/directories from peer "${peer.name}"`);
+      // Sort length ascending to create parent directories before subdirectories
+      const sortedDirsToPull = [...dirsToPull].sort((a, b) => a.length - b.length);
+      for (const dir of sortedDirsToPull) {
+        if (!isSafePath(game.savePath, dir)) {
+          log('warn', `Path traversal directory creation denied: ${dir}`);
+          continue;
+        }
+        const localDirPath = path.join(game.savePath, dir);
+        if (!fs.existsSync(localDirPath)) {
+          fs.mkdirSync(localDirPath, { recursive: true });
+          log('info', `Created local directory: ${dir}`);
         }
       }
     }
@@ -478,9 +599,9 @@ export class SyncEngine {
       }
     }
 
-    // 3. Trigger peer pull if we have files to push
-    if (filesToPush.length > 0) {
-      log('event', 'Detected changes', `Local has newer/different files than remote "${peer.name}". Triggering peer pull.`);
+    // 3. Trigger peer pull if we have files or directories to push
+    if (filesToPush.length > 0 || dirsToPush.length > 0) {
+      log('event', 'Detected changes', `Local has newer/different files or folders than remote "${peer.name}". Triggering peer pull.`);
       
       if (peer.address === 'relay' || peer.isWan) {
         this.p2pEngine.wanClient.sendRelayMessage({
@@ -497,29 +618,39 @@ export class SyncEngine {
       }
     }
 
-    if (filesToPull.length > 0 && filesToPush.length > 0) {
+    const hasPull = filesToPull.length > 0 || dirsToPull.length > 0;
+    const hasPush = filesToPush.length > 0 || dirsToPush.length > 0;
+    const hasDeletions = filesToDeleteLocally.length > 0 || filesToDeleteOnPeer.length > 0 ||
+                         dirsToDeleteLocally.length > 0 || dirsToDeleteOnPeer.length > 0;
+
+    if (hasPull && hasPush) {
       log('success', 'Sync complete (bidirectional)', `Updated local from "${peer.name}" and triggered peer to pull`);
-    } else if (filesToPull.length > 0) {
+    } else if (hasPull) {
       log('success', 'Sync complete (pulled)', `Updated "${game.name}" from "${peer.name}"`);
-    } else if (filesToDeleteLocally.length > 0 || filesToDeleteOnPeer.length > 0) {
+    } else if (hasDeletions) {
       log('success', 'Sync complete (deletions applied)', `Synced deletions for "${game.name}" with "${peer.name}"`);
     } else {
       log('success', 'Sync complete (triggered push)', `Triggered "${peer.name}" to pull updates for "${game.name}"`);
     }
 
-    // Save the current file list so future syncs can detect deletions
+    // Save the current file and directory list so future syncs can detect deletions
     const freshManifest = getFolderManifest(game.savePath);
     const currentFileList = Object.keys(freshManifest.files || {});
+    const currentDirList = freshManifest.dirs || [];
     const updatedSyncState = { ...(db.getGame(gameId).lastSyncedFilesByPeer || {}), [peer.id]: currentFileList };
-    db.updateGame(gameId, { lastSyncedFilesByPeer: updatedSyncState });
+    const updatedDirSyncState = { ...(db.getGame(gameId).lastSyncedDirsByPeer || {}), [peer.id]: currentDirList };
+    db.updateGame(gameId, {
+      lastSyncedFilesByPeer: updatedSyncState,
+      lastSyncedDirsByPeer: updatedDirSyncState
+    });
 
     return {
-      status: filesToPull.length > 0 && filesToPush.length > 0 ? 'updated_bidirectional'
-        : filesToPull.length > 0 ? 'updated'
-        : filesToDeleteLocally.length > 0 || filesToDeleteOnPeer.length > 0 ? 'deletions_synced'
+      status: hasPull && hasPush ? 'updated_bidirectional'
+        : hasPull ? 'updated'
+        : hasDeletions ? 'deletions_synced'
         : 'triggered_peer_pull',
-      direction: filesToPull.length > 0 && filesToPush.length > 0 ? 'bidirectional'
-        : filesToPull.length > 0 ? 'pull'
+      direction: hasPull && hasPush ? 'bidirectional'
+        : hasPull ? 'pull'
         : 'push'
     };
   }

@@ -18,11 +18,28 @@ function requirePairedPeer(req, res, next) {
 
   // Check if the client IP matches one of our active paired peers
   const peers = db.getPeers();
-  const isPaired = Object.values(peers).some(p => p.address === clientIp || (clientIp === 'localhost' && p.address === '127.0.0.1'));
+  const matchedPeer = Object.values(peers).find(p => p.address === clientIp || (clientIp === 'localhost' && p.address === '127.0.0.1'));
   
-  if (!isPaired) {
+  if (!matchedPeer) {
     console.warn(`[P2P Guard] Blocked unauthorized request from unpaired LAN IP: ${clientIp}`);
     return res.status(401).json({ error: 'Unauthorized: Requesting peer is not paired.' });
+  }
+
+  // Mark peer as online since we received a valid request from them (with throttle to prevent redundant writes)
+  const lastSeenLimit = 10000; // 10 seconds
+  const lastSeenTime = typeof matchedPeer.lastSeen === 'string' ? new Date(matchedPeer.lastSeen).getTime() : (matchedPeer.lastSeen || 0);
+  const shouldUpdate = matchedPeer.status !== 'online' || matchedPeer.address !== clientIp || (Date.now() - lastSeenTime > lastSeenLimit);
+  if (shouldUpdate) {
+    const wasOffline = matchedPeer.status !== 'online';
+    db.updatePeer(matchedPeer.id, { 
+      status: 'online', 
+      address: clientIp, 
+      lastSeen: Date.now() 
+    });
+    if (wasOffline) {
+      log('info', `Peer ${matchedPeer.name} connected locally. Triggering automatic synchronization for all games.`);
+      p2pEngine.syncAllGames();
+    }
   }
   
   next();
@@ -154,13 +171,21 @@ export function registerExpressRoutes(app, p2pEngine) {
     const { gameId } = req.params;
     let game = db.getGame(gameId);
     if (!game) {
-      const { name, savePath } = req.query;
+      const { name, savePath, isFile } = req.query;
       if (name && savePath) {
         try {
           const localSavePath = translatePathToLocal(savePath);
-          console.log(`[P2P] Auto-tracking game "${name}" at "${localSavePath}" (original: "${savePath}") requested by peer.`);
+          const isFileBool = isFile === 'true';
+          console.log(`[P2P] Auto-tracking game "${name}" at "${localSavePath}" (original: "${savePath}", isFile: ${isFileBool}) requested by peer.`);
           if (!fs.existsSync(localSavePath)) {
-            fs.mkdirSync(localSavePath, { recursive: true });
+            if (isFileBool) {
+              const parentDir = path.dirname(localSavePath);
+              if (!fs.existsSync(parentDir)) {
+                fs.mkdirSync(parentDir, { recursive: true });
+              }
+            } else {
+              fs.mkdirSync(localSavePath, { recursive: true });
+            }
           }
           game = db.addGame(name, localSavePath);
           watcherEngine.watchGame(game);
