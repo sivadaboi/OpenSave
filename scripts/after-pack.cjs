@@ -5,8 +5,8 @@ module.exports = async function(context) {
   const { electronPlatformName, appOutDir } = context;
   if (electronPlatformName === 'linux') {
     console.log('Running Linux post-pack hook...');
-    const binPath = path.join(appOutDir, 'syncsave');
-    const targetBinPath = path.join(appOutDir, 'syncsave.bin');
+    const binPath = path.join(appOutDir, 'opensave');
+    const targetBinPath = path.join(appOutDir, 'opensave.bin');
     
     if (fs.existsSync(binPath)) {
       console.log(`Renaming native binary ${binPath} to ${targetBinPath}...`);
@@ -14,10 +14,10 @@ module.exports = async function(context) {
       
       console.log('Writing Linux launcher script...');
       const scriptContent = `#!/bin/bash
-# SyncSave Linux Launcher Wrapper
+# OpenSave Linux Launcher Wrapper
 # Bypasses chrome-sandbox SUID permission requirements for portable extraction
 DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-exec "\$DIR/syncsave.bin" --no-sandbox "\$@"
+exec "\$DIR/opensave.bin" --no-sandbox "\$@"
 `;
       fs.writeFileSync(binPath, scriptContent, { encoding: 'utf8', mode: 0o755 });
       
@@ -25,7 +25,7 @@ exec "\$DIR/syncsave.bin" --no-sandbox "\$@"
       try {
         fs.chmodSync(binPath, '755');
         fs.chmodSync(targetBinPath, '755');
-        console.log('Permissions set for syncsave wrapper and syncsave.bin.');
+        console.log('Permissions set for opensave wrapper and opensave.bin.');
       } catch (err) {
         console.warn(`Failed to set execution permissions: ${err.message}`);
       }
