@@ -13,9 +13,9 @@ RUN npm install --omit=dev
 
 COPY src/relay-server.js ./relay-server.js
 
-EXPOSE 8386
+EXPOSE 10000
 
-ENV PORT=8386
+ENV PORT=10000
 ENV MAX_PER_ROOM=20
 ENV HEARTBEAT_MS=30000
 
