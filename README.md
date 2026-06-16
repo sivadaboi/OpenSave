@@ -13,14 +13,14 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-blue?style=flat-square)](https://github.com/sivadaboi/OpenSave/releases/latest)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](CONTRIBUTING.md)
 
-[**Download for Windows**](https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/OpenSave.Setup.1.1.4.exe) · [**Download for Linux**](https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/opensave-1.1.4.tar.gz) · [**Website**](https://sivadaboi.github.io/OpenSave)
+[**Download for Windows**](https://github.com/sivadaboi/OpenSave/releases/download/v1.1.5/OpenSave.Setup.1.1.5.exe) · [**Download for Linux**](https://github.com/sivadaboi/OpenSave/releases/download/v1.1.5/opensave-1.1.5.tar.gz) · [**Website**](https://sivadaboi.github.io/OpenSave)
 
 </div>
 
 ---
 
 > [!WARNING]
-> **Important Note:** If you are experiencing any issues with syncing or cloud backups, please download and use **pre-release version 1.1.4** from the [GitHub Releases](https://github.com/sivadaboi/OpenSave/releases/tag/v1.1.4) page. This pre-release version includes critical stability patches for connection reliability, block-level sync, and cloud backup providers.
+> **Important Note:** If you are experiencing any issues with syncing or cloud backups, please download and use **pre-release version 1.1.5** from the [GitHub Releases](https://github.com/sivadaboi/OpenSave/releases/tag/v1.1.5) page. This pre-release version includes critical stability patches for connection reliability, block-level sync, and cloud backup providers.
 
 ---
 
@@ -174,19 +174,19 @@ Don't want to rely on the public relay? Host your own with one command. The rela
 ## Installation
 
 > [!IMPORTANT]
-> **Stable Prerelease:** If you experience any syncing, peer pairing, or cloud backup issues on the release builds, please install **pre-release version 1.1.4** from [GitHub Releases](https://github.com/sivadaboi/OpenSave/releases/tag/v1.1.4).
+> **Stable Prerelease:** If you experience any syncing, peer pairing, or cloud backup issues on the release builds, please install **pre-release version 1.1.5** from [GitHub Releases](https://github.com/sivadaboi/OpenSave/releases/tag/v1.1.5).
 
 ### Windows
 
 **Installer (recommended)**
 ```
-https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/OpenSave.Setup.1.1.4.exe
+https://github.com/sivadaboi/OpenSave/releases/download/v1.1.5/OpenSave.Setup.1.1.5.exe
 ```
 Run the installer. OpenSave starts in the system tray.
 
 **Portable ZIP**
 ```
-https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/OpenSave-1.1.4-win.zip
+https://github.com/sivadaboi/OpenSave/releases/download/v1.1.5/OpenSave-1.1.5-win.zip
 ```
 Extract and run `OpenSave.exe`. No installation required.
 
@@ -196,13 +196,13 @@ Extract and run `OpenSave.exe`. No installation required.
 
 ```bash
 # Download the release
-wget https://github.com/sivadaboi/OpenSave/releases/download/v1.1.4/opensave-1.1.4.tar.gz
+wget https://github.com/sivadaboi/OpenSave/releases/download/v1.1.5/opensave-1.1.5.tar.gz
 
 # Extract
-tar -xzf opensave-1.1.4.tar.gz
+tar -xzf opensave-1.1.5.tar.gz
 
 # Run
-cd opensave-1.1.4
+cd opensave-1.1.5
 ./opensave
 ```
 
