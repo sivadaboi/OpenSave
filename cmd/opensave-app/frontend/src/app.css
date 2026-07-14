@@ -1,0 +1,233 @@
+/* OpenSave theme — Hydra-launcher-inspired: near-black surfaces, soft
+   grays, rounded cards, pill controls. */
+
+:root {
+  --bg: #0c0c0d;
+  --bg-sidebar: #111112;
+  --bg-raised: #17171a;
+  --bg-hover: #1f1f23;
+  --bg-active: #26262b;
+  --border: #232328;
+  --border-strong: #303038;
+  --text: #e8e8ea;
+  --text-dim: #9a9aa3;
+  --text-faint: #5e5e66;
+  --accent: #8a63f4;
+  --accent-hover: #9b7af7;
+  --accent-soft: rgba(138, 99, 244, 0.14);
+  --success: #4ade80;
+  --warn: #fbbf24;
+  --danger: #d95757;
+  --danger-hover: #e46b6b;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --sidebar-w: 252px;
+  --titlebar-h: 36px;
+  --statusbar-h: 28px;
+  font-size: 14px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2c2c33;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a42;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ── Shared primitives ─────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 0.93rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.btn:hover {
+  background: var(--bg-hover);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn.primary:hover {
+  background: var(--accent-hover);
+}
+.btn.danger {
+  background: rgba(217, 87, 87, 0.16);
+  border-color: rgba(217, 87, 87, 0.4);
+  color: #f1a3a3;
+}
+.btn.danger:hover {
+  background: rgba(217, 87, 87, 0.28);
+}
+.btn.small {
+  padding: 5px 11px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+}
+.btn.icon {
+  padding: 8px 10px;
+}
+
+.pill-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pill-tabs button {
+  padding: 8px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.93rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.pill-tabs button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.pill-tabs button.active {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #111;
+}
+
+.card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.field label {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.field input,
+.field select,
+.field textarea {
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.93rem;
+  outline: none;
+}
+.field input:focus,
+.field select:focus {
+  border-color: var(--accent);
+}
+.field .hint {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.empty {
+  text-align: center;
+  color: var(--text-faint);
+  padding: 60px 20px;
+}
+.empty h3 {
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.badge.online {
+  background: rgba(74, 222, 128, 0.13);
+  color: var(--success);
+}
+.badge.offline {
+  background: rgba(158, 158, 168, 0.12);
+  color: var(--text-faint);
+}
+.badge.warn {
+  background: rgba(251, 191, 36, 0.13);
+  color: var(--warn);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot.green {
+  background: var(--success);
+}
+.dot.gray {
+  background: var(--text-faint);
+}
+
+h2.page-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+}

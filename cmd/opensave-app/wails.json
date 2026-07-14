@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "OpenSave",
+  "outputfilename": "OpenSave",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "OpenSave"
+  },
+  "info": {
+    "companyName": "OpenSave",
+    "productName": "OpenSave",
+    "productVersion": "2.0.0",
+    "copyright": "Copyright © 2026 Siva Prakash & OpenSave contributors",
+    "comments": "Peer-to-peer game save sync"
+  }
+}

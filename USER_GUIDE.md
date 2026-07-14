@@ -1,105 +1,94 @@
-# 🎮 OpenSave — Complete User Guide & Getting Started
+# OpenSave — User Guide
 
-Welcome to **OpenSave**! This guide will walk you through setting up and using the app step-by-step. By the end of this guide, you will be syncing save files between your PC, Steam Deck, or emulator configurations like a pro.
+OpenSave keeps your game saves in sync across your devices, peer-to-peer. No
+accounts, no subscriptions. This guide walks through everyday use.
 
+## 1. First run
 
----
+When you open OpenSave the first time your library is empty. Two ways to add
+games:
 
-## 🧭 Core Concepts: How OpenSave Works
-OpenSave runs in the background as a lightweight system tray service (the "Daemon") and opens a dashboard in your browser. 
-* **LAN Sync (Local)**: Automatically detects other devices running OpenSave on your local Wi-Fi/Ethernet network and syncs saves directly, peer-to-peer.
-* **Internet Sync (WAN)**: Connects devices in different locations using a secure, temporary Room Code. Traffic is routed via a cloud relay (no port forwarding required!).
-* **Snapshots**: Every time a change is made, OpenSave takes a tiny `.zip` backup of your save folder. If a save gets corrupted or you want to rollback, you can restore any snapshot with one click.
+- **🔍 Auto-scan** — finds saves from Steam, emulators (RetroArch, Dolphin,
+  Ryujinx, Yuzu, Citra, PCSX2, RPCS3, PPSSPP, Cemu, Xenia), Steam-emulator
+  repacks (Goldberg, CODEX, RUNE, …), Epic, GOG, and Unreal games. Pick the
+  ones you want and click **Track selected**.
+- **+ Track folder** — point OpenSave at any save folder or single save file
+  manually.
 
----
+Tracked games appear in the sidebar and on the Home grid.
 
-## 🚀 Step 1: Launching OpenSave
-1. Download and run the **OpenSave Setup** installer on your devices.
-2. Once installed, launch **OpenSave**. You will see the OpenSave icon in your system tray (bottom-right on Windows, top-bar on Linux/Steam Deck).
-3. Right-click the tray icon and select **Open Dashboard** (or open your web browser and go to `http://localhost:8383`).
+## 2. Snapshots & restore
 
----
+Every time a save changes, OpenSave takes a **snapshot** automatically (only
+changed blocks are stored, so history is cheap). Open a game to:
 
-## 📂 Step 2: Tracking a Game Save Folder
-To sync a game, OpenSave needs to know where its saves are located:
-1. On the **Games** tab of the dashboard, click **Track New Folder**.
-2. **Game Title**: Enter the name of the game (e.g. `Elden Ring`).
-3. **Save Directory**: Click **Browse** and select the folder where the game stores its saves.
-   * *Tip for Steam games*: You can find standard Steam save paths under `C:\Users\<YourUsername>\AppData\Local` or `C:\Users\<YourUsername>\Saved Games`.
-4. Click **Track Game**.
-5. OpenSave will scan the folder, index your files, and create your initial snapshot backup.
+- **Snapshot now** — take a manual snapshot with a comment.
+- **Restore** — roll the whole save back to any snapshot. Your current state
+  is snapshotted first, so a restore is always reversible.
+- **Browse files** — restore a single file out of a snapshot.
+- **Branches** — keep parallel playthroughs (e.g. `main` and `ng-plus`).
+  Switching branches snapshots the current save first, then restores the
+  other branch's latest state.
 
----
+## 3. Syncing between devices
 
-## 🔗 Step 3: Pairing Your Devices
-To synchronize saves, you must link your devices together.
+### On the same network (LAN)
 
-### Option A: Local Network Sync (LAN) — Recommended
-If both devices are on the same Wi-Fi or Ethernet network:
-1. Go to the **Devices** tab on both machines.
-2. Look at the **Discovered on LAN** section. If automatic discovery is working, you will see the other device listed. Click **Pair**.
-3. A popup will appear on the other device asking to approve the pairing. Click **Approve**.
-4. **Done!** Your devices are now paired. Whenever you close a game, OpenSave will automatically sync it to the other machine.
+1. Install OpenSave on both devices.
+2. Open **Devices** — they discover each other automatically over the LAN.
+3. Click **Pair**; approve the request on the other device.
+4. Paired devices sync tracked games automatically.
 
-> [!NOTE]
-> If your router or Windows Firewall blocks automatic discovery, you can pair manually:
-> * On Device A, look at the **Connect via IP or PIN Code** card to find your **Local Sync PIN** (e.g. `SS-LAN-03CBCC`).
-> * On Device B, enter Device A's PIN into the input box and click **Pair**.
+If discovery is blocked, use **Connect via IP** with the other device's LAN
+IP and port (default `8383`).
 
----
+### Across the internet (relay)
 
-### Option B: Internet Sync (WAN)
-If your devices are in different locations (e.g. one at home, one at a friend's house):
-1. Go to the **Internet Sync** tab on both devices.
-2. On **Device A**, click **🎲 Generate Random Code** (or type a custom code, e.g., `ELDEN-COOP-SYNC`) and click **Join Room**.
-3. Share this code with your friend or type the exact same code on your second machine (**Device B**), then click **Join Room**.
-4. Both devices will join the secure relay room. They are now linked over the internet!
+1. Open **Internet Sync** and either generate a **room code** or paste one
+   shared by a friend.
+2. Both devices join the same room code — saves sync through the relay.
+3. No port forwarding needed. To self-host the relay, enable **Host relay on
+   this device** under Settings → Sync and forward the relay port.
 
----
+### Conflicts
 
-## ⚡ Step 4: Synchronizing and Resolving Conflicts
+If the same save changed on two devices independently, OpenSave detects it
+from sync lineage (not clocks) and asks you to **keep yours, theirs, or both**
+(both creates a new branch). Nothing is overwritten without your choice.
 
-### Automatic Syncing
-Once paired, OpenSave handles the rest. When you edit or play a tracked game:
-1. OpenSave detects that the save files were updated.
-2. It waits for writing to stop (2-second debounce timer) to prevent copying incomplete saves.
-3. It takes a backup snapshot.
-4. It checks the paired peer. If they are online, it syncs only the modified 64KB blocks of the save files.
+## 4. Cloud backup (optional)
 
----
+Open **Cloud Backup** to mirror snapshots to Google Drive, Dropbox, OneDrive,
+WebDAV, a webhook, or a local/NAS folder. Sign in, flip the toggle, and every
+new snapshot uploads in the background. Use **Browse cloud** to explore and
+restore snapshots per game.
 
-### ⚠️ Resolving Save Conflicts
-If you played a game on your PC offline, and also played it on your Steam Deck offline, both saves have modified files that are newer than the last sync. This creates a **Conflict**.
+> Note: the built-in Google Drive credentials use a shared OAuth app that may
+> expire weekly. For always-on cloud sync, enter your own Client ID under the
+> "Custom OAuth Client ID" box, or use Dropbox / WebDAV / a local folder.
 
-OpenSave will open a **Version Conflict Modal** showing:
-* Local Version details (Comment, Timestamp, Snapshot ID).
-* Remote Version details.
-* **Altered Files list**: showing precisely which files were added, deleted, or modified.
+## 5. Settings
 
-**Your Options:**
-1. **Keep Local**: Overwrites the peer's saves with your current device's saves.
-2. **Keep Remote**: Overwrites your active saves with the peer's saves.
-3. **Keep Both (Branches)**: Keeps your local saves active, but pulls the peer's saves into a separate branch (e.g., `conflict-steamdeck-1234`). You can swap between these branches at any time in the History tab!
+- **General** — device name/type shown to peers, start-on-boot.
+- **Sync** — auto-sync on track, bandwidth limit, relay URL, relay hosting.
+- **Storage** — snapshot folder, pre-sync safety-backup folder, retention,
+  extra scan folders.
+- **Advanced** — daemon port, cross-platform path translation rules (e.g.
+  rewrite `C:\Users\me\Saves` → `/home/deck/saves`).
 
----
+## 6. Tray & background
 
-## 🕒 Step 5: Version History & Granular Rollbacks
-If a save file gets corrupted or you want to undo a gaming session:
-1. Go to the **Games** tab and click on the game.
-2. Scroll down to the **Backup History** timeline.
-3. You will see a chronological list of backups.
-4. **Full Rollback**: Click **Rollback** on any snapshot to reset the entire save folder to that exact moment. OpenSave automatically takes a safety backup of your current saves before doing this so you can't lose anything.
-5. **Granular Restore**: Click **Browse Files** on a snapshot to view all files contained inside that backup ZIP. Click **Restore File** next to a specific file to restore *only* that file, leaving the rest of your save folder untouched.
+Closing the window **hides OpenSave to the system tray** so syncing keeps
+running. Right-click the tray icon to reopen, sync all games, or quit.
 
----
+## 7. Troubleshooting
 
-## 🛠️ Advanced: Cross-Platform Paths & Custom Mappings
-If you sync between a Windows PC and a Linux Steam Deck, OpenSave automatically translates standard user folder prefixes (e.g. mapping `C:\Users\John\Documents` to `/home/deck/Documents`).
-
-For custom game folders or emulators:
-1. Go to **Settings** > **Custom Path Translations**.
-2. Click **Add Rule**.
-3. **Pattern A**: Enter your Windows folder path (e.g. `D:\Emulators\Saves`).
-4. **Pattern B**: Enter the corresponding path on your other device (e.g. `/home/deck/Emulation/saves`).
-5. Click **Add Rule**.
-6. Now, any saves synced within these folders will translate correctly across both systems!
+- **"404 Not Found" on launch** — another program is using port `8383`. Quit
+  the other OpenSave (or app on that port), or change the port in Settings →
+  Advanced.
+- **Devices don't see each other** — make sure both are on a *Private* network
+  profile and OpenSave is allowed through the firewall; otherwise pair by IP.
+- **Cloud upload fails with "session expired"** — reconnect the provider under
+  Cloud Backup (see the Google note above).
+- **Steam Deck / Game Mode** — a Decky Loader plugin lives in
+  `opensave-decky-plugin/`.

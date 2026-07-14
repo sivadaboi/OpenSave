@@ -1,7 +1,27 @@
-node_modules/
-dist-app/
-test_run/
-test_run_wan/
-*.log
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+/dist/
+/build/
+
+# Test artifacts
+*.test
+*.out
+coverage.html
+
+# Wails — ignore built frontend output but keep a placeholder so
+# `go build ./...` works on a fresh clone (go:embed needs the dir).
+cmd/opensave-app/frontend/dist/*
+!cmd/opensave-app/frontend/dist/.gitkeep
+cmd/opensave-app/frontend/node_modules/
+cmd/opensave-app/build/bin/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+Thumbs.db
 .DS_Store
-.env
