@@ -15,7 +15,11 @@
 
 *A complete Go rewrite of the original Node.js/Electron app: one small native binary, no runtime to install, and wire-compatible with existing peers.*
 
-[Install](#install) · [Quick start](#quick-start) · [How it works](#how-it-works) · [CLI](#command-line) · [Self-host the relay](#self-hosting-the-relay) · [FAQ](#faq)
+[Install](#install) · [Quick start](#quick-start) · [Screenshots](#screenshots) · [How it works](#how-it-works) · [CLI](#command-line) · [Self-host the relay](#self-hosting-the-relay) · [FAQ](#faq)
+
+<br>
+
+<img src="docs/screenshots/home-library.png" alt="OpenSave library — tracked games with cover art, branches, and snapshot counts" width="850" />
 
 </div>
 
@@ -41,6 +45,31 @@ OpenSave gives **every** game the Steam Cloud experience:
 - **Cloud backup** — optional mirroring to Google Drive, Dropbox, OneDrive, WebDAV, a webhook, or a local/NAS folder.
 - **In-app updates** — one-click update from GitHub releases, or pull a newer build straight from a paired device.
 - **Privacy-first** — no accounts, no telemetry. The relay only routes encrypted WebSocket frames and never stores your saves.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/auto-scan.png" alt="Auto-scan results — detected saves as a cover-art grid" /><br>
+      <sub><b>Auto-scan</b> — 158 saves found on this PC, shown as cover art. Games, emulators, and repacks, one click to track.</sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/cloud-backup.png" alt="Cloud Backup — provider selection with Google Drive connected" /><br>
+      <sub><b>Cloud backup</b> — mirror snapshots to Drive, Dropbox, OneDrive, WebDAV, or a NAS folder. Optional; P2P needs no cloud.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/devices-pairing.png" alt="Devices — internet pairing with a relay room code" /><br>
+      <sub><b>Internet sync</b> — pair devices anywhere with a room code. No port forwarding, and the relay never stores saves.</sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/home-library.png" alt="Home — tracked library with snapshots per game" /><br>
+      <sub><b>Your library</b> — every tracked game with its branch and snapshot history, one Sync all button away.</sub>
+    </td>
+  </tr>
+</table>
 
 ## Install
 
