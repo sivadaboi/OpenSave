@@ -170,6 +170,9 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          name: OpenSave ${{ github.ref_name }}
+          # Note: re-publishing the same tag appends another generated-notes
+          # block; if a tag is ever re-cut, tidy the release body by hand.
           generate_release_notes: true
           fail_on_unmatched_files: false
           files: |
