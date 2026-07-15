@@ -198,7 +198,11 @@ func TestEmbeddedIndexLoads(t *testing.T) {
 	}
 }
 
-func TestEntryIsWindowsSave(t *testing.T) {
+func TestEntryIsSaveEntry(t *testing.T) {
+	linux := []struct {
+		OS    string `yaml:"os"`
+		Store string `yaml:"store"`
+	}{{OS: "linux"}}
 	cases := []struct {
 		tpl   string
 		entry manifestFileEntry
@@ -207,18 +211,86 @@ func TestEntryIsWindowsSave(t *testing.T) {
 		{"<winAppData>/X", manifestFileEntry{}, true}, // untagged counts as save
 		{"<winAppData>/X", manifestFileEntry{Tags: []string{"save"}}, true},
 		{"<winAppData>/X", manifestFileEntry{Tags: []string{"config"}}, false},
-		{"<xdgConfig>/X", manifestFileEntry{Tags: []string{"save"}}, false},
-		{"<winAppData>/X", manifestFileEntry{
-			Tags: []string{"save"},
-			When: []struct {
-				OS    string `yaml:"os"`
-				Store string `yaml:"store"`
-			}{{OS: "linux"}},
-		}, false},
+		{"<xdgConfig>/X", manifestFileEntry{Tags: []string{"save"}}, true},               // Linux save now kept
+		{"<xdgData>/X", manifestFileEntry{Tags: []string{"save"}}, true},                 // Linux save now kept
+		{"<winAppData>/X", manifestFileEntry{Tags: []string{"save"}, When: linux}, true}, // resolves under Proton
+		{"<winDir>/X", manifestFileEntry{Tags: []string{"save"}}, false},                 // unresolvable everywhere
+		{"<dataDrive>/X", manifestFileEntry{Tags: []string{"save"}}, false},              // unresolvable everywhere
+		{"relative/path", manifestFileEntry{Tags: []string{"save"}}, false},              // no resolvable base
 	}
 	for i, c := range cases {
-		if got := entryIsWindowsSave(c.tpl, c.entry); got != c.want {
-			t.Errorf("case %d: entryIsWindowsSave = %v, want %v", i, got, c.want)
+		if got := entryIsSaveEntry(c.tpl, c.entry); got != c.want {
+			t.Errorf("case %d (%q): entryIsSaveEntry = %v, want %v", i, c.tpl, got, c.want)
 		}
+	}
+}
+
+func TestLudusavi_LinuxNativeXDG(t *testing.T) {
+	home := t.TempDir()
+	save := filepath.Join(home, ".local", "share", "Terraria", "Players")
+	if err := os.MkdirAll(save, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(save, "p1.plr"), []byte("x"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	sc := manifestScanner(t, `
+Terraria:
+  files:
+    <xdgData>/Terraria/Players:
+      tags: [save]
+      when:
+        - os: linux
+`)
+	sc.GOOS = "linux"
+	sc.HomeDir = home
+	sc.SteamRoots = []string{} // no Steam libraries in this test
+
+	found := sc.scanLudusavi(map[string]bool{})
+	if len(found) != 1 {
+		t.Fatalf("expected 1 native Linux discovery, got %d: %+v", len(found), found)
+	}
+	if found[0].SavePath != save {
+		t.Errorf("SavePath = %q, want %q", found[0].SavePath, save)
+	}
+}
+
+func TestLudusavi_ProtonPrefix(t *testing.T) {
+	home := t.TempDir()
+	// A Steam library with a Proton prefix for AppID 1245620 (Elden Ring).
+	lib := filepath.Join(home, ".local", "share", "Steam")
+	prefix := filepath.Join(lib, "steamapps", "compatdata", "1245620", "pfx", "drive_c", "users", "steamuser")
+	save := filepath.Join(prefix, "AppData", "Roaming", "EldenRing", "76561198000000000")
+	if err := os.MkdirAll(save, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(save, "ER0000.sl2"), []byte("x"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	sc := manifestScanner(t, `
+Elden Ring:
+  files:
+    <winAppData>/EldenRing/<storeUserId>:
+      tags: [save]
+      when:
+        - os: windows
+  steam:
+    id: 1245620
+`)
+	sc.GOOS = "linux"
+	sc.HomeDir = home
+	sc.SteamRoots = []string{lib}
+
+	found := sc.scanLudusavi(map[string]bool{})
+	if len(found) != 1 {
+		t.Fatalf("expected 1 Proton discovery, got %d: %+v", len(found), found)
+	}
+	if found[0].SavePath != save {
+		t.Errorf("SavePath = %q, want %q", found[0].SavePath, save)
+	}
+	if found[0].AppID != "1245620" {
+		t.Errorf("AppID = %q, want 1245620", found[0].AppID)
 	}
 }

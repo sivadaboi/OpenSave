@@ -7,6 +7,21 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **Linux & Steam Deck save detection.** Auto-scan is now platform-aware:
+  - Emulator saves are found at their real Linux locations (native and
+    Flatpak) — RetroArch, Dolphin, PCSX2, RPCS3, Ryujinx, yuzu, Citra,
+    Cemu, PPSSPP.
+  - **Proton prefixes are scanned**: games run through Proton store their
+    saves in `steamapps/compatdata/<appid>/pfx`, and OpenSave now finds
+    them (with the game's Steam cover art) — the bulk of Steam Deck saves.
+  - The Ludusavi manifest resolves native Linux paths (`<xdgData>`,
+    `<xdgConfig>`, `<home>`) and expands Windows-path entries inside each
+    Proton prefix.
+- The in-app updater is OS-aware: it installs the Linux tarball build on
+  Linux (extracting the app binary) and the portable exe on Windows, and
+  only ever applies a binary matching the running platform.
+
+
 - Auto-scan now uses the community-maintained
   [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest)
   (sourced from PCGamingWiki): save locations for tens of thousands of

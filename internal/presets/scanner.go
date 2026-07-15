@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 )
 
@@ -30,6 +31,22 @@ type Scanner struct {
 	// LocalLowDir overrides %USERPROFILE%\AppData\LocalLow when non-empty.
 	// Tests only.
 	LocalLowDir string
+	// GOOS selects the platform whose save conventions are scanned. Empty
+	// means runtime.GOOS; tests set it to exercise Linux logic on any host.
+	GOOS string
+	// HomeDir overrides the user's home directory for Linux path resolution
+	// (emulator paths, Proton prefixes). Empty means os.UserHomeDir. Tests
+	// only.
+	HomeDir string
+}
+
+// linuxHome returns the home dir used to resolve Linux save paths.
+func (sc *Scanner) linuxHome() string {
+	if sc.HomeDir != "" {
+		return sc.HomeDir
+	}
+	home, _ := os.UserHomeDir()
+	return home
 }
 
 // NewScanner builds a production Scanner using the Steam Store API
@@ -42,41 +59,51 @@ func NewScanner(cacheFile string) *Scanner {
 	}
 }
 
+// goos returns the platform to scan for (runtime default unless overridden).
+func (sc *Scanner) goos() string {
+	if sc.GOOS != "" {
+		return sc.GOOS
+	}
+	return runtime.GOOS
+}
+
 // Scan sweeps every known save convention and returns the discovered
 // locations with names resolved as well as possible (offline dictionary
 // -> disk cache -> Steam Store API).
 func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 	var discovered []DiscoveredSave
 
-	// 1 & 2. Emulator presets and repack wrapper folders.
+	// 1 & 2. Emulator presets and repack wrapper folders (OS-appropriate
+	// paths; a preset may resolve to several candidates on Linux).
 	for _, p := range presetDefs {
-		resolved := ResolvePath(p.Path)
-		if !dirExists(resolved) {
-			continue
-		}
-		if p.IsWrapper {
-			for _, sub := range listSubdirs(resolved) {
-				if wrapperSystemDirs[toLowerASCII(sub)] {
-					continue
-				}
-				d := DiscoveredSave{
-					ID:       p.ID + "-" + sub,
-					Name:     fmt.Sprintf("%s - Game ID: %s", p.Name, sub),
-					Type:     p.Type,
-					SavePath: filepath.Join(resolved, sub),
-				}
-				if isAppID(sub) {
-					d.AppID = sub
-				}
-				discovered = append(discovered, d)
+		for _, resolved := range p.resolvedPaths(sc) {
+			if !dirExists(resolved) {
+				continue
 			}
-		} else {
-			discovered = append(discovered, DiscoveredSave{
-				ID:       p.ID,
-				Name:     p.Name,
-				Type:     p.Type,
-				SavePath: resolved,
-			})
+			if p.IsWrapper {
+				for _, sub := range listSubdirs(resolved) {
+					if wrapperSystemDirs[toLowerASCII(sub)] {
+						continue
+					}
+					d := DiscoveredSave{
+						ID:       p.ID + "-" + sub,
+						Name:     fmt.Sprintf("%s - Game ID: %s", p.Name, sub),
+						Type:     p.Type,
+						SavePath: filepath.Join(resolved, sub),
+					}
+					if isAppID(sub) {
+						d.AppID = sub
+					}
+					discovered = append(discovered, d)
+				}
+			} else {
+				discovered = append(discovered, DiscoveredSave{
+					ID:       p.ID,
+					Name:     p.Name,
+					Type:     p.Type,
+					SavePath: resolved,
+				})
+			}
 		}
 	}
 
@@ -92,6 +119,11 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 
 	// 3a. Steam userdata folders (Windows + Linux/SteamOS/Flatpak).
 	discovered = append(discovered, sc.scanSteamUserdata(dedupSet(discovered), appNames)...)
+
+	// 3a-linux. Proton/Wine prefixes: Windows games run through Proton write
+	// their saves inside <library>/steamapps/compatdata/<appid>/pfx. This is
+	// where most Steam Deck game saves live.
+	discovered = append(discovered, sc.scanProtonCompat(libraries, dedupSet(discovered), appNames)...)
 
 	// 3b. Saves kept inside install folders (the UE <Project>/Saved/
 	// SaveGames convention): installed Steam games first, then any game

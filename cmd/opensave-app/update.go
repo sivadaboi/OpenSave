@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -38,14 +39,11 @@ func (a *App) CheckForUpdate() map[string]any {
 	}
 
 	var rel struct {
-		TagName    string `json:"tag_name"`
-		HTMLURL    string `json:"html_url"`
-		Prerelease bool   `json:"prerelease"`
-		Body       string `json:"body"`
-		Assets     []struct {
-			Name               string `json:"name"`
-			BrowserDownloadURL string `json:"browser_download_url"`
-		} `json:"assets"`
+		TagName    string         `json:"tag_name"`
+		HTMLURL    string         `json:"html_url"`
+		Prerelease bool           `json:"prerelease"`
+		Body       string         `json:"body"`
+		Assets     []releaseAsset `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		return none
@@ -63,25 +61,11 @@ func (a *App) CheckForUpdate() map[string]any {
 		url = "https://github.com/" + updateRepo + "/releases/latest"
 	}
 
-	// A directly-downloadable .exe asset enables one-click in-app install;
-	// without one the UI falls back to opening the release page. Releases
-	// carry several executables (NSIS installer, CLI, relay) — only the
-	// portable app binary may ever be swapped in over the running app.
-	assetURL := ""
-	for _, asset := range rel.Assets {
-		name := strings.ToLower(asset.Name)
-		if !strings.HasSuffix(name, ".exe") {
-			continue
-		}
-		if strings.Contains(name, "installer") || strings.Contains(name, "setup") ||
-			strings.Contains(name, "cli") || strings.Contains(name, "relay") {
-			continue
-		}
-		if name == "opensave.exe" {
-			assetURL = asset.BrowserDownloadURL
-			break
-		}
-	}
+	// A directly-downloadable asset enables one-click in-app install;
+	// without one the UI falls back to opening the release page. The asset
+	// is OS-specific: the portable app binary on Windows, the Linux tarball
+	// on Linux. Never the CLI/relay/installer sub-artifacts.
+	assetURL := selectUpdateAsset(rel.Assets)
 
 	notes := rel.Body
 	if len(notes) > 4000 {
@@ -95,6 +79,38 @@ func (a *App) CheckForUpdate() map[string]any {
 		"assetUrl":  assetURL,
 		"notes":     notes,
 	}
+}
+
+// releaseAsset is the subset of a GitHub release asset the updater needs.
+type releaseAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+// selectUpdateAsset picks the OS-appropriate one-click update asset:
+// OpenSave.exe on Windows, the linux tarball on Linux. Returns "" when no
+// matching asset exists (the UI then opens the release page instead).
+func selectUpdateAsset(assets []releaseAsset) string {
+	return selectUpdateAssetFor(assets, runtime.GOOS)
+}
+
+func selectUpdateAssetFor(assets []releaseAsset, goos string) string {
+	for _, a := range assets {
+		name := strings.ToLower(a.Name)
+		switch goos {
+		case "windows":
+			// Portable app binary only — not the installer/cli/relay.
+			if name == "opensave.exe" {
+				return a.BrowserDownloadURL
+			}
+		case "linux":
+			if strings.HasPrefix(name, "opensave-linux") &&
+				(strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz")) {
+				return a.BrowserDownloadURL
+			}
+		}
+	}
+	return ""
 }
 
 // compareVersions is kept as a thin alias so existing tests keep working;
