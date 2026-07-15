@@ -3,6 +3,23 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.0.1] — 2026-07-15
+
+First update delivered through the in-app updater. If you installed 2.0.0,
+the update banner will offer this release — one click installs it.
+
+### Fixed
+
+- A provider card (e.g. Local Folder) no longer shows "Connected" off the
+  OAuth tokens belonging to a different provider.
+- Non-app binaries (CLI, relay) report the correct version.
+- GitHub releases are titled "OpenSave vX.Y.Z" instead of the bare tag.
+
+### Notes
+
+- Early 2.0.0 downloads predate the final 2.0.0 build; this release brings
+  every install to a known-good state via the in-app updater.
+
 ## [2.0.0] — 2026-07-14
 
 Complete rewrite of OpenSave from Node.js/Electron to **Go + Wails**: one small
@@ -72,4 +89,5 @@ and relay envelope).
 - The local API and dashboard remain loopback-only; relay traffic is limited
   to paired peers.
 
+[2.0.1]: https://github.com/sivadaboi/OpenSave/releases/tag/v2.0.1
 [2.0.0]: https://github.com/sivadaboi/OpenSave/releases/tag/v2.0.0

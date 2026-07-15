@@ -87,7 +87,13 @@
       config = settings.cloudSync ?? {
         enabled: false, provider: 'local', url: '', username: '', password: '', headers: '{}', folderId: ''
       };
-      connectedProvider = config.tokens?.userEmail ? config.provider : null;
+      // OAuth tokens survive a provider switch (so switching back reconnects
+      // instantly) — but only the OAuth provider they belong to is
+      // "connected"; never badge local/webdav/webhook off someone's tokens.
+      connectedProvider =
+        config.tokens?.userEmail && ['google_drive', 'onedrive', 'dropbox'].includes(config.provider)
+          ? config.provider
+          : null;
     } catch (e) {
       toast(e.message, 'error');
     }
