@@ -33,6 +33,13 @@ and relay envelope).
   with an option to self-host the relay.
 - Cloud backup to Google Drive, Dropbox, OneDrive, WebDAV, webhook, or a
   local/NAS folder, with a per-game cloud snapshot browser.
+- Cloud snapshot browser: cover-art tile grid (like auto-scan) with per-game
+  drill-in, restore, delete, upload, live upload progress, and In
+  cloud / Not uploaded filters.
+- Google Drive snapshots now live in an auto-created "OpenSave" folder
+  instead of the Drive root (override with a folder ID in Settings).
+- Cloud mirroring is on by default; the toggle, Drive folder ID, and custom
+  OAuth client IDs moved to Settings → Sync.
 - In-app About dialog and an optional "update available" banner.
 - First-run welcome with guided next steps.
 

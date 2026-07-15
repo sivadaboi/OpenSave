@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/opensave/opensave/internal/store"
@@ -66,6 +67,9 @@ type Service struct {
 	Log       func(level, msg string)
 	Endpoints Endpoints
 	HTTP      *http.Client
+
+	driveFolderMu sync.Mutex
+	driveFolderID string // cached id of the auto-managed "OpenSave" Drive folder
 }
 
 // New creates a production Service.
@@ -78,6 +82,20 @@ func New(s *store.Store, logf func(level, msg string)) *Service {
 	}
 }
 
+// IsNotConfigured reports whether err just means cloud backup isn't set up
+// (disabled, no destination, or not signed in) — callers like the snapshot
+// auto-upload hook skip logging these instead of alarming the user.
+func IsNotConfigured(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "not enabled") ||
+		strings.Contains(msg, "destination configured") ||
+		strings.Contains(msg, "destination URL configured") ||
+		strings.Contains(msg, "not authenticated")
+}
+
 func (s *Service) config() (store.CloudConfig, error) {
 	cfg, err := s.Store.GetCloudConfig()
 	if err != nil {
@@ -87,6 +105,55 @@ func (s *Service) config() (store.CloudConfig, error) {
 		return store.CloudConfig{}, fmt.Errorf("cloud sync is not enabled")
 	}
 	return cfg, nil
+}
+
+// driveFolder returns the Drive folder snapshots live in: the user's
+// configured folder ID if set, otherwise a folder named "OpenSave" in the
+// Drive root — found or created on first use and cached for the process
+// lifetime. Keeps snapshots out of the user's Drive root.
+func (s *Service) driveFolder(cfg store.CloudConfig, token string) (string, error) {
+	if cfg.FolderID != "" {
+		return cfg.FolderID, nil
+	}
+	s.driveFolderMu.Lock()
+	defer s.driveFolderMu.Unlock()
+	if s.driveFolderID != "" {
+		return s.driveFolderID, nil
+	}
+
+	query := "name = 'OpenSave' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents"
+	listURL := s.Endpoints.GoogleAPI + "/drive/v3/files?q=" + url.QueryEscape(query) + "&fields=" + url.QueryEscape("files(id)")
+	req, _ := http.NewRequest(http.MethodGet, listURL, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	var out struct {
+		Files []struct {
+			ID string `json:"id"`
+		} `json:"files"`
+	}
+	if err := s.doJSON(req, &out); err != nil {
+		return "", googleDriveErr(err)
+	}
+	if len(out.Files) > 0 {
+		s.driveFolderID = out.Files[0].ID
+		return s.driveFolderID, nil
+	}
+
+	meta, _ := json.Marshal(map[string]any{
+		"name":     "OpenSave",
+		"mimeType": "application/vnd.google-apps.folder",
+	})
+	creq, _ := http.NewRequest(http.MethodPost, s.Endpoints.GoogleAPI+"/drive/v3/files?fields=id", bytes.NewReader(meta))
+	creq.Header.Set("Authorization", "Bearer "+token)
+	creq.Header.Set("Content-Type", "application/json")
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := s.doJSON(creq, &created); err != nil {
+		return "", googleDriveErr(err)
+	}
+	s.Log("info", `cloud: created "OpenSave" folder in Google Drive`)
+	s.driveFolderID = created.ID
+	return created.ID, nil
 }
 
 // Upload sends a snapshot zip to the configured provider. Errors are
@@ -159,10 +226,11 @@ func (s *Service) Upload(filePath, fileName string) error {
 		if err != nil {
 			return err
 		}
-		metadata := map[string]any{"name": fileName, "mimeType": "application/zip"}
-		if cfg.FolderID != "" {
-			metadata["parents"] = []string{cfg.FolderID}
+		folderID, err := s.driveFolder(cfg, token)
+		if err != nil {
+			return err
 		}
+		metadata := map[string]any{"name": fileName, "mimeType": "application/zip", "parents": []string{folderID}}
 		metaRaw, _ := json.Marshal(metadata)
 
 		var buf bytes.Buffer
@@ -265,10 +333,11 @@ func (s *Service) List() ([]CloudFile, error) {
 		if err != nil {
 			return nil, err
 		}
-		query := "trashed = false and mimeType = 'application/zip'"
-		if cfg.FolderID != "" {
-			query += fmt.Sprintf(" and '%s' in parents", cfg.FolderID)
+		folderID, err := s.driveFolder(cfg, token)
+		if err != nil {
+			return nil, err
 		}
+		query := fmt.Sprintf("trashed = false and mimeType = 'application/zip' and '%s' in parents", folderID)
 		listURL := s.Endpoints.GoogleAPI + "/drive/v3/files?q=" + url.QueryEscape(query) + "&fields=" + url.QueryEscape("files(id,name,size,createdTime)")
 		req, _ := http.NewRequest(http.MethodGet, listURL, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -398,10 +467,12 @@ func (s *Service) Download(fileName, localPath string) error {
 		if err != nil {
 			return err
 		}
-		query := fmt.Sprintf("name = '%s' and trashed = false", strings.ReplaceAll(fileName, "'", `\'`))
-		if cfg.FolderID != "" {
-			query += fmt.Sprintf(" and '%s' in parents", cfg.FolderID)
+		folderID, err := s.driveFolder(cfg, token)
+		if err != nil {
+			return err
 		}
+		query := fmt.Sprintf("name = '%s' and trashed = false and '%s' in parents",
+			strings.ReplaceAll(fileName, "'", `\'`), folderID)
 		listURL := s.Endpoints.GoogleAPI + "/drive/v3/files?q=" + url.QueryEscape(query) + "&fields=" + url.QueryEscape("files(id)")
 		req, _ := http.NewRequest(http.MethodGet, listURL, nil)
 		req.Header.Set("Authorization", "Bearer "+token)

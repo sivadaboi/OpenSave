@@ -14,6 +14,7 @@ export const wsConnected = writable(false);
 export const syncActivity = writable({}); // gameId -> {state, peerName, percentage, ...}
 export const toasts = writable([]);
 export const cloudAuthEvent = writable(null); // {success, userEmail?, error?} from the OAuth callback
+export const cloudUploadEvent = writable(null); // {gameId, done, total, current, complete} while sync-local runs
 export const conflictResolution = writable(null); // {gameId, resolution, branchName?, error?} when a background resolution finishes
 export const appUpdate = writable(null); // {state: downloading|installing|restarting|error, percentage, error} during self-update
 export const showAbout = writable(false); // About dialog visibility (shared so any surface can open it)
@@ -147,6 +148,9 @@ export function applyMessage(msg) {
     }
     case 'cloud-auth':
       cloudAuthEvent.set(data ?? null);
+      break;
+    case 'cloud-upload':
+      cloudUploadEvent.set(data ?? null);
       break;
     case 'app-update':
       appUpdate.set(data ?? null);

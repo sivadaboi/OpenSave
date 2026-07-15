@@ -112,7 +112,7 @@ func New(opts Options) (*Daemon, error) {
 	// background; failures are logged, never fatal.
 	snaps.OnUpload = func(zipPath, remoteFileName string) {
 		if err := d.Cloud.Upload(zipPath, remoteFileName); err != nil {
-			if !strings.Contains(err.Error(), "not enabled") {
+			if !cloud.IsNotConfigured(err) {
 				log.Log("error", fmt.Sprintf("cloud upload of %s failed: %v", remoteFileName, err))
 			}
 			return

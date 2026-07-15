@@ -29,6 +29,7 @@ func (s *Server) cloudRoutes(r chi.Router) {
 	r.Get("/api/cloud/browse", s.handleCloudBrowse)
 	r.Get("/api/cloud/snapshots/{gameId}", s.handleCloudSnapshots)
 	r.Post("/api/cloud/restore/{gameId}", s.handleCloudRestore)
+	r.Post("/api/cloud/delete/{gameId}", s.handleCloudDelete)
 	r.Post("/api/cloud/sync-local/{gameId}", s.handleCloudSyncLocal)
 }
 
@@ -234,6 +235,33 @@ func (s *Server) handleCloudRestore(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"success": true, "snapshotId": snapID})
 }
 
+// handleCloudDelete removes one snapshot from the cloud provider. Local
+// snapshots are untouched — this only frees the remote copy.
+func (s *Server) handleCloudDelete(w http.ResponseWriter, r *http.Request) {
+	gameID := chi.URLParam(r, "gameId")
+	var body struct {
+		FileName string `json:"fileName"`
+		ID       string `json:"id"`
+	}
+	if err := readJSON(r, &body); err != nil || body.FileName == "" {
+		writeError(w, http.StatusBadRequest, "fileName is required")
+		return
+	}
+
+	g, _, snapID, ok := snapshot.ParseExportEntryName(body.FileName)
+	if !ok || g != gameID {
+		writeError(w, http.StatusBadRequest, "fileName does not belong to this game")
+		return
+	}
+
+	if err := s.Daemon.Cloud.Delete(cloud.CloudFile{ID: body.ID, Name: body.FileName}); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.Daemon.Log.Log("info", fmt.Sprintf("cloud: deleted %s (%s)", body.FileName, snapID))
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
 // handleCloudSyncLocal uploads every local snapshot of a game that the
 // provider doesn't have yet.
 func (s *Server) handleCloudSyncLocal(w http.ResponseWriter, r *http.Request) {
@@ -259,7 +287,15 @@ func (s *Server) handleCloudSyncLocal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uploaded, skipped := 0, 0
+	// Collect what actually needs uploading first so progress events can
+	// report a meaningful done/total to the UI.
+	type pendingUpload struct {
+		zipPath    string
+		remoteName string
+		snapID     string
+	}
+	var pending []pendingUpload
+	skipped := 0
 	for _, branch := range branches {
 		snaps, err := s.Daemon.Store.ListSnapshots(gameID, branch)
 		if err != nil {
@@ -271,17 +307,32 @@ func (s *Server) handleCloudSyncLocal(w http.ResponseWriter, r *http.Request) {
 				skipped++
 				continue
 			}
-			if err := s.Daemon.Cloud.Upload(snap.ZipPath, remoteName); err != nil {
-				if strings.Contains(err.Error(), "not enabled") {
-					writeError(w, http.StatusBadRequest, err.Error())
-					return
-				}
-				s.Daemon.Log.Log("warn", fmt.Sprintf("upload %s failed: %v", remoteName, err))
-				skipped++
-				continue
-			}
-			uploaded++
+			pending = append(pending, pendingUpload{zipPath: snap.ZipPath, remoteName: remoteName, snapID: snap.ID})
 		}
 	}
+
+	progress := func(done int, current string, complete bool) {
+		s.Hub.Broadcast("cloud-upload", map[string]any{
+			"gameId": gameID, "done": done, "total": len(pending),
+			"current": current, "complete": complete,
+		})
+	}
+
+	uploaded := 0
+	for _, p := range pending {
+		progress(uploaded, p.snapID, false)
+		if err := s.Daemon.Cloud.Upload(p.zipPath, p.remoteName); err != nil {
+			if strings.Contains(err.Error(), "not enabled") {
+				progress(uploaded, "", true)
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			s.Daemon.Log.Log("warn", fmt.Sprintf("upload %s failed: %v", p.remoteName, err))
+			skipped++
+			continue
+		}
+		uploaded++
+	}
+	progress(uploaded, "", true)
 	writeJSON(w, http.StatusOK, map[string]int{"uploaded": uploaded, "skipped": skipped})
 }

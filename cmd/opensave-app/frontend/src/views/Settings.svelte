@@ -6,7 +6,13 @@
   let draft = null;
   let busy = false;
 
-  $: if ($settings && !draft) draft = structuredClone($settings);
+  $: if ($settings && !draft) {
+    draft = structuredClone($settings);
+    // older daemons may omit cloudSync from the settings payload
+    draft.cloudSync ??= {
+      enabled: true, provider: 'local', url: '', username: '', password: '', headers: '{}', folderId: ''
+    };
+  }
 
   async function save() {
     busy = true;
@@ -160,6 +166,52 @@
         {/if}
       {/if}
     </div>
+
+    <div class="card" style="margin-top: 14px;">
+      <h3 class="section-title">☁️ Cloud backup</h3>
+      <label class="check">
+        <input type="checkbox" bind:checked={draft.cloudSync.enabled} />
+        Mirror every new snapshot to the cloud automatically
+      </label>
+      <p class="hint" style="margin-top: 6px;">
+        On by default — uploads only happen once a provider is connected on the
+        <strong>Cloud Backup</strong> page. Snapshots are stored in an <strong>OpenSave</strong> folder.
+      </p>
+      <div class="field" style="margin-top: 14px;">
+        <label for="s-driveid">Google Drive folder ID (optional)</label>
+        <input id="s-driveid" bind:value={draft.cloudSync.folderId} placeholder="Leave blank to use the auto-created OpenSave folder" />
+        <span class="hint">
+          Only set this to store snapshots in a specific existing Drive folder (the ID is the long code in
+          the folder's URL) instead of the auto-managed one.
+        </span>
+      </div>
+      <div class="field" style="margin-bottom: 0;">
+        <label for="s-oauth-gd">Custom OAuth client IDs (optional, advanced)</label>
+        <span class="hint" style="margin-bottom: 8px; display: block;">
+          Google Drive and Dropbox ship with built-in credentials — leave these blank unless you want
+          sign-ins to go through your own registered app. OneDrive has no built-in credentials, so it
+          requires one. Takes effect on the next sign-in.
+        </span>
+        <div class="oauth-ids">
+          <input
+            id="s-oauth-gd"
+            placeholder="Google Drive client ID"
+            value={draft.cloudSync.customClientIds?.google_drive ?? ''}
+            on:input={(e) => (draft.cloudSync.customClientIds = { ...(draft.cloudSync.customClientIds ?? {}), google_drive: e.currentTarget.value })}
+          />
+          <input
+            placeholder="Dropbox client ID"
+            value={draft.cloudSync.customClientIds?.dropbox ?? ''}
+            on:input={(e) => (draft.cloudSync.customClientIds = { ...(draft.cloudSync.customClientIds ?? {}), dropbox: e.currentTarget.value })}
+          />
+          <input
+            placeholder="OneDrive client ID"
+            value={draft.cloudSync.customClientIds?.onedrive ?? ''}
+            on:input={(e) => (draft.cloudSync.customClientIds = { ...(draft.cloudSync.customClientIds ?? {}), onedrive: e.currentTarget.value })}
+          />
+        </div>
+      </div>
+    </div>
   {:else if tab === 'storage'}
     <div class="card">
       <h3 class="section-title">🗄️ Snapshot storage</h3>
@@ -253,6 +305,11 @@
 <style>
   .head {
     margin-bottom: 18px;
+  }
+  .oauth-ids {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
   .quiet {
     color: var(--text-faint);

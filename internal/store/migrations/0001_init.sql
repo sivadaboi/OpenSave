@@ -26,7 +26,7 @@ CREATE TABLE settings (
 
 CREATE TABLE cloud_config (
   id                    INTEGER PRIMARY KEY CHECK (id = 1),
-  enabled               INTEGER NOT NULL DEFAULT 0,
+  enabled               INTEGER NOT NULL DEFAULT 1,
   provider              TEXT NOT NULL DEFAULT 'local',
   url                   TEXT NOT NULL DEFAULT '',
   username              TEXT NOT NULL DEFAULT '',

@@ -1,5 +1,5 @@
 <script>
-  import { gameList, toast, cloudAuthEvent, askConfirm } from '../lib/stores.js';
+  import { gameList, toast, cloudAuthEvent, cloudUploadEvent, askConfirm } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
   import { onMount, onDestroy } from 'svelte';
 
@@ -26,9 +26,20 @@
   });
   onDestroy(unsubAuth);
   let cloudGames = null; // grouped explorer data (null = not loaded yet)
-  let openGame = null; // gameId of the expanded group
   let browsing = false;
-  let uploadGame = ''; // game selected for pushing local snapshots up
+  let cloudOpen = false; // cloud snapshot browser modal
+  let cloudFilter = '';
+  let cloudTab = 'all'; // all | cloud | local
+  let detailId = null; // gameId drilled into (null = tile grid)
+  let uploading = false; // an upload-to-cloud is running (independent of busy
+  // so Restore/Delete don't gray out while snapshots are being pushed up)
+  let uploadProg = null; // live {done, total, current} from the daemon
+
+  const unsubUpload = cloudUploadEvent.subscribe((ev) => {
+    if (!ev) return;
+    uploadProg = ev.complete ? null : ev;
+  });
+  onDestroy(unsubUpload);
 
   const providers = [
     { id: 'google_drive', label: 'Google Drive', oauth: true, img: 'cloud/googledrive.png' },
@@ -164,7 +175,8 @@
 
   async function browseCloud() {
     browsing = true;
-    cloudGames = null;
+    // keep the current listing visible while refreshing so the detail view
+    // doesn't flash back to the loading spinner mid-upload
     try {
       cloudGames = await api.get('/api/cloud/browse');
     } catch (e) {
@@ -174,7 +186,70 @@
     }
   }
 
-  const toggleGame = (id) => (openGame = openGame === id ? null : id);
+  function openCloudBrowser() {
+    cloudOpen = true;
+    cloudFilter = '';
+    cloudTab = 'all';
+    detailId = null;
+    browseCloud();
+  }
+  const closeCloudBrowser = () => {
+    cloudOpen = false;
+    detailId = null;
+  };
+
+  // One tile per game — tracked games and cloud-only games merged, so the
+  // grid can both browse what's up there and upload what isn't yet.
+  $: cloudMap = new Map((cloudGames ?? []).map((g) => [g.gameId, g]));
+  $: tiles = [
+    ...(cloudGames ?? []).map((g) => {
+      const local = $gameList.find((x) => x.id === g.gameId);
+      return { id: g.gameId, name: g.gameName, coverUrl: local?.coverUrl, tracked: !!local, cloud: g };
+    }),
+    ...$gameList
+      .filter((lg) => !cloudMap.has(lg.id))
+      .map((lg) => ({ id: lg.id, name: lg.name, coverUrl: lg.coverUrl, tracked: true, cloud: null }))
+  ];
+  $: tabCounts = {
+    all: tiles.length,
+    cloud: tiles.filter((t) => t.cloud).length,
+    local: tiles.filter((t) => !t.cloud).length
+  };
+  $: filteredTiles = tiles.filter(
+    (t) =>
+      (cloudTab === 'all' || (cloudTab === 'cloud' ? !!t.cloud : !t.cloud)) &&
+      t.name.toLowerCase().includes(cloudFilter.trim().toLowerCase())
+  );
+  $: detailTile = detailId ? tiles.find((t) => t.id === detailId) : null;
+
+  // Delete only removes the remote copy — local snapshots stay put.
+  const deleteCloud = async (g, f) => {
+    if (
+      !(await askConfirm(
+        `Delete ${f.snapshotId} of "${g.gameName}" from the cloud? Snapshots stored on your devices are not affected.`,
+        { title: 'Delete cloud snapshot?', confirmText: 'Delete', danger: true }
+      ))
+    )
+      return;
+    busy = true;
+    try {
+      await api.post(`/api/cloud/delete/${g.gameId}`, { fileName: f.name, id: f.id ?? '' });
+      g.snapshots = g.snapshots.filter((x) => x.name !== f.name);
+      g.count = g.snapshots.length;
+      g.totalSize = g.snapshots.reduce((n, x) => n + x.sizeBytes, 0);
+      cloudGames = cloudGames.filter((x) => x.count > 0);
+      toast('Deleted from cloud', 'success');
+    } catch (e) {
+      handleCloudError(e);
+    } finally {
+      busy = false;
+    }
+  };
+
+  $: cloudTotals = (cloudGames ?? []).reduce(
+    (a, g) => ({ snaps: a.snaps + g.count, size: a.size + g.totalSize }),
+    { snaps: 0, size: 0 }
+  );
 
   const restoreCloud = async (gameId, file) => {
     if (!(await askConfirm(`Restore ${file.snapshotId} from the cloud over your current save?`, { title: 'Restore from cloud?', confirmText: 'Restore' }))) return;
@@ -190,16 +265,21 @@
   };
 
   const uploadLocal = async (gameId) => {
-    busy = true;
+    uploading = true;
     try {
       const res = await api.post(`/api/cloud/sync-local/${gameId}`);
-      toast(`Uploaded ${res.uploaded}, skipped ${res.skipped}`, 'success');
-      await browseCloud();
-      openGame = gameId;
+      toast(
+        res.uploaded === 0 && res.skipped > 0
+          ? `Everything already in the cloud (${res.skipped} skipped)`
+          : `Uploaded ${res.uploaded}, skipped ${res.skipped}`,
+        'success'
+      );
+      await browseCloud(); // detailTile re-derives from the fresh listing
     } catch (e) {
       handleCloudError(e);
     } finally {
-      busy = false;
+      uploading = false;
+      uploadProg = null;
     }
   };
 
@@ -244,24 +324,13 @@
   <p class="quiet">Loading…</p>
 {:else}
   <div class="card">
-    <div class="enable-row">
-      <div>
-        <h3>Mirror snapshots to the cloud</h3>
-        <p class="quiet">Every new snapshot uploads automatically in the background.</p>
-      </div>
-      <label class="switch">
-        <input type="checkbox" bind:checked={config.enabled} on:change={save} />
-        <span></span>
-      </label>
-    </div>
-
-    <div class="provider-label">Select cloud storage provider</div>
+    <div class="provider-label" style="margin-top: 0;">Select cloud storage provider</div>
     <div class="provider-grid">
       {#each providers as p}
         <button
           class="provider-card"
           class:active={config.provider === p.id}
-          on:click={() => { config.provider = p.id; cloudGames = null; openGame = null; }}
+          on:click={() => { config.provider = p.id; cloudGames = null; detailId = null; }}
         >
           {#if p.id === connectedProvider}
             <span class="prov-check" title="Connected">✓</span>
@@ -380,91 +449,26 @@
           {/if}
         {/if}
       {/if}
-      {#if config.provider === 'google_drive'}
-        <div class="field" style="margin-top: 14px;">
-          <label for="cb-folderid">Drive folder ID (optional)</label>
-          <input id="cb-folderid" bind:value={config.folderId} />
-        </div>
-      {/if}
-
-      <div class="oauth-config">
-        <div class="oauth-config-head">🛠️ Custom OAuth Client ID <span class="optional">(optional)</span></div>
-        <p class="oauth-config-note">
-          Google Drive and Dropbox include built-in credentials — sign in with zero setup. For OneDrive, or to use
-          your own registered app, enter a Client ID. Takes effect on next sign-in.
-        </p>
-        <input
-          placeholder="Leave blank to use built-in credentials"
-          value={config.customClientIds?.[config.provider] ?? ''}
-          on:input={(e) => {
-            config.customClientIds = { ...(config.customClientIds ?? {}), [config.provider]: e.currentTarget.value };
-          }}
-        />
-      </div>
     {/if}
 
     <div class="actions">
+      <span class="quiet" style="margin-right: auto;">
+        Automatic mirroring, Drive folder ID, and custom OAuth client IDs live in
+        <strong>Settings → Sync</strong>.
+      </span>
       <button class="btn primary" disabled={busy} on:click={save}>Save settings</button>
     </div>
   </div>
 
-  <div class="section-head">
-    <h3 class="section">Browse cloud snapshots</h3>
-    <button class="btn small" disabled={browsing} on:click={browseCloud}>
-      {browsing ? 'Loading…' : cloudGames ? 'Refresh' : 'Browse cloud'}
-    </button>
-  </div>
-  <div class="card">
-    <!-- Push a game's local snapshots up (games with nothing in the cloud
-         yet won't appear in the explorer below until they're uploaded). -->
-    <div class="browse-row">
-      <select bind:value={uploadGame}>
-        <option value="">Upload a game's local snapshots…</option>
-        {#each $gameList as g}
-          <option value={g.id}>{g.name}</option>
-        {/each}
-      </select>
-      <button class="btn" disabled={!uploadGame || busy} on:click={() => uploadLocal(uploadGame)}>
-        Upload to cloud
-      </button>
+  <h3 class="section">Cloud snapshots</h3>
+  <div class="card export-row">
+    <div>
+      <h3>Browse your cloud library</h3>
+      <p class="quiet">
+        Every game with snapshots in the cloud, as cover-art tiles — upload, restore, or delete per game.
+      </p>
     </div>
-
-    {#if browsing && !cloudGames}
-      <p class="quiet" style="margin-top: 14px;">Reading cloud storage…</p>
-    {:else if cloudGames && cloudGames.length === 0}
-      <p class="quiet" style="margin-top: 14px;">No snapshots in the cloud yet. Upload a game above to get started.</p>
-    {:else if cloudGames}
-      <div class="explorer">
-        {#each cloudGames as g (g.gameId)}
-          <div class="game-group" class:open={openGame === g.gameId}>
-            <button class="group-head" on:click={() => toggleGame(g.gameId)}>
-              <svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
-              </svg>
-              <span class="group-name">{g.gameName}</span>
-              <span class="group-meta">{g.count} snapshot{g.count === 1 ? '' : 's'} · {fmtSize(g.totalSize)}</span>
-            </button>
-            {#if openGame === g.gameId}
-              <div class="cloud-list">
-                {#each g.snapshots as f (f.name)}
-                  <div class="cloud-row">
-                    <div class="cloud-info">
-                      <div class="cloud-name">{f.snapshotId} <span class="badge offline">{f.branch}</span></div>
-                      <div class="cloud-meta">{fmtSize(f.sizeBytes)} · {new Date(f.createdTime).toLocaleString()}</div>
-                    </div>
-                    <button class="btn small primary" disabled={busy} on:click={() => restoreCloud(g.gameId, f)}>
-                      Restore
-                    </button>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/each}
-      </div>
-    {:else}
-      <p class="quiet" style="margin-top: 14px;">Click <strong>Browse cloud</strong> to see every snapshot stored in the cloud, grouped by game.</p>
-    {/if}
+    <button class="btn primary" on:click={openCloudBrowser}>☁️ Browse cloud</button>
   </div>
 
   <h3 class="section">Full backup file</h3>
@@ -480,56 +484,218 @@
   </div>
 {/if}
 
+{#if cloudOpen}
+  <div
+    class="cloud-overlay"
+    on:click|self={closeCloudBrowser}
+    on:keydown={(e) => e.key === 'Escape' && closeCloudBrowser()}
+    role="presentation"
+  >
+    <div class="cloud-modal">
+      <div class="cloud-modal-head">
+        <div>
+          <h2>☁️ Cloud snapshots</h2>
+          <p class="cloud-modal-sub">
+            {#if browsing}
+              Reading cloud storage…
+            {:else if cloudGames}
+              {cloudGames.length} game{cloudGames.length === 1 ? '' : 's'} · {cloudTotals.snaps}
+              snapshot{cloudTotals.snaps === 1 ? '' : 's'} · {fmtSize(cloudTotals.size)} in the cloud
+            {:else}
+              Could not read cloud storage
+            {/if}
+          </p>
+        </div>
+        <div class="cloud-head-actions">
+          <button class="btn small" disabled={browsing} on:click={browseCloud}>
+            {browsing ? 'Loading…' : 'Refresh'}
+          </button>
+          <button class="btn icon" on:click={closeCloudBrowser} title="Close">✕</button>
+        </div>
+      </div>
+
+      {#if browsing && !cloudGames}
+        <div class="cloud-loading"><span class="cspin"></span> Listing snapshots from your provider…</div>
+      {:else if cloudGames && detailTile}
+        <!-- drill-in: one game's cloud snapshots -->
+        <div class="detail-head">
+          <button class="btn small" on:click={() => (detailId = null)}>← Back</button>
+          <div class="detail-title">
+            <strong>{detailTile.name}</strong>
+            <span class="quiet">
+              {#if detailTile.cloud}
+                {detailTile.cloud.count} snapshot{detailTile.cloud.count === 1 ? '' : 's'} · {fmtSize(detailTile.cloud.totalSize)} in the cloud
+              {:else}
+                nothing in the cloud yet
+              {/if}
+            </span>
+          </div>
+          {#if detailTile.tracked}
+            <button class="btn small" disabled={uploading} on:click={() => uploadLocal(detailTile.id)}>
+              {uploading ? 'Uploading…' : '⬆ Upload local snapshots'}
+            </button>
+          {/if}
+        </div>
+        {#if uploading}
+          <div class="upload-progress">
+            <div class="upload-progress-text">
+              <span class="cspin"></span>
+              {#if uploadProg && uploadProg.total > 0}
+                Uploading {Math.min(uploadProg.done + 1, uploadProg.total)} of {uploadProg.total}
+                {#if uploadProg.current}&nbsp;— <code>{uploadProg.current}</code>{/if}
+              {:else}
+                Checking what needs uploading…
+              {/if}
+            </div>
+            <div class="upload-bar">
+              <div
+                class="upload-bar-fill"
+                style="width: {uploadProg && uploadProg.total > 0 ? Math.round((uploadProg.done / uploadProg.total) * 100) : 8}%"
+              ></div>
+            </div>
+          </div>
+        {/if}
+        <div class="cloud-modal-list">
+          {#if detailTile.cloud}
+            {#each detailTile.cloud.snapshots as f (f.name)}
+              <div class="cloud-row">
+                <div class="cloud-info">
+                  <div class="cloud-name">{f.snapshotId} <span class="badge offline">{f.branch}</span></div>
+                  <div class="cloud-meta">{fmtSize(f.sizeBytes)} · {new Date(f.createdTime).toLocaleString()}</div>
+                </div>
+                <button
+                  class="btn small primary"
+                  disabled={busy || !detailTile.tracked}
+                  title={detailTile.tracked ? 'Download and restore this snapshot' : 'Track this game first to restore'}
+                  on:click={() => restoreCloud(detailTile.id, f)}
+                >
+                  Restore
+                </button>
+                <button
+                  class="btn small danger"
+                  disabled={busy}
+                  title="Delete from the cloud (local snapshots are kept)"
+                  on:click={() => deleteCloud(detailTile.cloud, f)}
+                >
+                  Delete
+                </button>
+              </div>
+            {/each}
+          {:else}
+            <div class="cloud-empty">
+              <div class="cloud-empty-icon">☁️</div>
+              <p>No cloud snapshots for this game yet.</p>
+              <p class="quiet">Use <strong>Upload local snapshots</strong> above to push them up.</p>
+            </div>
+          {/if}
+        </div>
+        <div class="cloud-modal-foot">
+          <span class="quiet">Deleting only removes the cloud copy — snapshots on your devices stay.</span>
+          <button class="btn" on:click={closeCloudBrowser}>Close</button>
+        </div>
+      {:else if cloudGames}
+        <!-- tile grid -->
+        <div class="cloud-toolbar">
+          <input class="cloud-search" placeholder="Filter by name…" bind:value={cloudFilter} />
+          <div class="cloud-tabs">
+            {#each [['all', 'All'], ['cloud', 'In cloud'], ['local', 'Not uploaded']] as [id, label]}
+              <button class:active={cloudTab === id} on:click={() => (cloudTab = id)}>
+                {label} <span class="count">{tabCounts[id]}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="cloud-modal-list">
+          <div class="cloud-grid">
+            {#each filteredTiles as t (t.id)}
+              <div
+                class="cover-tile"
+                on:click={() => (detailId = t.id)}
+                on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), (detailId = t.id))}
+                role="button"
+                tabindex="0"
+                title={t.name}
+              >
+                <div class="cover-art">
+                  {#if t.coverUrl}
+                    <img src={t.coverUrl} alt={t.name} loading="lazy" on:error={(e) => (e.currentTarget.style.display = 'none')} />
+                  {/if}
+                  <div class="cover-fallback">
+                    <span class="cover-emoji">{t.cloud ? '☁️' : '💾'}</span>
+                    <span class="cover-fallback-name">{t.name}</span>
+                  </div>
+                  {#if t.cloud}
+                    <span class="cover-type in-cloud">☁ {t.cloud.count}</span>
+                  {:else}
+                    <span class="cover-type">local only</span>
+                  {/if}
+                  <div class="cover-hover">
+                    <button class="btn small primary" on:click|stopPropagation={() => (detailId = t.id)}>
+                      {t.cloud ? 'Browse' : 'Upload'}
+                    </button>
+                  </div>
+                </div>
+                <div class="cover-name">{t.name}</div>
+              </div>
+            {:else}
+              <div class="cloud-grid-empty">
+                {tiles.length === 0
+                  ? 'No tracked games and nothing in the cloud yet.'
+                  : 'No matches for this filter.'}
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <div class="cloud-modal-foot">
+          <span class="quiet">Click a game to browse, restore, delete, or upload its snapshots.</span>
+          <button class="btn" on:click={closeCloudBrowser}>Close</button>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
+
 <style>
   .head {
     margin-bottom: 20px;
-  }
-  .enable-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
   }
   .quiet {
     color: var(--text-faint);
     font-size: 0.85rem;
   }
-  .switch {
-    position: relative;
-    width: 44px;
-    height: 24px;
-    flex-shrink: 0;
+  .upload-progress {
+    padding: 12px 22px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
-  .switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
+  .upload-progress-text {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 0.84rem;
+    color: var(--text-dim);
   }
-  .switch span {
-    position: absolute;
-    inset: 0;
-    background: var(--bg-active);
+  .upload-progress-text code {
+    background: var(--bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+  }
+  .upload-bar {
+    height: 6px;
     border-radius: 999px;
-    cursor: pointer;
-    transition: background 0.15s;
+    background: var(--bg-active);
+    overflow: hidden;
   }
-  .switch span::before {
-    content: '';
-    position: absolute;
-    width: 18px;
-    height: 18px;
-    left: 3px;
-    top: 3px;
-    background: var(--text-dim);
-    border-radius: 50%;
-    transition: transform 0.15s, background 0.15s;
-  }
-  .switch input:checked + span {
+  .upload-bar-fill {
+    height: 100%;
+    border-radius: 999px;
     background: var(--accent);
-  }
-  .switch input:checked + span::before {
-    transform: translateX(20px);
-    background: #fff;
+    transition: width 0.3s ease;
   }
   .provider-label {
     display: block;
@@ -616,38 +782,6 @@
     justify-content: center;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   }
-  .oauth-config {
-    margin-top: 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.01);
-  }
-  .oauth-config-head {
-    font-weight: 600;
-    font-size: 0.85rem;
-    margin-bottom: 6px;
-  }
-  .oauth-config .optional {
-    font-weight: 400;
-    color: var(--text-faint);
-    font-size: 0.75rem;
-  }
-  .oauth-config-note {
-    font-size: 0.76rem;
-    color: var(--text-faint);
-    line-height: 1.5;
-    margin-bottom: 10px;
-  }
-  .oauth-config input {
-    width: 100%;
-    padding: 8px 12px;
-    background: var(--bg);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    color: var(--text);
-    outline: none;
-  }
   .two {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -663,6 +797,8 @@
   .actions {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
     margin-top: 8px;
   }
   .acct {
@@ -779,73 +915,253 @@
   .section-head .section {
     margin: 0;
   }
-  .explorer {
-    margin-top: 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .game-group {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
-    overflow: hidden;
-  }
-  .game-group.open {
-    border-color: var(--border-strong);
-  }
-  .group-head {
+  /* Cloud snapshot browser overlay (same pattern as the auto-scan modal) */
+  .cloud-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.62);
     display: flex;
     align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 12px 14px;
-    background: transparent;
-    border: none;
-    color: var(--text);
-    cursor: pointer;
-    text-align: left;
-    transition: background 0.12s;
+    justify-content: center;
+    z-index: 80;
+    padding: 32px;
   }
-  .group-head:hover {
-    background: var(--bg-active);
-  }
-  .chev {
-    color: var(--text-faint);
-    flex-shrink: 0;
-    transition: transform 0.15s;
-  }
-  .game-group.open .chev {
-    transform: rotate(90deg);
-  }
-  .group-name {
-    font-weight: 600;
-    font-size: 0.92rem;
-    flex: 1;
-  }
-  .group-meta {
-    font-size: 0.76rem;
-    color: var(--text-faint);
-    white-space: nowrap;
-  }
-  .browse-row {
+  .cloud-modal {
+    width: min(760px, 100%);
+    height: min(78vh, 720px);
+    background: var(--bg-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
     display: flex;
-    gap: 10px;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   }
-  .browse-row select {
+  .cloud-modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 20px 22px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cloud-modal-head h2 {
+    font-size: 1.2rem;
+  }
+  .cloud-modal-sub {
+    font-size: 0.84rem;
+    color: var(--text-faint);
+    margin-top: 3px;
+  }
+  .cloud-head-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .cloud-loading {
     flex: 1;
-    padding: 9px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-dim);
+  }
+  .cloud-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--text-dim);
+    text-align: center;
+    padding: 20px;
+  }
+  .cloud-empty-icon {
+    font-size: 2.2rem;
+    opacity: 0.6;
+  }
+  .cloud-toolbar {
+    display: flex;
+    gap: 12px;
+    padding: 14px 22px 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .cloud-search {
+    flex: 1;
+    min-width: 200px;
+    padding: 9px 13px;
     background: var(--bg);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     color: var(--text);
     outline: none;
   }
-  .cloud-list {
+  .cloud-tabs {
+    display: flex;
+    gap: 6px;
+  }
+  .cloud-tabs button {
+    padding: 7px 13px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .cloud-tabs button:hover {
+    background: var(--bg-hover);
+  }
+  .cloud-tabs button.active {
+    background: var(--bg-active);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .cloud-tabs .count {
+    color: var(--text-faint);
+    font-size: 0.75rem;
+    margin-left: 2px;
+  }
+  /* Cover-art tile grid (same look as the auto-scan modal) */
+  .cloud-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px;
+  }
+  .cloud-grid-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-faint);
+    padding: 50px 20px;
+  }
+  .cover-tile {
+    cursor: pointer;
+    outline: none;
+  }
+  .cover-art {
+    position: relative;
+    aspect-ratio: 600 / 900;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg-active);
+    border: 2px solid transparent;
+    transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+  }
+  .cover-tile:hover .cover-art {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  }
+  .cover-art img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 2;
+  }
+  .cover-fallback {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 0 12px 12px;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px;
+    text-align: center;
+    background: linear-gradient(160deg, rgba(138, 99, 244, 0.22), rgba(138, 99, 244, 0.04));
+  }
+  .cover-emoji {
+    font-size: 2.2rem;
+  }
+  .cover-fallback-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--text);
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .cover-type {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 3;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--text-dim);
+    backdrop-filter: blur(2px);
+  }
+  .cover-type.in-cloud {
+    color: var(--accent);
+  }
+  .cover-hover {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 12px;
+    opacity: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent 55%);
+    transition: opacity 0.12s;
+  }
+  .cover-tile:hover .cover-hover {
+    opacity: 1;
+  }
+  .cover-name {
+    margin-top: 7px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Drill-in detail view */
+  .detail-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--border);
+  }
+  .detail-title {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .detail-title strong {
+    font-size: 0.98rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cloud-modal-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 22px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .cloud-modal-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 22px;
+    border-top: 1px solid var(--border);
   }
   .cloud-row {
     display: flex;
