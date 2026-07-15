@@ -72,7 +72,9 @@ jobs:
         shell: bash
         run: |
           V="${GITHUB_REF_NAME#v}"
-          FV="${V}.0"
+          # Windows file-versions must be numeric (x.y.z.w) — strip any
+          # semver pre-release suffix ("2.1.0-beta.1" -> "2.1.0.0").
+          FV="${V%%-*}.0"
           # the npm "rcedit" package is a library with no CLI — fetch the real binary
           curl -sL --retry 3 -o "$RUNNER_TEMP/rcedit.exe" \
             https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe
@@ -171,6 +173,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: OpenSave ${{ github.ref_name }}
+          # Hyphenated tags (v2.1.0-beta.1) publish as pre-releases: the
+          # in-app updater and /releases/latest both ignore them, so only
+          # people who opt in manually get in-progress builds.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           # Note: re-publishing the same tag appends another generated-notes
           # block; if a tag is ever re-cut, tidy the release body by hand.
           generate_release_notes: true
