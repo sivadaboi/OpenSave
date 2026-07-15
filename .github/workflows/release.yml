@@ -25,6 +25,16 @@ jobs:
           node-version: "22"
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+      # NSIS ships on the runner image but is not on PATH; without makensis
+      # `wails build -nsis` silently skips the installer.
+      - name: Ensure NSIS (makensis) is on PATH
+        shell: bash
+        run: |
+          if ! command -v makensis >/dev/null 2>&1; then
+            choco install nsis -y --no-progress || true
+          fi
+          echo 'C:\Program Files (x86)\NSIS' >> "$GITHUB_PATH"
+          echo 'C:\Program Files (x86)\NSIS\Bin' >> "$GITHUB_PATH"
       - name: Build Windows app (NSIS installer + portable exe)
         working-directory: cmd/opensave-app
         shell: bash
@@ -35,6 +45,20 @@ jobs:
         run: |
           go build -ldflags="-s -w" -o dist/opensave-cli.exe ./cmd/opensave-cli
           go build -ldflags="-s -w" -o dist/opensave-relay.exe ./cmd/opensave-relay
+
+      # Fail loudly if the NSIS installer was skipped, and give it a stable
+      # download name (the website's download buttons look for "Setup").
+      - name: Verify + rename installer
+        shell: bash
+        run: |
+          ls -la cmd/opensave-app/build/bin/
+          shopt -s nullglob
+          inst=(cmd/opensave-app/build/bin/*installer*.exe)
+          if [ ${#inst[@]} -eq 0 ]; then
+            echo "::error::NSIS installer was not produced by wails build"
+            exit 1
+          fi
+          mv "${inst[0]}" cmd/opensave-app/build/bin/OpenSave.Setup.exe
 
       # Wails 2.12 doesn't reliably embed Windows versioninfo, so stamp it
       # onto the built binaries with rcedit (what electron-builder uses).
