@@ -691,7 +691,7 @@ func (e *Engine) recordMirrorSnapshot(gameID string, game store.Game, peer Peer,
 		return
 	}
 	zipPath := filepath.Join(destDir, remoteSnap.ID+".zip")
-	if err := snapshot.ZipPath(game.SavePath, zipPath); err != nil {
+	if _, err := snapshot.ZipPath(game.SavePath, zipPath); err != nil {
 		e.Log("warn", fmt.Sprintf("mirror snapshot zip failed: %v", err))
 		return
 	}

@@ -210,7 +210,13 @@ func (s *Server) handleTrackGame(w http.ResponseWriter, r *http.Request) {
 
 	game, err := s.Daemon.TrackGame(store.Game{Name: body.Name, SavePath: body.SavePath, AppID: body.AppID})
 	if err != nil {
-		writeError(w, http.StatusConflict, err.Error())
+		// Duplicates (id or path) are conflicts; anything else the daemon
+		// rejects is bad input.
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "already track") || strings.Contains(err.Error(), "already exists") {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	s.BroadcastGamesUpdate()

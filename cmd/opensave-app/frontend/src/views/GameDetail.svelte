@@ -99,8 +99,33 @@
 
   async function untrack() {
     if (!(await askConfirm(`Stop tracking "${game.name}"? Snapshot files stay on disk.`, { title: 'Stop tracking?', confirmText: 'Stop tracking', danger: true }))) return;
-    await run('Stopped tracking', () => api.del(`/api/games/${game.id}`));
+    const gameId = game.id;
+    const gameName = game.name;
+    await run('Stopped tracking', () => api.del(`/api/games/${gameId}`));
     navigate('home');
+
+    // Cloud copies would otherwise linger forever — offer to clean them up.
+    try {
+      const settings = await api.get('/api/settings');
+      if (settings.cloudSync?.enabled) {
+        if (
+          await askConfirm(
+            `Also delete "${gameName}"'s snapshots from the cloud? Local snapshot files stay on disk either way.`,
+            { title: 'Clean up cloud copies?', confirmText: 'Delete from cloud', cancelText: 'Keep them', danger: true }
+          )
+        ) {
+          const res = await api.post(`/api/cloud/delete-game/${gameId}`);
+          toast(
+            res.deleted > 0
+              ? `Removed ${res.deleted} cloud snapshot(s)`
+              : 'No cloud snapshots to remove',
+            'success'
+          );
+        }
+      }
+    } catch (e) {
+      toast(`Cloud cleanup failed: ${e.message}`, 'error');
+    }
   }
 
   // ── Configuration ────────────────────────────────────────────────

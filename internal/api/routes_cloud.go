@@ -30,6 +30,7 @@ func (s *Server) cloudRoutes(r chi.Router) {
 	r.Get("/api/cloud/snapshots/{gameId}", s.handleCloudSnapshots)
 	r.Post("/api/cloud/restore/{gameId}", s.handleCloudRestore)
 	r.Post("/api/cloud/delete/{gameId}", s.handleCloudDelete)
+	r.Post("/api/cloud/delete-game/{gameId}", s.handleCloudDeleteGame)
 	r.Post("/api/cloud/sync-local/{gameId}", s.handleCloudSyncLocal)
 }
 
@@ -260,6 +261,33 @@ func (s *Server) handleCloudDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Daemon.Log.Log("info", fmt.Sprintf("cloud: deleted %s (%s)", body.FileName, snapID))
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+// handleCloudDeleteGame removes every cloud snapshot belonging to one
+// game — used when untracking so orphaned files don't pile up in the
+// provider forever. Local snapshots are untouched.
+func (s *Server) handleCloudDeleteGame(w http.ResponseWriter, r *http.Request) {
+	gameID := chi.URLParam(r, "gameId")
+	files, err := s.Daemon.Cloud.List()
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	deleted, failed := 0, 0
+	for _, f := range files {
+		g, _, _, ok := snapshot.ParseExportEntryName(f.Name)
+		if !ok || g != gameID {
+			continue
+		}
+		if err := s.Daemon.Cloud.Delete(f); err != nil {
+			failed++
+			s.Daemon.Log.Log("warn", fmt.Sprintf("cloud: delete %s failed: %v", f.Name, err))
+			continue
+		}
+		deleted++
+	}
+	s.Daemon.Log.Log("info", fmt.Sprintf("cloud: removed %d snapshot(s) for untracked game %s", deleted, gameID))
+	writeJSON(w, http.StatusOK, map[string]int{"deleted": deleted, "failed": failed})
 }
 
 // handleCloudSyncLocal uploads every local snapshot of a game that the

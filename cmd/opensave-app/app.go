@@ -56,8 +56,13 @@ func (a *App) startup(ctx context.Context) {
 
 	// Detect "first run after an update" so the UI can greet with the
 	// changelog — this is how users see what's new after a peer-to-peer
-	// update, which carries no release notes of its own.
+	// update, which carries no release notes of its own. A rebuild of the
+	// same version (build timestamp changed, version didn't) is not an
+	// update worth announcing.
 	a.updatedFrom = stampVersionFile(d.Paths.HomeDir)
+	if a.updatedFrom == AppVersion {
+		a.updatedFrom = ""
+	}
 	if a.updatedFrom != "" {
 		d.Log.Log("success", "OpenSave updated: "+a.updatedFrom+" → "+AppVersion)
 	}

@@ -29,8 +29,11 @@ type UploadHook func(zipPath, remoteFileName string)
 // Manager performs snapshot/branch operations against the store and
 // filesystem.
 type Manager struct {
-	Store      *store.Store
-	OnUpload   UploadHook
+	Store    *store.Store
+	OnUpload UploadHook
+	// Log receives operational warnings (skipped unreadable files, …).
+	// Optional; nil disables.
+	Log func(level, msg string)
 	// now is swappable for tests; defaults to time.Now.
 	now func() time.Time
 }
@@ -95,8 +98,14 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 	snapshotID := "snap_" + strconv.FormatInt(ts.UnixMilli(), 10)
 	zipPath := filepath.Join(backupDir, snapshotID+".zip")
 
-	if err := ZipPath(game.SavePath, zipPath); err != nil {
+	skipped, err := ZipPath(game.SavePath, zipPath)
+	if err != nil {
+		os.Remove(zipPath)
 		return store.Snapshot{}, fmt.Errorf("zip save data: %w", err)
+	}
+	if len(skipped) > 0 && m.Log != nil {
+		sample := skipped[0]
+		m.Log("warn", fmt.Sprintf("snapshot of %q skipped %d unreadable file(s), e.g. %s", game.Name, len(skipped), sample))
 	}
 	info, err := os.Stat(zipPath)
 	if err != nil {

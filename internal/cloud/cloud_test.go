@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -167,15 +168,26 @@ func TestGoogleDriveProviderWithTokenRefresh(t *testing.T) {
 	}))
 	defer proxy.Close()
 
+	var driveURL string
+	uploaded := &bytes.Buffer{}
 	drive := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Chunk PUTs go to the pre-authorized session URL (no auth header
+		// required, mirroring the real API).
+		if r.URL.Path == "/resumable-session" {
+			_, _ = io.Copy(uploaded, r.Body)
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `{"id":"file123"}`)
+			return
+		}
 		if r.Header.Get("Authorization") != "Bearer at-fresh" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/upload/"):
+			// Resumable initiation: hand back the session URL.
+			w.Header().Set("Location", driveURL+"/resumable-session")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"id":"file123"}`)
 		case r.URL.Path == "/drive/v3/files":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"files": []map[string]any{
@@ -187,6 +199,7 @@ func TestGoogleDriveProviderWithTokenRefresh(t *testing.T) {
 		}
 	}))
 	defer drive.Close()
+	driveURL = drive.URL
 
 	svc, s := newTestService(t)
 	// Point the relay (and thus the OAuth proxy) at the mock.
@@ -556,4 +569,147 @@ func TestExchangeAuthCodePersistsTokens(t *testing.T) {
 	if cfg.AccessToken != "" || cfg.RefreshToken != "" || cfg.UserEmail != "" {
 		t.Errorf("disconnect must wipe tokens: %+v", cfg)
 	}
+}
+
+// TestChunkedUploads shrinks the thresholds so a small file exercises the
+// multi-chunk session protocols end to end.
+func TestChunkedUploads(t *testing.T) {
+	// 100 KB of data, 32 KB chunks -> 4 chunks.
+	payload := bytes.Repeat([]byte("chunky-data-0123"), 6400)
+	src := filepath.Join(t.TempDir(), "big.zip")
+	if err := os.WriteFile(src, payload, 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("google drive resumable multi-chunk", func(t *testing.T) {
+		old := driveChunkSize
+		driveChunkSize = 32 << 10
+		defer func() { driveChunkSize = old }()
+
+		var driveURL string
+		var got bytes.Buffer
+		var chunkRanges []string
+		drive := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/session" {
+				chunkRanges = append(chunkRanges, r.Header.Get("Content-Range"))
+				_, _ = io.Copy(&got, r.Body)
+				if strings.HasSuffix(r.Header.Get("Content-Range"), fmt.Sprintf("/%d", len(payload))) &&
+					len(got.Bytes()) == len(payload) {
+					w.WriteHeader(http.StatusOK)
+				} else {
+					w.WriteHeader(308)
+				}
+				return
+			}
+			w.Header().Set("Location", driveURL+"/session")
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer drive.Close()
+		driveURL = drive.URL
+
+		svc, s := newTestService(t)
+		setCloudConfig(t, s, func(c *store.CloudConfig) {
+			c.Enabled = true
+			c.Provider = "google_drive"
+			c.AccessToken = "at"
+			c.ExpiryTimeMs = time.Now().UnixMilli() + 3600_000
+			c.FolderID = "folder1"
+		})
+		svc.Endpoints.GoogleAPI = drive.URL
+		svc.Endpoints.GoogleUpload = drive.URL
+
+		if err := svc.Upload(src, "big__main__snap_1.zip"); err != nil {
+			t.Fatalf("Upload: %v", err)
+		}
+		if !bytes.Equal(got.Bytes(), payload) {
+			t.Errorf("reassembled %d bytes, want %d", got.Len(), len(payload))
+		}
+		if len(chunkRanges) != 4 {
+			t.Errorf("chunks = %d (%v), want 4", len(chunkRanges), chunkRanges)
+		}
+	})
+
+	t.Run("dropbox session multi-chunk", func(t *testing.T) {
+		oldT, oldC := dropboxSessionThreshold, dropboxChunkSize
+		dropboxSessionThreshold, dropboxChunkSize = 16<<10, 32<<10
+		defer func() { dropboxSessionThreshold, dropboxChunkSize = oldT, oldC }()
+
+		var got bytes.Buffer
+		var calls []string
+		content := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls = append(calls, r.URL.Path)
+			_, _ = io.Copy(&got, r.Body)
+			if strings.HasSuffix(r.URL.Path, "/start") {
+				_ = json.NewEncoder(w).Encode(map[string]any{"session_id": "sess1"})
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, `{}`)
+		}))
+		defer content.Close()
+
+		svc, s := newTestService(t)
+		setCloudConfig(t, s, func(c *store.CloudConfig) {
+			c.Enabled = true
+			c.Provider = "dropbox"
+			c.AccessToken = "at"
+			c.ExpiryTimeMs = time.Now().UnixMilli() + 3600_000
+		})
+		svc.Endpoints.DropboxContent = content.URL
+
+		if err := svc.Upload(src, "big__main__snap_2.zip"); err != nil {
+			t.Fatalf("Upload: %v", err)
+		}
+		if !bytes.Equal(got.Bytes(), payload) {
+			t.Errorf("reassembled %d bytes, want %d", got.Len(), len(payload))
+		}
+		if len(calls) < 4 || !strings.HasSuffix(calls[0], "/start") || !strings.HasSuffix(calls[len(calls)-1], "/finish") {
+			t.Errorf("session call sequence = %v", calls)
+		}
+	})
+
+	t.Run("onedrive session multi-chunk", func(t *testing.T) {
+		oldL, oldC := onedriveSimpleLimit, onedriveChunkSize
+		onedriveSimpleLimit, onedriveChunkSize = 16<<10, 32<<10
+		defer func() { onedriveSimpleLimit, onedriveChunkSize = oldL, oldC }()
+
+		var graphURL string
+		var got bytes.Buffer
+		chunks := 0
+		graph := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/session-upload" {
+				chunks++
+				_, _ = io.Copy(&got, r.Body)
+				if got.Len() == len(payload) {
+					w.WriteHeader(http.StatusCreated)
+				} else {
+					w.WriteHeader(http.StatusAccepted)
+				}
+				fmt.Fprint(w, `{}`)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"uploadUrl": graphURL + "/session-upload"})
+		}))
+		defer graph.Close()
+		graphURL = graph.URL
+
+		svc, s := newTestService(t)
+		setCloudConfig(t, s, func(c *store.CloudConfig) {
+			c.Enabled = true
+			c.Provider = "onedrive"
+			c.AccessToken = "at"
+			c.ExpiryTimeMs = time.Now().UnixMilli() + 3600_000
+		})
+		svc.Endpoints.Graph = graph.URL
+
+		if err := svc.Upload(src, "big__main__snap_3.zip"); err != nil {
+			t.Fatalf("Upload: %v", err)
+		}
+		if !bytes.Equal(got.Bytes(), payload) {
+			t.Errorf("reassembled %d bytes, want %d", got.Len(), len(payload))
+		}
+		if chunks != 4 {
+			t.Errorf("chunks = %d, want 4", chunks)
+		}
+	})
 }

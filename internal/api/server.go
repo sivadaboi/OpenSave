@@ -39,6 +39,10 @@ func New(d *daemon.Daemon) *Server {
 	d.Log.Subscribe(func(entry logging.Entry) {
 		s.Hub.Broadcast("log", entry)
 	})
+
+	// Watcher auto-snapshots and async initial snapshots update the games
+	// state outside any HTTP handler — push those to dashboards too.
+	d.OnGameChanged = func(string) { s.BroadcastGamesUpdate() }
 	return s
 }
 

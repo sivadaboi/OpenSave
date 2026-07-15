@@ -7,6 +7,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -96,6 +97,7 @@ func New(opts Options) (*Daemon, error) {
 	}
 
 	snaps := snapshot.New(s)
+	snaps.Log = log.Log
 
 	d := &Daemon{
 		Paths:     paths,
@@ -240,6 +242,13 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 	if game.ID == "" {
 		return store.Game{}, fmt.Errorf("game name %q produces an empty id", game.Name)
 	}
+
+	abs, err := d.validateSavePath(game.SavePath)
+	if err != nil {
+		return store.Game{}, err
+	}
+	game.SavePath = abs
+
 	game.AutoSync = true
 	if game.ActiveBranch == "" {
 		game.ActiveBranch = "main"
@@ -255,20 +264,107 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 		return store.Game{}, err
 	}
 
-	if _, err := d.Snapshots.Create(game.ID, "Initial snapshot", true); err != nil {
-		d.Log.Log("warn", fmt.Sprintf("initial snapshot for %q failed: %v", game.Name, err))
-	}
+	// The initial snapshot can take a while for a big save — run it in the
+	// background so tracking returns immediately and never blocks the UI.
+	// If the game is untracked while the snapshot runs, stop: no watch, no
+	// upload, no zombie work for a game that no longer exists.
+	go func() {
+		if _, err := d.Snapshots.Create(game.ID, "Initial snapshot", true); err != nil {
+			d.Log.Log("warn", fmt.Sprintf("initial snapshot for %q failed: %v", game.Name, err))
+		}
+		if _, err := d.Store.GetGame(game.ID); err != nil {
+			d.Log.Log("info", fmt.Sprintf("%q was untracked during its initial snapshot; skipping watch", game.Name))
+			return
+		}
+		if err := d.Watcher.Watch(game.ID, game.SavePath); err != nil {
+			d.Log.Log("warn", fmt.Sprintf("could not watch %q: %v", game.Name, err))
+		}
+		d.Log.Log("success", fmt.Sprintf("now tracking %q at %q", game.Name, game.SavePath))
+		if d.OnGameChanged != nil {
+			d.OnGameChanged(game.ID)
+		}
+	}()
 
-	if err := d.Watcher.Watch(game.ID, game.SavePath); err != nil {
-		d.Log.Log("warn", fmt.Sprintf("could not watch %q: %v", game.Name, err))
-	}
-
-	d.Log.Log("success", fmt.Sprintf("now tracking %q at %q", game.Name, game.SavePath))
 	created, err := d.Store.GetGame(game.ID)
 	if err != nil {
 		return store.Game{}, err
 	}
 	return created, nil
+}
+
+// validateSavePath rejects save locations that can never be right: paths
+// that don't exist, whole-profile/system directories, drive roots,
+// OpenSave's own data directory, and paths another game already tracks.
+func (d *Daemon) validateSavePath(rawPath string) (string, error) {
+	if strings.TrimSpace(rawPath) == "" {
+		return "", fmt.Errorf("save path is required")
+	}
+	abs, err := filepath.Abs(rawPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid save path: %w", err)
+	}
+	abs = filepath.Clean(abs)
+	if _, err := os.Stat(abs); err != nil {
+		return "", fmt.Errorf("save path does not exist: %s", abs)
+	}
+
+	norm := strings.ToLower(abs)
+	sep := string(filepath.Separator)
+
+	// Drive / filesystem roots.
+	if filepath.Dir(abs) == abs {
+		return "", fmt.Errorf("refusing to track a drive root (%s) — pick the game's save folder", abs)
+	}
+
+	// Whole-profile and system folders: tracking these would snapshot and
+	// watch far more than a game save (and can grind the machine).
+	home, _ := os.UserHomeDir()
+	broad := []string{home, filepath.Dir(home)}
+	for _, sub := range []string{
+		"Documents", "Desktop", "Downloads", "Pictures", "Videos", "Music", "OneDrive",
+		"AppData", filepath.Join("AppData", "Roaming"), filepath.Join("AppData", "Local"),
+		filepath.Join("AppData", "LocalLow"), filepath.Join("Documents", "My Games"),
+		"Saved Games",
+	} {
+		broad = append(broad, filepath.Join(home, sub))
+	}
+	for _, env := range []string{"WINDIR", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA", "PUBLIC"} {
+		if v := os.Getenv(env); v != "" {
+			broad = append(broad, v)
+		}
+	}
+	if v := os.Getenv("PUBLIC"); v != "" {
+		broad = append(broad, filepath.Join(v, "Documents"))
+	}
+	for _, b := range broad {
+		if b == "" {
+			continue
+		}
+		if norm == strings.ToLower(filepath.Clean(b)) {
+			return "", fmt.Errorf(
+				"refusing to track %q — that's a system or profile folder, not a save location; pick the game's own folder inside it", abs)
+		}
+	}
+
+	// Never OpenSave's own data dir (snapshotting the backups folder would
+	// recurse forever).
+	dataDir := strings.ToLower(filepath.Clean(d.Paths.HomeDir))
+	if norm == dataDir || strings.HasPrefix(norm, dataDir+sep) || strings.HasPrefix(dataDir, norm+sep) {
+		return "", fmt.Errorf("refusing to track OpenSave's own data folder (%s)", abs)
+	}
+
+	// One folder, one game: a second tracker on the same path means double
+	// watchers, duplicate snapshots, and sync confusion.
+	games, err := d.Store.ListGames()
+	if err == nil {
+		for _, g := range games {
+			if strings.ToLower(filepath.Clean(g.SavePath)) == norm {
+				return "", fmt.Errorf("%q already tracks this folder", g.Name)
+			}
+		}
+	}
+
+	return abs, nil
 }
 
 // EnsureImportedSnapshot registers a snapshot restored from an .sscb

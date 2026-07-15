@@ -18,6 +18,31 @@ All notable changes to OpenSave are documented here. This project adheres to
 - More Steam-emulator/repack save locations detected: GSE (Goldberg
   fork), EMPRESS, Online-Fix, CPY, SmartSteamEmu, SKIDROW, and 3DM
   wrappers, alongside the existing Goldberg/CODEX/RUNE/Tenoke/FLT set.
+- Large files are first-class: uploads and downloads stream from disk
+  (memory use no longer scales with file size), Google Drive uses
+  resumable uploads, and Dropbox/OneDrive switch to chunked upload
+  sessions past their single-request limits — a 600 MB save moves
+  through snapshot + cloud upload with ~1 MB of extra memory.
+- Untracking a game now offers to delete its cloud snapshots too, so
+  orphaned files no longer pile up in the provider.
+
+### Fixed
+
+- Tracking a folder no longer blocks the app: path validation refuses
+  nonexistent paths, drive roots, whole-profile/system folders, and
+  OpenSave's own data directory with a clear message; the same folder
+  can't be tracked twice; and the initial snapshot runs in the
+  background (tracking a huge folder previously froze the API for
+  minutes and could wedge the file watcher until restart).
+- The file-watcher engine no longer holds its global lock during
+  recursive directory walks — one slow watch can't freeze every other
+  game's tracking operations.
+- A snapshot no longer fails outright when a single file is unreadable
+  (locked by the game or antivirus): unreadable files are skipped with
+  a warning, and only a fully unreadable save is an error.
+- Watcher auto-snapshots now push a live update to the dashboard.
+- The "What's new" greeting no longer announces an update when only the
+  build timestamp changed.
 
 ## [2.0.1] — 2026-07-15
 
