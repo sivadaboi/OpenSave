@@ -58,6 +58,11 @@ jobs:
             echo "::error::NSIS installer was not produced by wails build"
             exit 1
           fi
+          size=$(stat -c%s "${inst[0]}")
+          if [ "$size" -lt 5000000 ]; then
+            echo "::error::installer is only $size bytes — payload missing"
+            exit 1
+          fi
           mv "${inst[0]}" cmd/opensave-app/build/bin/OpenSave.Setup.exe
 
       # Wails 2.12 doesn't reliably embed Windows versioninfo, so stamp it
@@ -72,6 +77,9 @@ jobs:
           curl -sL --retry 3 -o "$RUNNER_TEMP/rcedit.exe" \
             https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe
           for exe in cmd/opensave-app/build/bin/*.exe; do
+            # never touch the NSIS installer: rcedit strips the PE overlay
+            # holding the compressed payload, leaving a 50 KB stub
+            case "$exe" in *Setup*|*installer*) continue ;; esac
             "$RUNNER_TEMP/rcedit.exe" "$exe" \
               --set-version-string "ProductName" "OpenSave" \
               --set-version-string "CompanyName" "OpenSave" \
