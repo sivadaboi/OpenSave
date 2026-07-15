@@ -44,9 +44,11 @@ jobs:
         run: |
           V="${GITHUB_REF_NAME#v}"
           FV="${V}.0"
-          npm install -g rcedit
+          # the npm "rcedit" package is a library with no CLI — fetch the real binary
+          curl -sL --retry 3 -o "$RUNNER_TEMP/rcedit.exe" \
+            https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe
           for exe in cmd/opensave-app/build/bin/*.exe; do
-            rcedit "$exe" \
+            "$RUNNER_TEMP/rcedit.exe" "$exe" \
               --set-version-string "ProductName" "OpenSave" \
               --set-version-string "CompanyName" "OpenSave" \
               --set-version-string "FileDescription" "OpenSave — peer-to-peer game save sync" \
