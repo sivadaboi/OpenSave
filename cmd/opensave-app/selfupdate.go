@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,20 @@ func (a *App) updateEvent(state string, pct int, errMsg string) {
 	})
 }
 
+// dirWritable reports whether the current process can create files in dir.
+// False for Program Files installs running without elevation — the case
+// where the rename-swap self-update cannot work.
+func dirWritable(dir string) bool {
+	probe, err := os.CreateTemp(dir, ".opensave-write-probe-*")
+	if err != nil {
+		return false
+	}
+	name := probe.Name()
+	probe.Close()
+	_ = os.Remove(name)
+	return true
+}
+
 // InstallUpdateFromPeer downloads the newer build a paired peer is running
 // and installs it. Returns immediately; progress and the final outcome
 // arrive over the "app-update" WS broadcast (the app restarts on success).
@@ -44,6 +59,12 @@ func (a *App) InstallUpdateFromPeer(peerID string) string {
 		exe, err := os.Executable()
 		if err != nil {
 			a.updateEvent("error", 0, err.Error())
+			return
+		}
+		if !dirWritable(filepath.Dir(exe)) {
+			a.updateEvent("error", 0,
+				"OpenSave is installed in a protected folder (like Program Files), which peer updates can't replace. "+
+					"Use the update banner to install from GitHub instead — that path runs the installer with the proper permissions.")
 			return
 		}
 		dest := exe + ".new"
@@ -70,6 +91,10 @@ func (a *App) InstallUpdateFromPeer(peerID string) string {
 
 // InstallUpdateFromURL downloads a release asset (the .exe from a GitHub
 // release) and installs it. Same async contract as InstallUpdateFromPeer.
+//
+// Installs living in a protected folder (Program Files) can't be swapped
+// by an unelevated rename — for those, the NSIS installer is downloaded
+// and launched instead; it requests UAC elevation itself.
 func (a *App) InstallUpdateFromURL(url string) string {
 	if !strings.HasPrefix(url, "https://") {
 		return "update URL must be https"
@@ -78,6 +103,10 @@ func (a *App) InstallUpdateFromURL(url string) string {
 		exe, err := os.Executable()
 		if err != nil {
 			a.updateEvent("error", 0, err.Error())
+			return
+		}
+		if !dirWritable(filepath.Dir(exe)) {
+			a.installViaInstaller()
 			return
 		}
 		dest := exe + ".new"
@@ -95,6 +124,96 @@ func (a *App) InstallUpdateFromURL(url string) string {
 		a.finishInstall(dest)
 	}()
 	return ""
+}
+
+// installViaInstaller fetches the latest release's NSIS installer into the
+// temp dir and launches it, then quits so the installer can replace the
+// app's files. Launching goes through ShellExecute (Start-Process) so the
+// installer's elevation request produces a UAC prompt instead of failing.
+func (a *App) installViaInstaller() {
+	a.updateEvent("downloading", 0, "")
+
+	instURL, err := fetchInstallerURL()
+	if err != nil {
+		a.updateEvent("error", 0, "couldn't locate the installer in the latest release: "+err.Error())
+		return
+	}
+
+	tmp, err := os.CreateTemp("", "OpenSave.Setup-*.exe")
+	if err != nil {
+		a.updateEvent("error", 0, err.Error())
+		return
+	}
+	dest := tmp.Name()
+	tmp.Close()
+
+	if err := downloadToFile(instURL, dest, func(done, total int64) {
+		if total > 0 {
+			a.updateEvent("downloading", int(done*100/total), "")
+		}
+	}); err != nil {
+		os.Remove(dest)
+		a.updateEvent("error", 0, "download failed: "+err.Error())
+		return
+	}
+	if err := validateExecutable(dest); err != nil {
+		os.Remove(dest)
+		a.updateEvent("error", 0, err.Error())
+		return
+	}
+
+	a.updateEvent("installing", 100, "")
+	cmd := exec.Command("powershell", "-NoProfile", "-Command",
+		"Start-Process -FilePath '"+dest+"'")
+	if err := cmd.Start(); err != nil {
+		os.Remove(dest)
+		a.updateEvent("error", 0, "launch installer: "+err.Error())
+		return
+	}
+
+	if a.daemon != nil {
+		a.daemon.Log.Log("info", "update installer launched; quitting so it can replace the app")
+	}
+	a.updateEvent("restarting", 100, "")
+	a.reallyQuit = true
+	runtime.Quit(a.ctx)
+}
+
+// fetchInstallerURL returns the download URL of the NSIS installer asset
+// on the latest GitHub release.
+func fetchInstallerURL() (string, error) {
+	req, err := http.NewRequest(http.MethodGet,
+		"https://api.github.com/repos/"+updateRepo+"/releases/latest", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "OpenSave/"+AppVersion)
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub returned %s", resp.Status)
+	}
+	var rel struct {
+		Assets []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return "", err
+	}
+	for _, asset := range rel.Assets {
+		name := strings.ToLower(asset.Name)
+		if strings.HasSuffix(name, ".exe") &&
+			(strings.Contains(name, "setup") || strings.Contains(name, "installer")) {
+			return asset.BrowserDownloadURL, nil
+		}
+	}
+	return "", fmt.Errorf("no installer asset on the latest release")
 }
 
 // finishInstall validates and applies a downloaded build, then restarts.

@@ -10,6 +10,9 @@ the update banner will offer this release — one click installs it.
 
 ### Fixed
 
+- In-app update now works for installed (Program Files) copies: when the
+  app can't replace its own files, it downloads the installer and launches
+  it instead (UAC prompt) rather than failing with "Access is denied".
 - A provider card (e.g. Local Folder) no longer shows "Connected" off the
   OAuth tokens belonging to a different provider.
 - Non-app binaries (CLI, relay) report the correct version.
