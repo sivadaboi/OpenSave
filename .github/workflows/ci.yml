@@ -17,6 +17,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+      # cmd/opensave-app embeds frontend/dist (built by wails); stub it so
+      # vet/test can compile the package without a frontend toolchain.
+      - name: Stub embedded frontend assets
+        shell: bash
+        run: mkdir -p cmd/opensave-app/frontend/dist && echo stub > cmd/opensave-app/frontend/dist/.stub
       - name: Vet
         run: go vet ./...
       - name: Test (race detector)
