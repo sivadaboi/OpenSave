@@ -1,6 +1,9 @@
 package presets
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -147,6 +150,51 @@ func TestLudusavi_MissingManifestIsSilent(t *testing.T) {
 	sc := &Scanner{CacheFile: filepath.Join(t.TempDir(), "cache.json")}
 	if found := sc.scanLudusavi(map[string]bool{}); found != nil {
 		t.Errorf("expected nil without a manifest, got %+v", found)
+	}
+}
+
+// TestGenerateEmbeddedIndex regenerates the embedded manifest index from
+// the locally cached manifest YAML. Not a real test — run manually when
+// bumping the bundled snapshot:
+//
+//	GEN_EMBED=1 go test ./internal/presets/ -run GenerateEmbeddedIndex
+func TestGenerateEmbeddedIndex(t *testing.T) {
+	if os.Getenv("GEN_EMBED") == "" {
+		t.Skip("set GEN_EMBED=1 to regenerate the embedded index")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	yamlPath := filepath.Join(home, ".opensave", "ludusavi-manifest.yaml")
+	games := buildManifestIndex(yamlPath)
+	if len(games) < 10000 {
+		t.Fatalf("suspiciously small index (%d games) — refusing to embed", len(games))
+	}
+	raw, err := json.Marshal(games)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	if _, err := zw.Write(raw); err != nil {
+		t.Fatal(err)
+	}
+	zw.Close()
+	out := filepath.Join("embedded", "ludusavi-index.json.gz")
+	if err := os.MkdirAll("embedded", 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(out, buf.Bytes(), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("embedded %d games, %d bytes compressed", len(games), buf.Len())
+}
+
+func TestEmbeddedIndexLoads(t *testing.T) {
+	games := loadEmbeddedIndex()
+	if len(games) < 10000 {
+		t.Fatalf("embedded index has %d games, expected a full snapshot", len(games))
 	}
 }
 

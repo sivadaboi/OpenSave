@@ -1,6 +1,8 @@
 package presets
 
 import (
+	"compress/gzip"
+	"embed"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -354,19 +357,64 @@ func (sc *Scanner) installBaseCandidates() func([]string) []string {
 	}
 }
 
-// ── manifest download + index ───────────────────────────────────────────
+// ── embedded snapshot + manifest download + index ───────────────────────
 
-// loadManifestIndex returns the compact index, refreshing the manifest
-// and rebuilding the index as needed. Every failure degrades to "no
-// manifest results" — the rest of the scan is never blocked.
+// A compressed snapshot of the index ships inside the binary, so the very
+// first scan works instantly and fully offline — no download required.
+// Fresher data still arrives via the background weekly refresh; a local
+// downloaded manifest always outranks the embedded snapshot.
+// Regenerate with: GEN_EMBED=1 go test ./internal/presets/ -run GenerateEmbeddedIndex
+//
+//go:embed embedded/ludusavi-index.json.gz
+var embeddedFS embed.FS
+
+var embeddedIndex struct {
+	once  sync.Once
+	games []indexedGame
+}
+
+func loadEmbeddedIndex() []indexedGame {
+	embeddedIndex.once.Do(func() {
+		f, err := embeddedFS.Open("embedded/ludusavi-index.json.gz")
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		zr, err := gzip.NewReader(f)
+		if err != nil {
+			return
+		}
+		defer zr.Close()
+		raw, err := io.ReadAll(zr)
+		if err != nil {
+			return
+		}
+		_ = json.Unmarshal(raw, &embeddedIndex.games)
+	})
+	return embeddedIndex.games
+}
+
+// loadManifestIndex returns the compact index: a locally downloaded
+// manifest when present, the embedded snapshot otherwise. A refresh runs
+// in the background when the local copy is missing or stale — scans never
+// wait on the network. The embedded fallback only applies when the
+// manifest feature is enabled (ManifestURL set — always true in
+// production; hermetic tests leave it empty).
 func (sc *Scanner) loadManifestIndex() []indexedGame {
 	yamlPath, indexPath := sc.manifestPaths()
 
-	sc.refreshManifest(yamlPath)
+	embedded := func() []indexedGame {
+		if sc.ManifestURL == "" {
+			return nil
+		}
+		return loadEmbeddedIndex()
+	}
+
+	sc.refreshManifestAsync(yamlPath)
 
 	yamlInfo, err := os.Stat(yamlPath)
 	if err != nil {
-		return nil
+		return embedded()
 	}
 
 	// Reuse the index when it's newer than the YAML it was built from.
@@ -384,18 +432,39 @@ func (sc *Scanner) loadManifestIndex() []indexedGame {
 		if raw, err := json.Marshal(games); err == nil {
 			_ = os.WriteFile(indexPath, raw, 0o666)
 		}
+		return games
 	}
-	return games
+	return embedded()
 }
 
-// refreshManifest downloads the manifest when missing or older than a
-// week. Best-effort: failures leave any existing copy in place.
-func (sc *Scanner) refreshManifest(yamlPath string) {
+// refreshInFlight guards against overlapping background downloads.
+var refreshInFlight atomic.Bool
+
+// refreshManifestAsync kicks off a background download when the local
+// manifest is missing or older than a week. The current scan proceeds
+// with whatever is available now; the next scan sees the fresh data.
+func (sc *Scanner) refreshManifestAsync(yamlPath string) {
 	url := sc.ManifestURL
 	if url == "" {
 		return
 	}
 	if info, err := os.Stat(yamlPath); err == nil && time.Since(info.ModTime()) < manifestMaxAge {
+		return
+	}
+	if !refreshInFlight.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer refreshInFlight.Store(false)
+		sc.downloadManifest(yamlPath)
+	}()
+}
+
+// downloadManifest fetches the manifest. Best-effort: failures leave any
+// existing copy in place.
+func (sc *Scanner) downloadManifest(yamlPath string) {
+	url := sc.ManifestURL
+	if url == "" {
 		return
 	}
 

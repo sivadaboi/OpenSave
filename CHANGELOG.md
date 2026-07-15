@@ -11,8 +11,10 @@ All notable changes to OpenSave are documented here. This project adheres to
   [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest)
   (sourced from PCGamingWiki): save locations for tens of thousands of
   games, detected purely by path — Steam, GOG, Epic, itch, and
-  repack/cracked installs alike. The manifest is cached locally and
-  refreshed weekly; scans stay sub-second after the first run.
+  repack/cracked installs alike. A compressed snapshot (20k+ games,
+  <1 MB) ships inside the binary, so scanning works instantly and fully
+  offline; fresher manifest data downloads in the background at most
+  once a week and takes precedence when present.
 - More Steam-emulator/repack save locations detected: GSE (Goldberg
   fork), EMPRESS, Online-Fix, CPY, SmartSteamEmu, SKIDROW, and 3DM
   wrappers, alongside the existing Goldberg/CODEX/RUNE/Tenoke/FLT set.
