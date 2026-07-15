@@ -17,7 +17,9 @@ func manifestScanner(t *testing.T, yamlBody string) *Scanner {
 	if err := os.WriteFile(filepath.Join(dir, "ludusavi-manifest.yaml"), []byte(yamlBody), 0o666); err != nil {
 		t.Fatal(err)
 	}
-	return &Scanner{CacheFile: filepath.Join(dir, "steam-app-cache.json")}
+	// Default to Windows conventions (the fixtures use %APPDATA% layouts);
+	// Linux tests override GOOS after construction.
+	return &Scanner{CacheFile: filepath.Join(dir, "steam-app-cache.json"), GOOS: "windows"}
 }
 
 func TestLudusavi_DetectsExistingSave(t *testing.T) {
@@ -226,6 +228,8 @@ func TestEntryIsSaveEntry(t *testing.T) {
 }
 
 func TestLudusavi_LinuxNativeXDG(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	save := filepath.Join(home, ".local", "share", "Terraria", "Players")
 	if err := os.MkdirAll(save, 0o777); err != nil {
@@ -257,6 +261,8 @@ Terraria:
 }
 
 func TestLudusavi_ProtonPrefix(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	// A Steam library with a Proton prefix for AppID 1245620 (Elden Ring).
 	lib := filepath.Join(home, ".local", "share", "Steam")

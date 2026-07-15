@@ -10,6 +10,10 @@ import (
 // no network resolver and no real Steam roots unless the test adds them.
 func linuxScanner(t *testing.T, home string) *Scanner {
 	t.Helper()
+	// Neutralize the host's XDG env so ~/.config and ~/.local/share resolve
+	// under the test home (CI runs on Linux with these set).
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
 	return &Scanner{
 		CacheFile:          filepath.Join(t.TempDir(), "cache.json"),
 		GOOS:               "linux",
