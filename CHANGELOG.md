@@ -3,6 +3,20 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Auto-scan now uses the community-maintained
+  [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest)
+  (sourced from PCGamingWiki): save locations for tens of thousands of
+  games, detected purely by path — Steam, GOG, Epic, itch, and
+  repack/cracked installs alike. The manifest is cached locally and
+  refreshed weekly; scans stay sub-second after the first run.
+- More Steam-emulator/repack save locations detected: GSE (Goldberg
+  fork), EMPRESS, Online-Fix, CPY, SmartSteamEmu, SKIDROW, and 3DM
+  wrappers, alongside the existing Goldberg/CODEX/RUNE/Tenoke/FLT set.
+
 ## [2.0.1] — 2026-07-15
 
 First update delivered through the in-app updater. If you installed 2.0.0,

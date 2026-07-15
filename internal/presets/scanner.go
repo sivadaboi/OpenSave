@@ -16,6 +16,10 @@ type Scanner struct {
 	// ResolveAppName resolves a Steam AppID to a display name (network
 	// call in production, injectable for tests). Empty string = not found.
 	ResolveAppName func(appID string) string
+	// ManifestURL is where the Ludusavi manifest is fetched from. Empty
+	// disables downloading (tests; any already-cached manifest still
+	// applies when present on disk).
+	ManifestURL string
 	// SteamUserdataPaths overrides the default Steam install locations
 	// when non-nil (tests use this to stay hermetic on machines that have
 	// a real Steam library).
@@ -34,6 +38,7 @@ func NewScanner(cacheFile string) *Scanner {
 	return &Scanner{
 		CacheFile:      cacheFile,
 		ResolveAppName: fetchSteamAppName,
+		ManifestURL:    ludusaviManifestURL,
 	}
 }
 
@@ -179,6 +184,11 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 			})
 		}
 	}
+
+	// 7. Ludusavi manifest: community-maintained save paths for tens of
+	// thousands of games — store-agnostic, so repack/cracked installs
+	// writing to the standard locations are found too.
+	discovered = append(discovered, sc.scanLudusavi(dedupSet(discovered))...)
 
 	// Infer AppIDs from names for entries that lack one.
 	nameIndex := nameToAppIDIndex()

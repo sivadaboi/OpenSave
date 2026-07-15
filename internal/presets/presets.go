@@ -45,9 +45,17 @@ var presetDefs = []preset{
 
 	// Steam-emulator / repack wrappers (each subfolder = one game)
 	{ID: "goldberg", Name: "Goldberg Steam Emulator", Type: "repack", Path: "%APPDATA%/Goldberg SteamEmu Saves", IsWrapper: true},
+	{ID: "gse", Name: "Goldberg (GSE fork) Saves", Type: "repack", Path: "%APPDATA%/GSE Saves", IsWrapper: true},
 	{ID: "codex", Name: "CODEX / PLAZA Steam Emulator", Type: "repack", Path: "%PUBLIC%/Documents/Steam/CODEX", IsWrapper: true},
 	{ID: "rune", Name: "RUNE Steam Emulator", Type: "repack", Path: "%PUBLIC%/Documents/Steam/RUNE", IsWrapper: true},
 	{ID: "tenoke", Name: "Tenoke Steam Emulator", Type: "repack", Path: "%USERPROFILE%/Documents/Steam/TENOKE", IsWrapper: true},
+	{ID: "empress", Name: "EMPRESS Saves", Type: "repack", Path: "%PUBLIC%/Documents/EMPRESS", IsWrapper: true},
+	{ID: "onlinefix", Name: "Online-Fix Saves", Type: "repack", Path: "%PUBLIC%/Documents/OnlineFix", IsWrapper: true},
+	{ID: "cpy", Name: "CPY Saves", Type: "repack", Path: "%PUBLIC%/Documents/CPY_SAVES", IsWrapper: true},
+	{ID: "sse", Name: "SmartSteamEmu Saves", Type: "repack", Path: "%APPDATA%/SmartSteamEmu", IsWrapper: true},
+	{ID: "skidrow-appdata", Name: "SKIDROW Saves", Type: "repack", Path: "%APPDATA%/SKIDROW", IsWrapper: true},
+	{ID: "skidrow-local", Name: "SKIDROW Saves (Local)", Type: "repack", Path: "%LOCALAPPDATA%/SKIDROW", IsWrapper: true},
+	{ID: "3dm", Name: "3DM Saves", Type: "repack", Path: "%PUBLIC%/Documents/3DMGAME", IsWrapper: true},
 	{ID: "flt", Name: "Fairlight (FLT) Saves", Type: "repack", Path: "%APPDATA%/FLT", IsWrapper: true},
 	{ID: "ali", Name: "ALi Saves", Type: "repack", Path: "%APPDATA%/ALi", IsWrapper: true},
 	{ID: "reloaded", Name: "RELOADED (RLD!) Wrapper", Type: "repack", Path: "%PROGRAMDATA%/Steam/RLD!", IsWrapper: true},
