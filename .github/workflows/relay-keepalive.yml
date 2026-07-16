@@ -1,0 +1,35 @@
+name: Relay keepalive
+
+# Render's free tier idles the relay out after ~15 quiet minutes, which
+# stalls the first internet sync after any quiet period (cold start).
+# Pinging /health every 10 minutes keeps it warm. A single always-on
+# service fits inside Render's 750 free hours/month.
+#
+# NOTE: GitHub only runs `schedule` triggers from the default branch —
+# this workflow is inert until it exists on main.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping relay /health
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -m 30 https://opensave-relay.onrender.com/health || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "relay healthy (attempt $i)"
+              exit 0
+            fi
+            echo "attempt $i: HTTP $code — retrying in 20s (cold start?)"
+            sleep 20
+          done
+          # Surface the problem without spamming red X's for transient
+          # Render hiccups — the warning shows on the run and in the UI.
+          echo "::warning::relay did not respond healthy after 3 attempts"
