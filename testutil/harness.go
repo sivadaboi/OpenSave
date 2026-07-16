@@ -39,6 +39,9 @@ func NewTestDaemon(t *testing.T, name string) *TestDaemon {
 	if err != nil {
 		t.Fatalf("daemon.New(%s): %v", name, err)
 	}
+	// Hermetic: no background Ludusavi manifest download from test daemons
+	// (races t.TempDir cleanup on Windows, wastes 17 MB per daemon).
+	d.Scanner.ManifestURL = ""
 
 	// Set the device name for readable pairing flows.
 	settings, err := d.Store.GetSettings()

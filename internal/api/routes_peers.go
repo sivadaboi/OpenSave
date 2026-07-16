@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/opensave/opensave/internal/p2p/syncengine"
 )
 
 // peerRoutes: pairing lifecycle + manual sync + conflict resolution.
@@ -230,6 +232,10 @@ func (s *Server) handleSyncAll(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		res, err := s.Daemon.P2P.SyncGame(r.Context(), g.ID)
+		if errors.Is(err, syncengine.ErrSyncQueued) {
+			results[g.ID] = map[string]string{"status": "queued"}
+			continue
+		}
 		if err != nil {
 			results[g.ID] = map[string]string{"status": "error", "error": err.Error()}
 			continue
@@ -243,6 +249,12 @@ func (s *Server) handleSyncAll(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSyncGame(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
 	results, err := s.Daemon.P2P.SyncGame(r.Context(), gameID)
+	if errors.Is(err, syncengine.ErrSyncQueued) {
+		// Not a failure: the running sync finishes, then a queued pass
+		// picks up this request's changes automatically.
+		writeJSON(w, http.StatusOK, map[string]any{"queued": true})
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return

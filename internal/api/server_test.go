@@ -28,6 +28,10 @@ func startTestServer(t *testing.T) *testServer {
 	if err != nil {
 		t.Fatalf("daemon.New error = %v", err)
 	}
+	// Hermetic: never let a test daemon download the (17 MB) Ludusavi
+	// manifest in the background — the async fetch races t.TempDir cleanup
+	// on Windows ("file in use") and wastes bandwidth on every run.
+	d.Scanner.ManifestURL = ""
 
 	srv := New(d)
 	addr, err := srv.Start(0)

@@ -2,6 +2,7 @@ package syncengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,6 +43,12 @@ type DiffFile struct {
 	LocalSize  int64  `json:"localSize"`
 	RemoteSize int64  `json:"remoteSize"`
 }
+
+// ErrSyncQueued means a sync was already running for this game, so the
+// request was queued: a follow-up pass runs automatically when the active
+// sync finishes. Callers should treat this as success-in-progress, not a
+// failure.
+var ErrSyncQueued = errors.New("a sync is already running for this game — your change is queued and will sync right after")
 
 // Result summarizes one game/peer sync run.
 type Result struct {
@@ -100,7 +107,7 @@ func (e *Engine) SyncGame(ctx context.Context, gameID string, onlinePeers []Peer
 	if e.activeSyncs[gameID] {
 		e.pendingSyncs[gameID] = true
 		e.mu.Unlock()
-		return nil, fmt.Errorf("sync already running for %s — queued a follow-up pass", gameID)
+		return nil, ErrSyncQueued
 	}
 	e.activeSyncs[gameID] = true
 	e.mu.Unlock()
@@ -774,7 +781,7 @@ func (t *throttler) wait(ctx context.Context, bytes int64) {
 	if t.limitBytesPerSec <= 0 || bytes <= 0 {
 		return
 	}
-	delay := time.Duration(bytes*int64(time.Second)/t.limitBytesPerSec)
+	delay := time.Duration(bytes * int64(time.Second) / t.limitBytesPerSec)
 	if delay < 50*time.Millisecond {
 		return
 	}
@@ -786,9 +793,9 @@ func (t *throttler) wait(ctx context.Context, bytes int64) {
 
 // progressTracker accumulates transferred bytes and derives speed/percent.
 type progressTracker struct {
-	mu         sync.Mutex
-	start      time.Time
-	total      int64
+	mu          sync.Mutex
+	start       time.Time
+	total       int64
 	transferred int64
 }
 
