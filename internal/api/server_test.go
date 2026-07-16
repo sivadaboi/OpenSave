@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/opensave/opensave/internal/daemon"
 )
@@ -162,11 +163,8 @@ func TestGameLifecycleOverHTTP(t *testing.T) {
 		t.Errorf("game id = %s, want test-game", body["id"])
 	}
 
-	// Initial snapshot should exist (save dir had content).
-	resp, body = ts.do(t, http.MethodGet, "/api/games", nil)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatal("list games failed")
-	}
+	// Initial snapshot should appear (save dir had content) — it runs in
+	// the background now, so poll briefly.
 	var game struct {
 		Branches map[string]struct {
 			Snapshots []struct {
@@ -174,11 +172,22 @@ func TestGameLifecycleOverHTTP(t *testing.T) {
 			} `json:"snapshots"`
 		} `json:"branches"`
 	}
-	if err := json.Unmarshal(body["test-game"], &game); err != nil {
-		t.Fatalf("unmarshal game: %v", err)
-	}
-	if len(game.Branches["main"].Snapshots) != 1 {
-		t.Fatalf("expected 1 initial snapshot, got %d", len(game.Branches["main"].Snapshots))
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, body = ts.do(t, http.MethodGet, "/api/games", nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatal("list games failed")
+		}
+		if err := json.Unmarshal(body["test-game"], &game); err != nil {
+			t.Fatalf("unmarshal game: %v", err)
+		}
+		if len(game.Branches["main"].Snapshots) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected 1 initial snapshot, got %d", len(game.Branches["main"].Snapshots))
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	initialSnapID := game.Branches["main"].Snapshots[0].ID
 

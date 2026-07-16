@@ -47,7 +47,10 @@ func hermeticScanner(steamPaths ...string) *Scanner {
 	if steamPaths == nil {
 		steamPaths = []string{}
 	}
-	return &Scanner{SteamUserdataPaths: steamPaths}
+	// These tests set up Windows-style save layouts (%APPDATA% etc.), so
+	// pin the scan to Windows conventions regardless of the host OS the
+	// tests run on (CI runs them on Linux too).
+	return &Scanner{SteamUserdataPaths: steamPaths, GOOS: "windows"}
 }
 
 func TestScan_DetectsEmulatorPreset(t *testing.T) {

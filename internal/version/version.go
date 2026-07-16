@@ -11,7 +11,7 @@ import (
 
 // Version is the app's semantic version. Overridable via
 // -ldflags "-X github.com/opensave/opensave/internal/version.Version=…".
-var Version = "2.0.1"
+var Version = "2.1.0"
 
 // BuildTime is the unix-seconds build timestamp, injected via
 // -ldflags "-X github.com/opensave/opensave/internal/version.BuildTime=…".
@@ -33,6 +33,29 @@ func BuildTimeMs() int64 {
 // Compare returns -1, 0, or 1 comparing dotted numeric versions
 // (e.g. "2.1.0" vs "2.0.3"). Non-numeric or missing parts count as 0.
 func Compare(a, b string) int {
+	// Split off any semver pre-release suffix ("2.1.0-beta.1"): the numeric
+	// core compares first, and on an equal core a pre-release sorts BELOW
+	// the final release (so beta users are offered the stable build).
+	aCore, aPre, _ := strings.Cut(a, "-")
+	bCore, bPre, _ := strings.Cut(b, "-")
+	if c := compareCore(aCore, bCore); c != 0 {
+		return c
+	}
+	switch {
+	case aPre == bPre:
+		return 0
+	case aPre == "":
+		return 1 // release > pre-release
+	case bPre == "":
+		return -1
+	case aPre < bPre:
+		return -1
+	default:
+		return 1
+	}
+}
+
+func compareCore(a, b string) int {
 	as := strings.Split(a, ".")
 	bs := strings.Split(b, ".")
 	n := len(as)

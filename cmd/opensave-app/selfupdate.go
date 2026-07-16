@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,12 +11,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/opensave/opensave/internal/version"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // Self-update: replace the running executable with a newer build and
@@ -105,25 +108,95 @@ func (a *App) InstallUpdateFromURL(url string) string {
 			a.updateEvent("error", 0, err.Error())
 			return
 		}
-		if !dirWritable(filepath.Dir(exe)) {
+		// Windows Program Files installs can't be swapped unelevated — run
+		// the NSIS installer (with its UAC prompt) instead.
+		if runtime.GOOS == "windows" && !dirWritable(filepath.Dir(exe)) {
 			a.installViaInstaller()
 			return
 		}
-		dest := exe + ".new"
-		defer os.Remove(dest)
 
 		a.updateEvent("downloading", 0, "")
-		if err := downloadToFile(url, dest, func(done, total int64) {
+		progress := func(done, total int64) {
 			if total > 0 {
 				a.updateEvent("downloading", int(done*100/total), "")
 			}
-		}); err != nil {
-			a.updateEvent("error", 0, "download failed: "+err.Error())
-			return
 		}
-		a.finishInstall(dest)
+
+		newBinary := exe + ".new"
+		defer os.Remove(newBinary)
+
+		if strings.HasSuffix(strings.ToLower(url), ".tar.gz") || strings.HasSuffix(strings.ToLower(url), ".tgz") {
+			// Linux ships a tarball: download it, extract the app binary.
+			archive, err := os.CreateTemp("", "opensave-update-*.tar.gz")
+			if err != nil {
+				a.updateEvent("error", 0, err.Error())
+				return
+			}
+			archivePath := archive.Name()
+			archive.Close()
+			defer os.Remove(archivePath)
+
+			if err := downloadToFile(url, archivePath, progress); err != nil {
+				a.updateEvent("error", 0, "download failed: "+err.Error())
+				return
+			}
+			if err := extractAppBinary(archivePath, newBinary); err != nil {
+				a.updateEvent("error", 0, "unpack failed: "+err.Error())
+				return
+			}
+		} else {
+			// Windows portable exe: download straight to the swap file.
+			if err := downloadToFile(url, newBinary, progress); err != nil {
+				a.updateEvent("error", 0, "download failed: "+err.Error())
+				return
+			}
+		}
+		a.finishInstall(newBinary)
 	}()
 	return ""
+}
+
+// extractAppBinary pulls the OpenSave app binary out of a release tarball
+// (opensave-linux/opensave) and writes it to dest, executable.
+func extractAppBinary(tarGzPath, dest string) error {
+	f, err := os.Open(tarGzPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return fmt.Errorf("app binary not found in archive")
+		}
+		if err != nil {
+			return err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		// The app binary is named "opensave" (not the cli/relay).
+		base := filepath.Base(hdr.Name)
+		if base != "opensave" {
+			continue
+		}
+		out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, tr); err != nil {
+			out.Close()
+			return err
+		}
+		return out.Close()
+	}
 }
 
 // installViaInstaller fetches the latest release's NSIS installer into the
@@ -176,7 +249,7 @@ func (a *App) installViaInstaller() {
 	}
 	a.updateEvent("restarting", 100, "")
 	a.reallyQuit = true
-	runtime.Quit(a.ctx)
+	wailsruntime.Quit(a.ctx)
 }
 
 // fetchInstallerURL returns the download URL of the NSIS installer asset
@@ -264,7 +337,7 @@ func (a *App) applyUpdate(newExePath string) error {
 	}
 	a.updateEvent("restarting", 100, "")
 	a.reallyQuit = true
-	runtime.Quit(a.ctx)
+	wailsruntime.Quit(a.ctx)
 	return nil
 }
 
@@ -284,12 +357,22 @@ func validateExecutable(path string) error {
 		return err
 	}
 	defer f.Close()
-	head := make([]byte, 2)
+	head := make([]byte, 4)
 	if _, err := io.ReadFull(f, head); err != nil {
 		return err
 	}
-	if head[0] != 'M' || head[1] != 'Z' {
-		return fmt.Errorf("downloaded file is not a Windows executable")
+	// Match the running platform's executable format. This also rejects a
+	// wrong-OS binary from a peer (a Windows PE can't run on Linux, and
+	// vice versa), so peer updates only apply a compatible build.
+	switch runtime.GOOS {
+	case "windows":
+		if head[0] != 'M' || head[1] != 'Z' { // PE/COFF
+			return fmt.Errorf("downloaded file is not a Windows executable")
+		}
+	default:
+		if head[0] != 0x7F || head[1] != 'E' || head[2] != 'L' || head[3] != 'F' { // ELF
+			return fmt.Errorf("downloaded file is not a Linux executable")
+		}
 	}
 	return nil
 }

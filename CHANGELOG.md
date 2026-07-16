@@ -3,19 +3,65 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.1.0] — 2026-07-16
 
 ### Added
+
+- **Linux & Steam Deck save detection.** Auto-scan is now platform-aware:
+  - Emulator saves are found at their real Linux locations (native and
+    Flatpak) — RetroArch, Dolphin, PCSX2, RPCS3, Ryujinx, yuzu, Citra,
+    Cemu, PPSSPP.
+  - **Proton prefixes are scanned**: games run through Proton store their
+    saves in `steamapps/compatdata/<appid>/pfx`, and OpenSave now finds
+    them (with the game's Steam cover art) — the bulk of Steam Deck saves.
+  - The Ludusavi manifest resolves native Linux paths (`<xdgData>`,
+    `<xdgConfig>`, `<home>`) and expands Windows-path entries inside each
+    Proton prefix.
+- The in-app updater is OS-aware: it installs the Linux tarball build on
+  Linux (extracting the app binary) and the portable exe on Windows, and
+  only ever applies a binary matching the running platform.
+
 
 - Auto-scan now uses the community-maintained
   [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest)
   (sourced from PCGamingWiki): save locations for tens of thousands of
   games, detected purely by path — Steam, GOG, Epic, itch, and
-  repack/cracked installs alike. The manifest is cached locally and
-  refreshed weekly; scans stay sub-second after the first run.
+  repack/cracked installs alike. A compressed snapshot (20k+ games,
+  <1 MB) ships inside the binary, so scanning works instantly and fully
+  offline; fresher manifest data downloads in the background at most
+  once a week and takes precedence when present.
 - More Steam-emulator/repack save locations detected: GSE (Goldberg
   fork), EMPRESS, Online-Fix, CPY, SmartSteamEmu, SKIDROW, and 3DM
   wrappers, alongside the existing Goldberg/CODEX/RUNE/Tenoke/FLT set.
+- Large files are first-class: uploads and downloads stream from disk
+  (memory use no longer scales with file size), Google Drive uses
+  resumable uploads, and Dropbox/OneDrive switch to chunked upload
+  sessions past their single-request limits — a 600 MB save moves
+  through snapshot + cloud upload with ~1 MB of extra memory.
+- Untracking a game now offers to delete its cloud snapshots too, so
+  orphaned files no longer pile up in the provider.
+
+### Fixed
+
+- A save change made while a sync was already running is no longer lost
+  until the periodic reconcile: the request queues a follow-up pass that
+  runs when the active sync finishes (previously, deleting or changing a
+  file mid-sync could silently skip propagation for minutes).
+- Tracking a folder no longer blocks the app: path validation refuses
+  nonexistent paths, drive roots, whole-profile/system folders, and
+  OpenSave's own data directory with a clear message; the same folder
+  can't be tracked twice; and the initial snapshot runs in the
+  background (tracking a huge folder previously froze the API for
+  minutes and could wedge the file watcher until restart).
+- The file-watcher engine no longer holds its global lock during
+  recursive directory walks — one slow watch can't freeze every other
+  game's tracking operations.
+- A snapshot no longer fails outright when a single file is unreadable
+  (locked by the game or antivirus): unreadable files are skipped with
+  a warning, and only a fully unreadable save is an error.
+- Watcher auto-snapshots now push a live update to the dashboard.
+- The "What's new" greeting no longer announces an update when only the
+  build timestamp changed.
 
 ## [2.0.1] — 2026-07-15
 
@@ -106,5 +152,6 @@ and relay envelope).
 - The local API and dashboard remain loopback-only; relay traffic is limited
   to paired peers.
 
+[2.1.0]: https://github.com/sivadaboi/OpenSave/releases/tag/v2.1.0
 [2.0.1]: https://github.com/sivadaboi/OpenSave/releases/tag/v2.0.1
 [2.0.0]: https://github.com/sivadaboi/OpenSave/releases/tag/v2.0.0

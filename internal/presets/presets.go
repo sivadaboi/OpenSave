@@ -25,25 +25,39 @@ type preset struct {
 	ID        string
 	Name      string
 	Type      string
-	Path      string // with %VAR% placeholders
-	IsWrapper bool   // wrapper dirs hold one subfolder per game/AppID
+	Path      string   // Windows path, with %VAR% placeholders
+	LinuxPath []string // Linux candidates (~ and XDG-relative); empty = not on Linux
+	IsWrapper bool     // wrapper dirs hold one subfolder per game/AppID
 }
 
 var presetDefs = []preset{
-	// Famous emulators
-	{ID: "ryujinx", Name: "Ryujinx Switch Emulator", Type: "emulator", Path: "%APPDATA%/Ryujinx/bis/user/save"},
-	{ID: "yuzu", Name: "Yuzu Switch Emulator", Type: "emulator", Path: "%APPDATA%/yuzu/nand/user/save"},
-	{ID: "citra", Name: "Citra 3DS Emulator", Type: "emulator", Path: "%APPDATA%/Citra/sdmc/Nintendo 3DS"},
-	{ID: "dolphin", Name: "Dolphin GameCube/Wii Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/Dolphin Emulator"},
-	{ID: "pcsx2", Name: "PCSX2 PS2 Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/PCSX2/memcards"},
-	{ID: "rpcs3", Name: "RPCS3 PS3 Emulator", Type: "emulator", Path: "%APPDATA%/rpcs3/dev_hdd0/home/00000001/savedata"},
-	{ID: "cemu", Name: "Cemu Wii U Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/Cemu/mlc01/usr/save"},
-	{ID: "ppsspp", Name: "PPSSPP PSP Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/PPSSPP/PSP/SAVEDATA"},
-	{ID: "xenia", Name: "Xenia Xbox 360 Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/Xenia/content"},
-	{ID: "retroarch-states", Name: "RetroArch Save States", Type: "emulator", Path: "%APPDATA%/RetroArch/states"},
-	{ID: "retroarch-saves", Name: "RetroArch Save Files", Type: "emulator", Path: "%APPDATA%/RetroArch/saves"},
+	// Famous emulators. Linux paths cover native installs and the common
+	// Flatpak sandbox locations.
+	{ID: "ryujinx", Name: "Ryujinx Switch Emulator", Type: "emulator", Path: "%APPDATA%/Ryujinx/bis/user/save",
+		LinuxPath: []string{"~/.config/Ryujinx/bis/user/save", "~/.var/app/org.ryujinx.Ryujinx/config/Ryujinx/bis/user/save"}},
+	{ID: "yuzu", Name: "Yuzu Switch Emulator", Type: "emulator", Path: "%APPDATA%/yuzu/nand/user/save",
+		LinuxPath: []string{"~/.local/share/yuzu/nand/user/save", "~/.var/app/org.yuzu_emu.yuzu/data/yuzu/nand/user/save"}},
+	{ID: "citra", Name: "Citra 3DS Emulator", Type: "emulator", Path: "%APPDATA%/Citra/sdmc/Nintendo 3DS",
+		LinuxPath: []string{"~/.local/share/citra-emu/sdmc/Nintendo 3DS", "~/.var/app/org.citra_emu.citra/data/citra-emu/sdmc/Nintendo 3DS"}},
+	{ID: "dolphin", Name: "Dolphin GameCube/Wii Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/Dolphin Emulator",
+		LinuxPath: []string{"~/.local/share/dolphin-emu", "~/.var/app/org.DolphinEmu.dolphin-emu/data/dolphin-emu"}},
+	{ID: "pcsx2", Name: "PCSX2 PS2 Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/PCSX2/memcards",
+		LinuxPath: []string{"~/.config/PCSX2/memcards", "~/.var/app/net.pcsx2.PCSX2/config/PCSX2/memcards"}},
+	{ID: "rpcs3", Name: "RPCS3 PS3 Emulator", Type: "emulator", Path: "%APPDATA%/rpcs3/dev_hdd0/home/00000001/savedata",
+		LinuxPath: []string{"~/.config/rpcs3/dev_hdd0/home/00000001/savedata", "~/.var/app/net.rpcs3.RPCS3/config/rpcs3/dev_hdd0/home/00000001/savedata"}},
+	{ID: "cemu", Name: "Cemu Wii U Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/Cemu/mlc01/usr/save",
+		LinuxPath: []string{"~/.local/share/Cemu/mlc01/usr/save", "~/.var/app/info.cemu.Cemu/data/Cemu/mlc01/usr/save"}},
+	{ID: "ppsspp", Name: "PPSSPP PSP Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/PPSSPP/PSP/SAVEDATA",
+		LinuxPath: []string{"~/.config/ppsspp/PSP/SAVEDATA", "~/.var/app/org.ppsspp.PPSSPP/config/ppsspp/PSP/SAVEDATA"}},
+	{ID: "xenia", Name: "Xenia Xbox 360 Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/Xenia/content"}, // Windows-only emulator
+	{ID: "retroarch-states", Name: "RetroArch Save States", Type: "emulator", Path: "%APPDATA%/RetroArch/states",
+		LinuxPath: []string{"~/.config/retroarch/states", "~/.var/app/org.libretro.RetroArch/config/retroarch/states"}},
+	{ID: "retroarch-saves", Name: "RetroArch Save Files", Type: "emulator", Path: "%APPDATA%/RetroArch/saves",
+		LinuxPath: []string{"~/.config/retroarch/saves", "~/.var/app/org.libretro.RetroArch/config/retroarch/saves"}},
 
-	// Steam-emulator / repack wrappers (each subfolder = one game)
+	// Steam-emulator / repack wrappers (each subfolder = one game). These
+	// are Windows conventions; on Linux the same games run under Proton and
+	// their saves live in the compatdata prefix (see scanProtonCompat).
 	{ID: "goldberg", Name: "Goldberg Steam Emulator", Type: "repack", Path: "%APPDATA%/Goldberg SteamEmu Saves", IsWrapper: true},
 	{ID: "gse", Name: "Goldberg (GSE fork) Saves", Type: "repack", Path: "%APPDATA%/GSE Saves", IsWrapper: true},
 	{ID: "codex", Name: "CODEX / PLAZA Steam Emulator", Type: "repack", Path: "%PUBLIC%/Documents/Steam/CODEX", IsWrapper: true},
@@ -106,6 +120,53 @@ func ResolvePath(p string) string {
 		return resolved
 	}
 	return abs
+}
+
+// resolveLinuxPath expands a Linux-style path template: a leading "~"
+// becomes the home directory, and $XDG_DATA_HOME / $XDG_CONFIG_HOME are
+// honored (falling back to their spec defaults). homeOverride lets tests
+// point "~" at a temp dir.
+func resolveLinuxPath(p, homeOverride string) string {
+	home := homeOverride
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	p = filepath.ToSlash(p)
+	// XDG bases, so ~/.local/share and ~/.config move with the env.
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		dataHome = home + "/.local/share"
+	}
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if configHome == "" {
+		configHome = home + "/.config"
+	}
+	switch {
+	case strings.HasPrefix(p, "~/.local/share"):
+		p = dataHome + strings.TrimPrefix(p, "~/.local/share")
+	case strings.HasPrefix(p, "~/.config"):
+		p = configHome + strings.TrimPrefix(p, "~/.config")
+	case strings.HasPrefix(p, "~/"):
+		p = home + strings.TrimPrefix(p, "~")
+	case p == "~":
+		p = home
+	}
+	return filepath.Clean(filepath.FromSlash(p))
+}
+
+// resolvedPaths returns the existing save locations this preset maps to on
+// the scanner's target OS (Windows: the single %VAR% path; Linux: each
+// candidate that exists). Non-existent paths are dropped by the caller.
+func (p preset) resolvedPaths(sc *Scanner) []string {
+	if sc.goos() == "windows" {
+		return []string{ResolvePath(p.Path)}
+	}
+	// Non-Windows: only presets with Linux locations apply.
+	var out []string
+	for _, lp := range p.LinuxPath {
+		out = append(out, resolveLinuxPath(lp, sc.linuxHome()))
+	}
+	return out
 }
 
 var idSanitizeRe = regexp.MustCompile(`[^a-z0-9]`)

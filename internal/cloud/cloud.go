@@ -6,6 +6,7 @@ package cloud
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
@@ -156,6 +157,90 @@ func (s *Service) driveFolder(cfg store.CloudConfig, token string) (string, erro
 	return created.ID, nil
 }
 
+// ── large-file transfer plumbing ─────────────────────────────────────────
+//
+// Uploads and downloads stream from/to disk — file size never dictates
+// memory use. Providers with small single-request limits switch to their
+// chunked/resumable protocols past a threshold, which is what makes
+// multi-GB files workable. Thresholds/chunk sizes are vars so tests can
+// exercise the chunked paths with small files.
+
+var (
+	driveChunkSize          int64 = 16 << 20  // resumable upload chunk (multiple of 256 KiB)
+	dropboxSessionThreshold int64 = 128 << 20 // singles are allowed to 150 MB; stay under
+	dropboxChunkSize        int64 = 48 << 20
+	onedriveSimpleLimit     int64 = 4 << 20 // Graph recommends sessions above 4 MB
+	onedriveChunkSize       int64 = 10 << 20 // multiple of 320 KiB
+)
+
+// transferClient is used for bulk data movement: no overall client
+// timeout (a 60s cap kills large transfers on slow links); each request
+// carries its own generous context deadline instead.
+func (s *Service) transferClient() *http.Client {
+	return &http.Client{Timeout: 0}
+}
+
+const perRequestTransferTimeout = 30 * time.Minute
+
+// doTransfer runs one bulk-data request with a per-request deadline and
+// returns the response. Caller closes the body.
+func (s *Service) doTransfer(req *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(req.Context(), perRequestTransferTimeout)
+	resp, err := s.transferClient().Do(req.WithContext(ctx))
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	// Tie the cancel to body close so the deadline covers the read.
+	resp.Body = &cancelReadCloser{ReadCloser: resp.Body, cancel: cancel}
+	return resp, nil
+}
+
+type cancelReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelReadCloser) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
+}
+
+// transferOK drains error info from a non-2xx response.
+func transferOK(resp *http.Response) error {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	return fmt.Errorf("HTTP %d - %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+}
+
+// fetchToFile streams a response body to localPath.
+func (s *Service) fetchToFile(req *http.Request, localPath string) error {
+	resp, err := s.doTransfer(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err := transferOK(resp); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o777); err != nil {
+		return err
+	}
+	out, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		out.Close()
+		os.Remove(localPath)
+		return err
+	}
+	return out.Close()
+}
+
 // Upload sends a snapshot zip to the configured provider. Errors are
 // returned (the snapshot hook logs them without failing the snapshot).
 func (s *Service) Upload(filePath, fileName string) error {
@@ -163,12 +248,18 @@ func (s *Service) Upload(filePath, fileName string) error {
 	if err != nil {
 		return err
 	}
-	s.Log("info", fmt.Sprintf("cloud: uploading %s via %s", fileName, strings.ToUpper(cfg.Provider)))
 
-	raw, err := os.ReadFile(filePath)
+	f, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("file not found: %s", filePath)
 	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	size := info.Size()
+	s.Log("info", fmt.Sprintf("cloud: uploading %s (%.1f MB) via %s", fileName, float64(size)/(1<<20), strings.ToUpper(cfg.Provider)))
 
 	switch cfg.Provider {
 	case "local":
@@ -178,7 +269,15 @@ func (s *Service) Upload(filePath, fileName string) error {
 		if err := os.MkdirAll(cfg.URL, 0o777); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(cfg.URL, fileName), raw, 0o666); err != nil {
+		out, err := os.Create(filepath.Join(cfg.URL, fileName))
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, f); err != nil {
+			out.Close()
+			return err
+		}
+		if err := out.Close(); err != nil {
 			return err
 		}
 
@@ -186,14 +285,20 @@ func (s *Service) Upload(filePath, fileName string) error {
 		if cfg.URL == "" {
 			return fmt.Errorf("no destination URL configured")
 		}
-		req, err := http.NewRequest(http.MethodPut, joinURL(cfg.URL, url.PathEscape(fileName)), bytes.NewReader(raw))
+		req, err := http.NewRequest(http.MethodPut, joinURL(cfg.URL, url.PathEscape(fileName)), f)
 		if err != nil {
 			return err
 		}
+		req.ContentLength = size
 		req.Header.Set("Content-Type", "application/zip")
 		applyCustomHeaders(req, cfg.HeadersJSON)
 		applyBasicAuth(req, cfg.Username, cfg.Password)
-		if err := s.doOK(req); err != nil {
+		resp, err := s.doTransfer(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := transferOK(resp); err != nil {
 			return err
 		}
 
@@ -201,23 +306,33 @@ func (s *Service) Upload(filePath, fileName string) error {
 		if cfg.URL == "" {
 			return fmt.Errorf("no destination URL configured")
 		}
-		var buf bytes.Buffer
-		mw := multipart.NewWriter(&buf)
-		part, err := mw.CreateFormFile("file", fileName)
-		if err != nil {
-			return err
-		}
-		if _, err := part.Write(raw); err != nil {
-			return err
-		}
-		mw.Close()
-		req, err := http.NewRequest(http.MethodPost, cfg.URL, &buf)
+		// Multipart body built on the fly through a pipe — never in RAM.
+		pr, pw := io.Pipe()
+		mw := multipart.NewWriter(pw)
+		go func() {
+			part, err := mw.CreateFormFile("file", fileName)
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			if _, err := io.Copy(part, f); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			pw.CloseWithError(mw.Close())
+		}()
+		req, err := http.NewRequest(http.MethodPost, cfg.URL, pr)
 		if err != nil {
 			return err
 		}
 		req.Header.Set("Content-Type", mw.FormDataContentType())
 		applyCustomHeaders(req, cfg.HeadersJSON)
-		if err := s.doOK(req); err != nil {
+		resp, err := s.doTransfer(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if err := transferOK(resp); err != nil {
 			return err
 		}
 
@@ -230,25 +345,7 @@ func (s *Service) Upload(filePath, fileName string) error {
 		if err != nil {
 			return err
 		}
-		metadata := map[string]any{"name": fileName, "mimeType": "application/zip", "parents": []string{folderID}}
-		metaRaw, _ := json.Marshal(metadata)
-
-		var buf bytes.Buffer
-		mw := multipart.NewWriter(&buf)
-		metaPart, _ := mw.CreatePart(textprotoHeader("Content-Type", "application/json"))
-		metaPart.Write(metaRaw)
-		filePart, _ := mw.CreatePart(textprotoHeader("Content-Type", "application/zip"))
-		filePart.Write(raw)
-		mw.Close()
-
-		req, err := http.NewRequest(http.MethodPost,
-			s.Endpoints.GoogleUpload+"/upload/drive/v3/files?uploadType=multipart", &buf)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", "multipart/related; boundary="+mw.Boundary())
-		req.Header.Set("Authorization", "Bearer "+token)
-		if err := s.doOK(req); err != nil {
+		if err := s.uploadDriveResumable(token, folderID, fileName, f, size); err != nil {
 			return googleDriveErr(err)
 		}
 
@@ -257,15 +354,12 @@ func (s *Service) Upload(filePath, fileName string) error {
 		if err != nil {
 			return err
 		}
-		args, _ := json.Marshal(map[string]any{"path": "/OpenSave/" + fileName, "mode": "overwrite", "mute": true})
-		req, err := http.NewRequest(http.MethodPost, s.Endpoints.DropboxContent+"/2/files/upload", bytes.NewReader(raw))
-		if err != nil {
-			return err
+		if size > dropboxSessionThreshold {
+			err = s.uploadDropboxSession(token, fileName, f, size)
+		} else {
+			err = s.uploadDropboxSimple(token, fileName, f, size)
 		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Dropbox-API-Arg", string(args))
-		req.Header.Set("Content-Type", "application/octet-stream")
-		if err := s.doOK(req); err != nil {
+		if err != nil {
 			return fmt.Errorf("Dropbox: %w", err)
 		}
 
@@ -274,14 +368,12 @@ func (s *Service) Upload(filePath, fileName string) error {
 		if err != nil {
 			return err
 		}
-		uploadURL := s.Endpoints.Graph + "/v1.0/me/drive/special/approot:/" + url.PathEscape(fileName) + ":/content"
-		req, err := http.NewRequest(http.MethodPut, uploadURL, bytes.NewReader(raw))
-		if err != nil {
-			return err
+		if size > onedriveSimpleLimit {
+			err = s.uploadOneDriveSession(token, fileName, f, size)
+		} else {
+			err = s.uploadOneDriveSimple(token, fileName, f, size)
 		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Content-Type", "application/zip")
-		if err := s.doOK(req); err != nil {
+		if err != nil {
 			return fmt.Errorf("OneDrive: %w", err)
 		}
 
@@ -290,6 +382,237 @@ func (s *Service) Upload(filePath, fileName string) error {
 	}
 
 	s.Log("success", fmt.Sprintf("cloud: uploaded %q to %s", fileName, cfg.Provider))
+	return nil
+}
+
+// uploadDriveResumable uses Drive's resumable protocol for every size:
+// one code path, streaming chunks, and no request carries more than
+// driveChunkSize bytes (multipart uploads are capped at 5 MB by the API).
+func (s *Service) uploadDriveResumable(token, folderID, fileName string, f *os.File, size int64) error {
+	meta, _ := json.Marshal(map[string]any{
+		"name": fileName, "mimeType": "application/zip", "parents": []string{folderID},
+	})
+	initReq, err := http.NewRequest(http.MethodPost,
+		s.Endpoints.GoogleUpload+"/upload/drive/v3/files?uploadType=resumable", bytes.NewReader(meta))
+	if err != nil {
+		return err
+	}
+	initReq.Header.Set("Authorization", "Bearer "+token)
+	initReq.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	initReq.Header.Set("X-Upload-Content-Type", "application/zip")
+	initReq.Header.Set("X-Upload-Content-Length", strconv.FormatInt(size, 10))
+
+	resp, err := s.doTransfer(initReq)
+	if err != nil {
+		return err
+	}
+	session := resp.Header.Get("Location")
+	err = transferOK(resp)
+	resp.Body.Close()
+	if err != nil {
+		return fmt.Errorf("start resumable upload: %w", err)
+	}
+	if session == "" {
+		return fmt.Errorf("resumable upload: no session URL returned")
+	}
+
+	for offset := int64(0); offset < size || size == 0; {
+		n := driveChunkSize
+		if remaining := size - offset; remaining < n {
+			n = remaining
+		}
+		putChunk := func() (*http.Response, error) {
+			req, err := http.NewRequest(http.MethodPut, session, io.NewSectionReader(f, offset, n))
+			if err != nil {
+				return nil, err
+			}
+			req.ContentLength = n
+			req.Header.Set("Content-Range",
+				fmt.Sprintf("bytes %d-%d/%d", offset, offset+n-1, size))
+			return s.doTransfer(req)
+		}
+		resp, err := putChunk()
+		if err != nil || resp.StatusCode >= 500 {
+			if resp != nil {
+				resp.Body.Close()
+			}
+			// One retry per chunk — resumable sessions exist for this.
+			if resp, err = putChunk(); err != nil {
+				return err
+			}
+		}
+		status := resp.StatusCode
+		if status != http.StatusOK && status != http.StatusCreated && status != 308 {
+			err := transferOK(resp)
+			resp.Body.Close()
+			return fmt.Errorf("upload chunk at %d: %w", offset, err)
+		}
+		resp.Body.Close()
+		offset += n
+		if size == 0 {
+			break
+		}
+	}
+	return nil
+}
+
+// uploadDropboxSimple streams one request (≤150 MB per Dropbox's API).
+func (s *Service) uploadDropboxSimple(token, fileName string, f *os.File, size int64) error {
+	args, _ := json.Marshal(map[string]any{"path": "/OpenSave/" + fileName, "mode": "overwrite", "mute": true})
+	req, err := http.NewRequest(http.MethodPost, s.Endpoints.DropboxContent+"/2/files/upload", f)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = size
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Dropbox-API-Arg", string(args))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := s.doTransfer(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return transferOK(resp)
+}
+
+// uploadDropboxSession uses upload sessions for big files: start, append
+// chunks, finish with the commit.
+func (s *Service) uploadDropboxSession(token, fileName string, f *os.File, size int64) error {
+	call := func(path string, arg any, body io.Reader, bodyLen int64) (map[string]any, error) {
+		argRaw, _ := json.Marshal(arg)
+		req, err := http.NewRequest(http.MethodPost, s.Endpoints.DropboxContent+path, body)
+		if err != nil {
+			return nil, err
+		}
+		req.ContentLength = bodyLen
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Dropbox-API-Arg", string(argRaw))
+		req.Header.Set("Content-Type", "application/octet-stream")
+		resp, err := s.doTransfer(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if err := transferOK(resp); err != nil {
+			return nil, err
+		}
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out, nil
+	}
+
+	first := dropboxChunkSize
+	if size < first {
+		first = size
+	}
+	out, err := call("/2/files/upload_session/start", map[string]any{"close": false},
+		io.NewSectionReader(f, 0, first), first)
+	if err != nil {
+		return fmt.Errorf("session start: %w", err)
+	}
+	sessionID, _ := out["session_id"].(string)
+	if sessionID == "" {
+		return fmt.Errorf("session start: no session_id")
+	}
+
+	offset := first
+	for offset < size {
+		n := dropboxChunkSize
+		if remaining := size - offset; remaining < n {
+			n = remaining
+		}
+		_, err := call("/2/files/upload_session/append_v2", map[string]any{
+			"cursor": map[string]any{"session_id": sessionID, "offset": offset},
+			"close":  false,
+		}, io.NewSectionReader(f, offset, n), n)
+		if err != nil {
+			return fmt.Errorf("session append at %d: %w", offset, err)
+		}
+		offset += n
+	}
+
+	_, err = call("/2/files/upload_session/finish", map[string]any{
+		"cursor": map[string]any{"session_id": sessionID, "offset": offset},
+		"commit": map[string]any{"path": "/OpenSave/" + fileName, "mode": "overwrite", "mute": true},
+	}, nil, 0)
+	if err != nil {
+		return fmt.Errorf("session finish: %w", err)
+	}
+	return nil
+}
+
+// uploadOneDriveSimple streams one PUT (fine below ~4 MB).
+func (s *Service) uploadOneDriveSimple(token, fileName string, f *os.File, size int64) error {
+	uploadURL := s.Endpoints.Graph + "/v1.0/me/drive/special/approot:/" + url.PathEscape(fileName) + ":/content"
+	req, err := http.NewRequest(http.MethodPut, uploadURL, f)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = size
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/zip")
+	resp, err := s.doTransfer(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return transferOK(resp)
+}
+
+// uploadOneDriveSession uses Graph upload sessions: chunks must be
+// multiples of 320 KiB and go to a pre-authorized URL (no auth header).
+func (s *Service) uploadOneDriveSession(token, fileName string, f *os.File, size int64) error {
+	createURL := s.Endpoints.Graph + "/v1.0/me/drive/special/approot:/" + url.PathEscape(fileName) + ":/createUploadSession"
+	body, _ := json.Marshal(map[string]any{
+		"item": map[string]any{"@microsoft.graph.conflictBehavior": "replace"},
+	})
+	req, err := http.NewRequest(http.MethodPost, createURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.doTransfer(req)
+	if err != nil {
+		return err
+	}
+	var session struct {
+		UploadURL string `json:"uploadUrl"`
+	}
+	if err := transferOK(resp); err != nil {
+		resp.Body.Close()
+		return fmt.Errorf("create upload session: %w", err)
+	}
+	err = json.NewDecoder(resp.Body).Decode(&session)
+	resp.Body.Close()
+	if err != nil || session.UploadURL == "" {
+		return fmt.Errorf("create upload session: no uploadUrl")
+	}
+
+	for offset := int64(0); offset < size; {
+		n := onedriveChunkSize
+		if remaining := size - offset; remaining < n {
+			n = remaining
+		}
+		req, err := http.NewRequest(http.MethodPut, session.UploadURL, io.NewSectionReader(f, offset, n))
+		if err != nil {
+			return err
+		}
+		req.ContentLength = n
+		req.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, offset+n-1, size))
+		resp, err := s.doTransfer(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusAccepted &&
+			resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+			err := transferOK(resp)
+			resp.Body.Close()
+			return fmt.Errorf("upload chunk at %d: %w", offset, err)
+		}
+		resp.Body.Close()
+		offset += n
+	}
 	return nil
 }
 
@@ -439,17 +762,29 @@ func (s *Service) Download(fileName, localPath string) error {
 		return err
 	}
 
-	var raw []byte
 	switch cfg.Provider {
 	case "local":
 		if cfg.URL == "" {
 			return fmt.Errorf("no local folder destination configured")
 		}
-		src := filepath.Join(cfg.URL, fileName)
-		raw, err = os.ReadFile(src)
+		src, err := os.Open(filepath.Join(cfg.URL, fileName))
 		if err != nil {
 			return fmt.Errorf("file %q not found in local folder", fileName)
 		}
+		defer src.Close()
+		if err := os.MkdirAll(filepath.Dir(localPath), 0o777); err != nil {
+			return err
+		}
+		out, err := os.Create(localPath)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, src); err != nil {
+			out.Close()
+			os.Remove(localPath)
+			return err
+		}
+		return out.Close()
 
 	case "webdav":
 		req, err := http.NewRequest(http.MethodGet, joinURL(cfg.URL, url.PathEscape(fileName)), nil)
@@ -457,10 +792,10 @@ func (s *Service) Download(fileName, localPath string) error {
 			return err
 		}
 		applyBasicAuth(req, cfg.Username, cfg.Password)
-		raw, err = s.fetchBytes(req)
-		if err != nil {
+		if err := s.fetchToFile(req, localPath); err != nil {
 			return fmt.Errorf("WebDAV: %w", err)
 		}
+		return nil
 
 	case "google_drive":
 		token, err := s.getOrRefreshAccessToken("google_drive")
@@ -489,10 +824,10 @@ func (s *Service) Download(fileName, localPath string) error {
 		}
 		dlReq, _ := http.NewRequest(http.MethodGet, s.Endpoints.GoogleAPI+"/drive/v3/files/"+out.Files[0].ID+"?alt=media", nil)
 		dlReq.Header.Set("Authorization", "Bearer "+token)
-		raw, err = s.fetchBytes(dlReq)
-		if err != nil {
+		if err := s.fetchToFile(dlReq, localPath); err != nil {
 			return googleDriveErr(err)
 		}
+		return nil
 
 	case "dropbox":
 		token, err := s.getOrRefreshAccessToken("dropbox")
@@ -503,10 +838,10 @@ func (s *Service) Download(fileName, localPath string) error {
 		req, _ := http.NewRequest(http.MethodPost, s.Endpoints.DropboxContent+"/2/files/download", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Dropbox-API-Arg", string(args))
-		raw, err = s.fetchBytes(req)
-		if err != nil {
+		if err := s.fetchToFile(req, localPath); err != nil {
 			return fmt.Errorf("Dropbox: %w", err)
 		}
+		return nil
 
 	case "onedrive":
 		token, err := s.getOrRefreshAccessToken("onedrive")
@@ -516,19 +851,14 @@ func (s *Service) Download(fileName, localPath string) error {
 		dlURL := s.Endpoints.Graph + "/v1.0/me/drive/special/approot:/" + url.PathEscape(fileName) + ":/content"
 		req, _ := http.NewRequest(http.MethodGet, dlURL, nil)
 		req.Header.Set("Authorization", "Bearer "+token)
-		raw, err = s.fetchBytes(req)
-		if err != nil {
+		if err := s.fetchToFile(req, localPath); err != nil {
 			return fmt.Errorf("OneDrive: %w", err)
 		}
+		return nil
 
 	default:
 		return fmt.Errorf("downloading is not supported for provider: %s", cfg.Provider)
 	}
-
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o777); err != nil {
-		return err
-	}
-	return os.WriteFile(localPath, raw, 0o666)
 }
 
 // listWebDAV issues a Depth-1 PROPFIND and parses the multistatus XML.

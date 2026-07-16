@@ -63,23 +63,23 @@ var popularSteamGames = map[string]string{
 // extraNameAliases are additional lowercase-name -> AppID matches beyond
 // the exact popular-game titles (short forms users actually name folders).
 var extraNameAliases = map[string]string{
-	"elden ring":             "1245620",
-	"cyberpunk 2077":         "1091500",
-	"the witcher 3":          "292030",
-	"witcher 3":              "292030",
-	"hades":                  "1145360",
-	"hades ii":               "1145350",
-	"hades 2":                "1145350",
-	"terraria":               "105600",
-	"sekiro":                 "814380",
-	"stardew valley":         "413150",
-	"fallout 4":              "377160",
-	"red dead redemption 2":  "1174180",
-	"black myth":             "2358720",
-	"wukong":                 "2358720",
-	"b1":                     "2358720", // Black Myth: Wukong's UE project codename
-	"pico park":              "1509960",
-	"hollow knight":          "367520",
+	"elden ring":            "1245620",
+	"cyberpunk 2077":        "1091500",
+	"the witcher 3":         "292030",
+	"witcher 3":             "292030",
+	"hades":                 "1145360",
+	"hades ii":              "1145350",
+	"hades 2":               "1145350",
+	"terraria":              "105600",
+	"sekiro":                "814380",
+	"stardew valley":        "413150",
+	"fallout 4":             "377160",
+	"red dead redemption 2": "1174180",
+	"black myth":            "2358720",
+	"wukong":                "2358720",
+	"b1":                    "2358720", // Black Myth: Wukong's UE project codename
+	"pico park":             "1509960",
+	"hollow knight":         "367520",
 }
 
 // nameToAppIDIndex builds the lowercase-name -> AppID lookup used to infer

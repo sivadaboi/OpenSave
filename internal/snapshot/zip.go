@@ -14,15 +14,19 @@ import (
 // wrapped in a top-level folder — matching adm-zip's addLocalFolder); a
 // single file is archived as one root-level entry (addLocalFile).
 // Entries use the Store method (no compression), matching the JS app.
-func ZipPath(sourcePath, outPath string) error {
+//
+// Unreadable files (locked by a running game or AV, special/junction
+// entries) are skipped and reported rather than failing the whole
+// snapshot — but if nothing at all could be archived, that's an error.
+func ZipPath(sourcePath, outPath string) (skipped []string, err error) {
 	info, err := os.Stat(sourcePath)
 	if err != nil {
-		return fmt.Errorf("source path does not exist: %w", err)
+		return nil, fmt.Errorf("source path does not exist: %w", err)
 	}
 
 	out, err := os.Create(outPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer out.Close()
 
@@ -30,11 +34,17 @@ func ZipPath(sourcePath, outPath string) error {
 	defer w.Close()
 
 	if !info.IsDir() {
-		return addFileEntry(w, sourcePath, filepath.Base(sourcePath))
+		return nil, addFileEntry(w, sourcePath, filepath.Base(sourcePath))
 	}
 
-	return filepath.Walk(sourcePath, func(path string, walkInfo os.FileInfo, walkErr error) error {
+	archived := 0
+	walkErr := filepath.Walk(sourcePath, func(path string, walkInfo os.FileInfo, walkErr error) error {
 		if walkErr != nil {
+			// Unreadable subtree — record it and move on.
+			if path != sourcePath {
+				skipped = append(skipped, path)
+				return nil
+			}
 			return walkErr
 		}
 		if path == sourcePath {
@@ -48,11 +58,25 @@ func ZipPath(sourcePath, outPath string) error {
 
 		if walkInfo.IsDir() {
 			// Explicit directory entries keep empty dirs restorable.
-			_, err := w.CreateHeader(&zip.FileHeader{Name: rel + "/", Method: zip.Store})
-			return err
+			if _, err := w.CreateHeader(&zip.FileHeader{Name: rel + "/", Method: zip.Store}); err != nil {
+				return err
+			}
+			return nil
 		}
-		return addFileEntry(w, path, rel)
+		if err := addFileEntry(w, path, rel); err != nil {
+			skipped = append(skipped, path)
+			return nil
+		}
+		archived++
+		return nil
 	})
+	if walkErr != nil {
+		return skipped, walkErr
+	}
+	if archived == 0 && len(skipped) > 0 {
+		return skipped, fmt.Errorf("no files could be read (%d unreadable)", len(skipped))
+	}
+	return skipped, nil
 }
 
 func addFileEntry(w *zip.Writer, filePath, entryName string) error {

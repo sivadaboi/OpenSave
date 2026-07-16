@@ -77,17 +77,12 @@ func New(cb Callbacks) *Engine {
 }
 
 // Watch starts (or restarts) watching a game's save location.
+//
+// The expensive part — the recursive walk that registers every subfolder —
+// happens BEFORE taking the engine lock: a big tree must never block
+// Watch/Unwatch calls for other games (a wedged engine can otherwise only
+// be fixed by restarting the app).
 func (e *Engine) Watch(gameID, savePath string) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.closed {
-		return fmt.Errorf("watcher engine is stopped")
-	}
-	if existing, ok := e.games[gameID]; ok {
-		existing.stop()
-		delete(e.games, gameID)
-	}
-
 	isFile, err := delta.ResolveLocalSaveFilePath(savePath)
 	if err != nil {
 		return fmt.Errorf("inspect save path: %w", err)
@@ -117,6 +112,19 @@ func (e *Engine) Watch(gameID, savePath string) error {
 		}
 	}
 
+	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
+		fsw.Close()
+		return fmt.Errorf("watcher engine is stopped")
+	}
+	if existing, ok := e.games[gameID]; ok {
+		delete(e.games, gameID)
+		e.mu.Unlock()
+		existing.stop() // may wait on the old run goroutine — not under the lock
+		e.mu.Lock()
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	gw := &gameWatch{
 		gameID:   gameID,
@@ -127,30 +135,40 @@ func (e *Engine) Watch(gameID, savePath string) error {
 		done:     make(chan struct{}),
 	}
 	e.games[gameID] = gw
+	e.mu.Unlock()
 	go e.run(ctx, gw)
 
 	e.log("info", fmt.Sprintf("watching %q (%s mode)", savePath, map[bool]string{true: "single-file", false: "directory"}[isFile]))
 	return nil
 }
 
-// Unwatch stops watching a game.
+// Unwatch stops watching a game. The (possibly slow) wait for the watch
+// goroutine happens outside the engine lock so other games' operations
+// are never blocked.
 func (e *Engine) Unwatch(gameID string) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if gw, ok := e.games[gameID]; ok {
-		gw.stop()
+	gw, ok := e.games[gameID]
+	if ok {
 		delete(e.games, gameID)
+	}
+	e.mu.Unlock()
+	if ok {
+		gw.stop()
 	}
 }
 
 // Stop shuts down every watch goroutine.
 func (e *Engine) Stop() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.closed = true
+	stopping := make([]*gameWatch, 0, len(e.games))
 	for id, gw := range e.games {
-		gw.stop()
+		stopping = append(stopping, gw)
 		delete(e.games, id)
+	}
+	e.mu.Unlock()
+	for _, gw := range stopping {
+		gw.stop()
 	}
 }
 
