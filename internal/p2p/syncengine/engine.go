@@ -61,6 +61,7 @@ type Engine struct {
 
 	mu              sync.Mutex
 	activeSyncs     map[string]bool
+	pendingSyncs    map[string]bool // a sync was requested while one ran
 	activeConflicts map[string]*Conflict
 }
 
@@ -72,6 +73,7 @@ func New(s *store.Store, snaps *snapshot.Manager, transport Transport) *Engine {
 		Transport:       transport,
 		Log:             func(string, string) {},
 		activeSyncs:     map[string]bool{},
+		pendingSyncs:    map[string]bool{},
 		activeConflicts: map[string]*Conflict{},
 	}
 }
@@ -87,21 +89,38 @@ func (e *Engine) ActiveConflicts() map[string]Conflict {
 	return out
 }
 
-// SyncGame syncs one game with every online paired peer. Concurrent calls
-// for the same game are coalesced into a skip, same as the JS activeSyncs
-// guard.
+// SyncGame syncs one game with every online paired peer. A concurrent
+// call for the same game doesn't run twice — but it must not be LOST
+// either: the in-flight sync captured its manifest before the new change
+// existed, so dropping the request silently loses that change until the
+// periodic reconcile. Instead, the request is queued and one follow-up
+// pass runs when the active sync finishes.
 func (e *Engine) SyncGame(ctx context.Context, gameID string, onlinePeers []Peer) (map[string]Result, error) {
 	e.mu.Lock()
 	if e.activeSyncs[gameID] {
+		e.pendingSyncs[gameID] = true
 		e.mu.Unlock()
-		return nil, fmt.Errorf("sync already running for %s", gameID)
+		return nil, fmt.Errorf("sync already running for %s — queued a follow-up pass", gameID)
 	}
 	e.activeSyncs[gameID] = true
 	e.mu.Unlock()
 	defer func() {
 		e.mu.Lock()
 		delete(e.activeSyncs, gameID)
+		rerun := e.pendingSyncs[gameID]
+		delete(e.pendingSyncs, gameID)
 		e.mu.Unlock()
+		if rerun {
+			e.Log("info", fmt.Sprintf("running queued follow-up sync for %s", gameID))
+			// Fresh context: the queued requester's may already be gone.
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				defer cancel()
+				if _, err := e.SyncGame(ctx, gameID, onlinePeers); err != nil {
+					e.Log("info", fmt.Sprintf("queued follow-up sync for %s: %v", gameID, err))
+				}
+			}()
+		}
 	}()
 
 	results := map[string]Result{}

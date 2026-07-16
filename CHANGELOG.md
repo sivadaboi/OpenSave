@@ -3,7 +3,7 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.1.0] — 2026-07-16
 
 ### Added
 
@@ -43,6 +43,10 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- A save change made while a sync was already running is no longer lost
+  until the periodic reconcile: the request queues a follow-up pass that
+  runs when the active sync finishes (previously, deleting or changing a
+  file mid-sync could silently skip propagation for minutes).
 - Tracking a folder no longer blocks the app: path validation refuses
   nonexistent paths, drive roots, whole-profile/system folders, and
   OpenSave's own data directory with a clear message; the same folder
@@ -148,5 +152,6 @@ and relay envelope).
 - The local API and dashboard remain loopback-only; relay traffic is limited
   to paired peers.
 
+[2.1.0]: https://github.com/sivadaboi/OpenSave/releases/tag/v2.1.0
 [2.0.1]: https://github.com/sivadaboi/OpenSave/releases/tag/v2.0.1
 [2.0.0]: https://github.com/sivadaboi/OpenSave/releases/tag/v2.0.0
