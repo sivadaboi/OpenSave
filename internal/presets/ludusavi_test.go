@@ -25,6 +25,7 @@ func manifestScanner(t *testing.T, yamlBody string) *Scanner {
 func TestLudusavi_DetectsExistingSave(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
 	appdata := filepath.Join(home, "AppData", "Roaming")
 	t.Setenv("APPDATA", appdata)
 
@@ -67,6 +68,7 @@ Absent Game:
 func TestLudusavi_SkipsConfigOnlyAndBlockedRoots(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
 	appdata := filepath.Join(home, "AppData", "Roaming")
 	t.Setenv("APPDATA", appdata)
 
@@ -97,7 +99,11 @@ Greedy Game:
 
 func TestLudusavi_GlobAndFileToParent(t *testing.T) {
 	home := t.TempDir()
+	// os.UserHomeDir (behind the <home> placeholder) reads USERPROFILE on
+	// Windows and HOME on Linux — set both so this stays hermetic on either
+	// CI host.
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
 	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
 
 	saves := filepath.Join(home, "Saved Games", "GlobGame", "profiles")
@@ -127,6 +133,7 @@ Glob Game:
 func TestLudusavi_DedupesAgainstSeen(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
 	appdata := filepath.Join(home, "AppData", "Roaming")
 	t.Setenv("APPDATA", appdata)
 
