@@ -510,3 +510,37 @@ func TestSync_ModifiedFileNewerRemoteWins(t *testing.T) {
 		t.Errorf("local = %q, want newer remote content", local)
 	}
 }
+
+// TestLineageSurvivesMidSyncDeletion pins the fix for the deletion-
+// resurrection race: a file deleted locally WHILE a sync runs was still
+// verifiably on both sides at decision time, so it must stay in the
+// recorded lineage — otherwise the next pass reads the peer's copy as a
+// new remote file and pulls it back instead of propagating the deletion.
+func TestLineageSurvivesMidSyncDeletion(t *testing.T) {
+	entry := delta.FileEntry{}
+	decisionLocal := delta.Manifest{Files: map[string]delta.FileEntry{
+		"save.dat": entry, "config/video.ini": entry,
+	}}
+	// video.ini vanished mid-sync; a pulled file appeared.
+	fresh := delta.Manifest{Files: map[string]delta.FileEntry{
+		"save.dat": entry, "pulled.sav": entry,
+	}}
+	remote := delta.Manifest{Files: map[string]delta.FileEntry{
+		"save.dat": entry, "config/video.ini": entry, "pulled.sav": entry,
+	}}
+
+	files, _ := IntersectLineage(mergeManifestPaths(fresh, decisionLocal), remote)
+	got := map[string]bool{}
+	for _, f := range files {
+		got[f] = true
+	}
+	if !got["config/video.ini"] {
+		t.Error("mid-sync-deleted file dropped from lineage — deletion would resurrect instead of propagating")
+	}
+	if !got["pulled.sav"] {
+		t.Error("freshly pulled file missing from lineage")
+	}
+	if !got["save.dat"] {
+		t.Error("stable file missing from lineage")
+	}
+}

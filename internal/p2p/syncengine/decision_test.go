@@ -91,17 +91,17 @@ func TestDetectConflict(t *testing.T) {
 func TestCompute_LineageClassification(t *testing.T) {
 	local := manifest(0, map[string]delta.FileEntry{
 		"unchanged.dat":     fileEntry("same", 100),
-		"local-new.dat":     fileEntry("ln", 100),      // not in lineage -> push
-		"peer-deleted.dat":  fileEntry("pd", 100),      // in lineage, gone on remote -> delete locally
-		"both-newer-local":  fileEntry("l2", 200),      // differs, local newer -> push
-		"both-newer-remote": fileEntry("l1", 100),      // differs, remote newer -> pull
-		"tie.dat":           fileEntry("l1", 150),      // differs, equal mtime -> pull (tie-break)
+		"local-new.dat":     fileEntry("ln", 100), // not in lineage -> push
+		"peer-deleted.dat":  fileEntry("pd", 100), // in lineage, gone on remote -> delete locally
+		"both-newer-local":  fileEntry("l2", 200), // differs, local newer -> push
+		"both-newer-remote": fileEntry("l1", 100), // differs, remote newer -> pull
+		"tie.dat":           fileEntry("l1", 150), // differs, equal mtime -> pull (tie-break)
 	}, "keep-dir", "local-new-dir", "peer-deleted-dir")
 
 	remote := manifest(0, map[string]delta.FileEntry{
 		"unchanged.dat":     fileEntry("same", 999),
-		"remote-new.dat":    fileEntry("rn", 100),      // not in lineage -> pull
-		"local-deleted.dat": fileEntry("ld", 100),      // in lineage, gone locally -> delete on peer
+		"remote-new.dat":    fileEntry("rn", 100), // not in lineage -> pull
+		"local-deleted.dat": fileEntry("ld", 100), // in lineage, gone locally -> delete on peer
 		"both-newer-local":  fileEntry("r1", 100),
 		"both-newer-remote": fileEntry("r2", 200),
 		"tie.dat":           fileEntry("r1", 150),
@@ -163,8 +163,8 @@ func TestDifferentBlockIndices(t *testing.T) {
 
 	// Partial change: only differing/new indices.
 	partial := &delta.FileEntry{BlockSize: 65536, Blocks: []delta.Block{
-		{Index: 0, Hash: "a"},        // same
-		{Index: 1, Hash: "CHANGED"},  // differs
+		{Index: 0, Hash: "a"},       // same
+		{Index: 1, Hash: "CHANGED"}, // differs
 	}}
 	got := DifferentBlockIndices(partial, remote)
 	if !reflect.DeepEqual(got, []int{1, 2}) {

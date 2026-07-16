@@ -261,10 +261,15 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 		e.Transport.TriggerPeerPull(peer, gameID)
 	}
 
-	// 10. Record the post-sync lineage.
+	// 10. Record the post-sync lineage. The fresh manifest captures files
+	// we just pulled — but it must be MERGED with the decision-time
+	// manifest: a file deleted locally while this sync ran was still
+	// verifiably on both sides, and dropping it from the lineage here
+	// would make the next pass misread the peer's copy as a brand-new
+	// remote file and resurrect it, instead of propagating the deletion.
 	freshManifest, err := delta.BuildManifest(game.SavePath)
 	if err == nil {
-		e.persistLineage(gameID, peer.ID, freshManifest, remoteData.Manifest)
+		e.persistLineage(gameID, peer.ID, mergeManifestPaths(freshManifest, localManifest), remoteData.Manifest)
 	}
 
 	return e.classifyResult(decision), nil
@@ -321,6 +326,27 @@ func (e *Engine) persistLineage(gameID, peerID string, local, remote delta.Manif
 	if err := e.Store.SetSyncState(gameID, peerID, files, dirs); err != nil {
 		e.Log("warn", fmt.Sprintf("persist sync lineage failed: %v", err))
 	}
+}
+
+// mergeManifestPaths unions the path sets of two manifests (entries from a
+// win on collision). Used to keep decision-time paths alive in the lineage
+// even when they disappeared locally while the sync ran.
+func mergeManifestPaths(a, b delta.Manifest) delta.Manifest {
+	merged := delta.Manifest{Files: make(map[string]delta.FileEntry, len(a.Files)+len(b.Files))}
+	for p, fe := range b.Files {
+		merged.Files[p] = fe
+	}
+	for p, fe := range a.Files {
+		merged.Files[p] = fe
+	}
+	seen := map[string]bool{}
+	for _, d := range append(append([]string{}, a.Dirs...), b.Dirs...) {
+		if !seen[d] {
+			seen[d] = true
+			merged.Dirs = append(merged.Dirs, d)
+		}
+	}
+	return merged
 }
 
 // IntersectLineage returns the sorted file and dir paths present in both
