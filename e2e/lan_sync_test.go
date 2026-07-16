@@ -288,3 +288,34 @@ func TestCoverArtPropagatesOnSync(t *testing.T) {
 		t.Error("B did not receive the game's cover art on sync")
 	}
 }
+
+// TestUnpairNotifiesPeer verifies that unpairing on one device proactively
+// tells the other, so it stops treating us as paired (and stops trying to
+// sync) instead of ghost-syncing until its next rejected hello.
+func TestUnpairNotifiesPeer(t *testing.T) {
+	a := testutil.NewTestDaemon(t, "Unpair-A")
+	b := testutil.NewTestDaemon(t, "Unpair-B")
+	a.PairWith(b)
+
+	// Sanity: both sides see each other as paired.
+	if _, err := a.Daemon.Store.GetPeer(b.NodeID()); err != nil {
+		t.Fatal("A should have B paired")
+	}
+	if _, err := b.Daemon.Store.GetPeer(a.NodeID()); err != nil {
+		t.Fatal("B should have A paired")
+	}
+
+	// A unpairs via the API (what the UI button calls).
+	a.API(http.MethodPost, "/api/peers/unpair", map[string]any{"peerId": b.NodeID()}, nil)
+
+	if _, err := a.Daemon.Store.GetPeer(b.NodeID()); err == nil {
+		t.Error("A still has B paired after unpair")
+	}
+	// B must learn about it promptly via the proactive notification.
+	if !testutil.WaitFor(10*time.Second, func() bool {
+		_, err := b.Daemon.Store.GetPeer(a.NodeID())
+		return err != nil
+	}) {
+		t.Fatal("B never learned about A's unpair — ghost pairing persists")
+	}
+}

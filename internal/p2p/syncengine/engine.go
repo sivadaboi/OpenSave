@@ -50,6 +50,11 @@ type DiffFile struct {
 // failure.
 var ErrSyncQueued = errors.New("a sync is already running for this game — your change is queued and will sync right after")
 
+// perPeerSyncTimeout caps one game/peer sync pass. Generous (large saves
+// on slow links) but finite — a hung transport must never wedge the
+// engine. Var so tests can shrink it.
+var perPeerSyncTimeout = 30 * time.Minute
+
 // Result summarizes one game/peer sync run.
 type Result struct {
 	Status    string `json:"status"` // in_sync | updated | updated_bidirectional | deletions_synced | triggered_peer_pull | conflict
@@ -132,7 +137,12 @@ func (e *Engine) SyncGame(ctx context.Context, gameID string, onlinePeers []Peer
 
 	results := map[string]Result{}
 	for _, peer := range onlinePeers {
-		res, err := e.SyncWithPeer(ctx, gameID, peer)
+		// Hard per-peer cap: a wedged transport must never hold
+		// activeSyncs forever (which would silently block every future
+		// sync of this game until an app restart).
+		peerCtx, cancel := context.WithTimeout(ctx, perPeerSyncTimeout)
+		res, err := e.SyncWithPeer(peerCtx, gameID, peer)
+		cancel()
 		if err != nil {
 			e.Log("error", fmt.Sprintf("sync %s with %s failed: %v", gameID, peer.Name, err))
 			results[peer.ID] = Result{Status: "error", PeerID: peer.ID, PeerName: peer.Name}

@@ -3,6 +3,27 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Unpairing a device now proactively notifies it (LAN and relay), so the
+  other side stops treating you as paired immediately — no more ghost
+  sync attempts or phantom "1 sync in progress" after an unpair.
+- Sync progress can no longer stick at "0%" forever: a per-peer watchdog
+  caps each sync pass, and the dashboard clears stalled sync indicators
+  on its own (the backend retry loop still re-syncs automatically).
+- Linux: the app window/taskbar icon now shows correctly, and the Linux
+  tarball ships a launcher entry + icon with a one-line
+  `install-desktop.sh` for app-menu integration.
+
+### Added
+
+- **System tray on Linux** (StatusNotifier/D-Bus): close-to-tray with
+  Open / Sync all / Quit, matching Windows. On desktops without a tray
+  host (stock GNOME without an extension), closing the window quits
+  normally instead of stranding a hidden app.
+
 ## [2.1.0] — 2026-07-16
 
 ### Added

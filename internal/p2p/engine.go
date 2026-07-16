@@ -4,8 +4,11 @@
 package p2p
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -508,12 +511,43 @@ func (e *Engine) RejectPairing(peerID string) {
 	e.notifyPeerUpdate()
 }
 
-// Unpair removes a paired peer.
+// Unpair removes a paired peer and proactively tells them, so the other
+// device stops treating us as paired immediately instead of ghost-syncing
+// until its next hello gets rejected.
 func (e *Engine) Unpair(peerID string) error {
+	peer, peerErr := e.Store.GetPeer(peerID)
+
 	if err := e.Store.UnpairPeer(peerID); err != nil {
 		return err
 	}
 	e.notifyPeerUpdate()
+
+	// Best-effort notification — the peer may be offline, which is fine:
+	// the reactive unpair-notify (on their next hello) still covers them.
+	if peerErr == nil {
+		go func() {
+			settings, err := e.Store.GetSettings()
+			if err != nil {
+				return
+			}
+			if peer.Address == "relay" {
+				e.Wan.SendRelayMessage(RelayMessage{Type: "unpair-notify", To: peerID, From: settings.NodeID})
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			body, _ := json.Marshal(map[string]string{"peerId": settings.NodeID})
+			url := fmt.Sprintf("http://%s:%d/api/p2p/unpair", peer.Address, peer.Port)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+			if err != nil {
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				resp.Body.Close()
+			}
+		}()
+	}
 	return nil
 }
 

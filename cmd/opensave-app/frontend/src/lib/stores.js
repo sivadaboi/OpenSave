@@ -12,6 +12,32 @@ export const conflicts = writable({});
 export const logEntries = writable([]);
 export const wsConnected = writable(false);
 export const syncActivity = writable({}); // gameId -> {state, peerName, percentage, ...}
+
+// Self-healing for the sync indicator: terminal events (sync-complete /
+// sync-error) travel fire-and-forget, so a dropped one would leave a game
+// showing "syncing… 0%" forever. Sweep entries that stopped receiving
+// events — the backend's retry loop handles the actual re-sync.
+const SYNC_STALE_MS = 3 * 60 * 1000; // no progress for 3 min = stalled
+const SYNC_ERROR_LINGER_MS = 30 * 1000;
+setInterval(() => {
+  syncActivity.update((s) => {
+    const now = Date.now();
+    let changed = false;
+    const copy = { ...s };
+    for (const [gameId, entry] of Object.entries(copy)) {
+      const age = now - (entry.at ?? 0);
+      if (entry.state === 'running' && age > SYNC_STALE_MS) {
+        delete copy[gameId];
+        changed = true;
+        toast(`Sync of ${get(games)[gameId]?.name ?? 'a game'} stalled — it will retry automatically`, 'error');
+      } else if ((entry.state === 'error' || entry.state === 'done') && age > SYNC_ERROR_LINGER_MS) {
+        delete copy[gameId];
+        changed = true;
+      }
+    }
+    return changed ? copy : s;
+  });
+}, 30 * 1000);
 export const toasts = writable([]);
 export const cloudAuthEvent = writable(null); // {success, userEmail?, error?} from the OAuth callback
 export const cloudUploadEvent = writable(null); // {gameId, done, total, current, complete} while sync-local runs

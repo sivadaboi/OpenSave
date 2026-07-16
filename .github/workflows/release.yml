@@ -142,6 +142,11 @@ jobs:
           mkdir -p opensave-linux
           cp cmd/opensave-app/build/bin/OpenSave opensave-linux/opensave
           cp dist/opensave-cli dist/opensave-relay opensave-linux/
+          # Desktop integration: launcher entry, icon, and a one-line installer.
+          cp cmd/opensave-app/build/linux/opensave.desktop opensave-linux/
+          cp cmd/opensave-app/build/linux/install-desktop.sh opensave-linux/
+          cp cmd/opensave-app/build/appicon.png opensave-linux/opensave.png
+          chmod +x opensave-linux/install-desktop.sh
           tar -czf opensave-linux-amd64.tar.gz opensave-linux
       - uses: actions/upload-artifact@v4
         with:

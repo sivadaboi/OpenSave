@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=OpenSave
+GenericName=Game Save Sync
+Comment=P2P game save sync — snapshots, versioning, and cross-device sync
+Exec=opensave
+Icon=opensave
+Terminal=false
+Categories=Game;Utility;
+Keywords=save;sync;backup;games;steam;emulator;
+StartupWMClass=OpenSave

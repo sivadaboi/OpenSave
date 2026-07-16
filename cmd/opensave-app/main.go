@@ -10,11 +10,15 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/appicon.png
+var appIcon []byte
 
 func main() {
 	// After a self-update this waits for the replaced process to exit (and
@@ -49,6 +53,15 @@ func main() {
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
+		},
+		Linux: &linux.Options{
+			// Window/taskbar icon — without this, Linux shows a blank icon.
+			Icon: appIcon,
+			// Must match the .desktop file's StartupWMClass/Name so docks
+			// group the running window with its launcher entry.
+			ProgramName:         "OpenSave",
+			WindowIsTranslucent: false,
+			WebviewGpuPolicy:    linux.WebviewGpuPolicyOnDemand,
 		},
 	})
 	if err != nil {
