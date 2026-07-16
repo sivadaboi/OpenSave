@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/opensave/opensave/internal/version"
 	"io"
 	"net"
 	"net/http"
@@ -121,7 +122,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	totals := map[string]any{
 		"status":           "ok",
-		"version":          "2.0.0",
+		"version":          version.Version,
 		"uptime":           time.Since(s.startedAt).Seconds(),
 		"startedAt":        s.startedAt.UTC().Format(time.RFC3339),
 		"rooms":            roomCount,
