@@ -7,6 +7,15 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- **Auto-scan no longer offers a game's whole install folder as its
+  "save".** Games that keep their save file directly in the install
+  directory (over 1,100 manifest entries — e.g. Sonic & Sega All-Stars
+  Racing's `ssr_save.bin`) previously widened to the entire multi-GB
+  install dir, which then got snapshotted and mirrored to cloud. The
+  scanner now tracks the save file itself; single-file saves are fully
+  supported by watch, snapshot, and sync.
+- Save files sitting directly in broad folders like Documents are now
+  offered as single-file saves instead of being skipped entirely.
 - **Content-based conflict detection.** Sync now records the manifest
   hash both devices verifiably held at each convergence (a merge-base,
   like git) and flags a conflict only when BOTH sides changed relative to

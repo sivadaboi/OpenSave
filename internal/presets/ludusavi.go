@@ -150,9 +150,22 @@ func (sc *Scanner) scanLudusavi(seen map[string]bool) []DiscoveredSave {
 func expandGamePaths(g indexedGame, varSets []map[string]string, baseDirs func([]string) []string, blocked map[string]bool) []string {
 	installBases := baseDirs(g.Installs)
 
+	// Install roots are as off-limits as the blocked profile roots: many
+	// games (Sonic & Sega All-Stars Racing, most repack-era titles) keep
+	// their save file directly in the install dir, and offering that dir
+	// would snapshot the entire multi-GB game.
+	installRoots := map[string]bool{}
+	for _, b := range installBases {
+		installRoots[strings.ToLower(filepath.Clean(b))] = true
+	}
+	noWiden := func(dir string) bool {
+		l := strings.ToLower(filepath.Clean(dir))
+		return installRoots[l] || blocked[l]
+	}
+
 	var hits []string
 	push := func(dir string) {
-		if dir == "" || blocked[strings.ToLower(dir)] {
+		if dir == "" || blocked[strings.ToLower(dir)] || installRoots[strings.ToLower(filepath.Clean(dir))] {
 			return
 		}
 		for _, d := range hits {
@@ -168,7 +181,7 @@ func expandGamePaths(g indexedGame, varSets []map[string]string, baseDirs func([
 	for _, vars := range varSets {
 		for _, tpl := range g.Paths {
 			for _, expanded := range expandTemplate(tpl, vars, installBases, g.SteamID) {
-				for _, hit := range statOrGlob(expanded) {
+				for _, hit := range statOrGlob(expanded, noWiden) {
 					push(hit)
 				}
 			}
@@ -243,12 +256,13 @@ func expandTemplate(tpl string, vars map[string]string, installBases []string, s
 	return out
 }
 
-// statOrGlob resolves one concrete pattern to existing directories: globs
-// wildcards, maps files to their parent dir, and falls back one level when
-// the exact leaf doesn't exist (pattern names a file that isn't there yet,
-// but its folder is).
-func statOrGlob(pattern string) []string {
-	toDir := func(p string) string {
+// statOrGlob resolves one concrete pattern to existing save locations:
+// globs wildcards and maps files to their parent dir — except when noWiden
+// says the parent is too broad to track (a game install root, Documents),
+// in which case the save file itself is the location. Single-file save
+// paths are supported end to end (watcher, snapshots, sync).
+func statOrGlob(pattern string, noWiden func(dir string) bool) []string {
+	toCandidate := func(p string) string {
 		info, err := os.Stat(p)
 		if err != nil {
 			return ""
@@ -256,7 +270,10 @@ func statOrGlob(pattern string) []string {
 		if info.IsDir() {
 			return p
 		}
-		return filepath.Dir(p)
+		if parent := filepath.Dir(p); !noWiden(parent) {
+			return parent
+		}
+		return p
 	}
 
 	if strings.ContainsAny(pattern, "*?[") {
@@ -266,7 +283,7 @@ func statOrGlob(pattern string) []string {
 		}
 		var dirs []string
 		for _, m := range matches {
-			if d := toDir(m); d != "" {
+			if d := toCandidate(m); d != "" {
 				dirs = append(dirs, d)
 			}
 			if len(dirs) >= 4 {
@@ -276,7 +293,7 @@ func statOrGlob(pattern string) []string {
 		return dirs
 	}
 
-	if d := toDir(pattern); d != "" {
+	if d := toCandidate(pattern); d != "" {
 		return []string{d}
 	}
 	// Leaf missing: no parent-dir fallback. It sounds helpful, but in
