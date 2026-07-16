@@ -25,10 +25,18 @@ const clockSkewToleranceMs = 2000
 //     sides already have files (two pre-existing, diverged save states).
 //   - Otherwise: conflict when both manifests' latest mtimes are newer
 //     than lastSyncTimeMs + 2s of skew tolerance.
-func DetectConflict(local, remote delta.Manifest, lastSyncTimeMs int64) bool {
+func DetectConflict(local, remote delta.Manifest, lastSyncTimeMs int64, agreedHash string) bool {
 	if local.ManifestHash() == remote.ManifestHash() {
 		return false
 	}
+	// Content-based detection when a convergence point is known (the
+	// manifest hash both sides verifiably held — a merge-base): conflict
+	// only when BOTH sides changed relative to it. No clocks involved, so
+	// no skew tolerance and no blind window right after a sync.
+	if agreedHash != "" {
+		return local.ManifestHash() != agreedHash && remote.ManifestHash() != agreedHash
+	}
+	// Legacy fallback (no convergence recorded yet): mtimes vs last sync.
 	if lastSyncTimeMs == 0 {
 		return len(local.Files) > 0 && len(remote.Files) > 0
 	}

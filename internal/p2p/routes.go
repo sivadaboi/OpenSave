@@ -395,7 +395,7 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 func (e *Engine) handleSyncEvent(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
 	var body struct {
-		EventType string                 `json:"eventType"`
+		EventType string         `json:"eventType"`
 		Data      map[string]any `json:"data"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -427,6 +427,17 @@ func (e *Engine) handleSyncEvent(w http.ResponseWriter, r *http.Request) {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 				defer cancel()
 				e.Sync.RefreshLineage(ctx, gameID, peer)
+			}()
+		}
+	case "in-sync":
+		// The peer verified both sides hold identical content; confirm on
+		// our side (hash re-check) before recording lineage + last-synced.
+		claimedHash, _ := body.Data["manifestHash"].(string)
+		if peer, ok := e.peerByAddress(clientIP(r)); ok {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				defer cancel()
+				e.Sync.ConfirmInSync(ctx, gameID, peer, claimedHash)
 			}()
 		}
 	case "sync-error":

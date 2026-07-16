@@ -211,7 +211,8 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 
 	// 4. Conflict detection (lineage + skew-tolerant mtimes).
 	lastSyncMs := e.lastSyncTimeMs(peer.ID)
-	if DetectConflict(localManifest, remoteData.Manifest, lastSyncMs) {
+	agreedHash := e.Store.GetAgreedHash(gameID, peer.ID)
+	if DetectConflict(localManifest, remoteData.Manifest, lastSyncMs, agreedHash) {
 		e.registerConflict(gameID, peer, localManifest, remoteData)
 		return Result{Status: "conflict", PeerID: peer.ID, PeerName: peer.Name}, nil
 	}
@@ -226,6 +227,19 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	if !decision.HasChanges() {
 		e.Log("success", fmt.Sprintf("%q already in sync with %q", game.Name, peer.Name))
 		e.persistLineage(gameID, peer.ID, localManifest, remoteData.Manifest)
+		// Both sides verifiably identical: this is a convergence point.
+		_ = e.Store.SetAgreedHash(gameID, peer.ID, localManifest.ManifestHash())
+		// The peer must record this state too: it took no part in this
+		// exchange beyond serving its manifest, and without lineage or a
+		// last-synced time on its side, its NEXT pull from us misreads its
+		// own (identical) copy as a divergent change — a false conflict.
+		// The event carries the verified hash so the peer can safely
+		// re-confirm identity against its own current files (see
+		// ConfirmInSync).
+		e.Transport.ReportSyncEvent(peer, gameID, "in-sync", map[string]any{
+			"peerName":     e.deviceName(),
+			"manifestHash": localManifest.ManifestHash(),
+		})
 		return Result{Status: "in_sync", Direction: "none"}, nil
 	}
 
@@ -270,6 +284,17 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	freshManifest, err := delta.BuildManifest(game.SavePath)
 	if err == nil {
 		e.persistLineage(gameID, peer.ID, mergeManifestPaths(freshManifest, localManifest), remoteData.Manifest)
+	}
+
+	// Convergence ratchet: after a pure pull (no push, no peer-side
+	// deletions) we now hold exactly the remote's state — record it as the
+	// agreed merge-base. Pushes and peer-deletions converge later, when
+	// the peer reports back (sync-complete → RefreshLineage) or the next
+	// in_sync pass confirms; a stale agreed hash only ever errs toward an
+	// extra conflict prompt, never toward silently overwriting anything.
+	if !decision.HasPush() &&
+		len(decision.FilesToDeleteOnPeer) == 0 && len(decision.DirsToDeleteOnPeer) == 0 {
+		_ = e.Store.SetAgreedHash(gameID, peer.ID, remoteData.Manifest.ManifestHash())
 	}
 
 	return e.classifyResult(decision), nil
@@ -371,6 +396,31 @@ func IntersectLineage(local, remote delta.Manifest) (files, dirs []string) {
 	return files, dirs
 }
 
+// ConfirmInSync handles a peer's "in-sync" report: the peer verified both
+// sides held identical content (claimedHash). If OUR current files still
+// hash to that value, identity is re-proven right now on our own clock —
+// so recording the lineage and last-synced time is safe (no clock-skew or
+// stale-timestamp risk). If anything changed in the window, fall back to a
+// plain lineage refresh and record no timestamp: the conflict guard's
+// window must never shrink on unverified state.
+func (e *Engine) ConfirmInSync(ctx context.Context, gameID string, peer Peer, claimedHash string) {
+	game, err := e.Store.GetGame(gameID)
+	if err != nil {
+		return
+	}
+	local, err := delta.BuildManifest(game.SavePath)
+	if err != nil {
+		return
+	}
+	if claimedHash != "" && local.ManifestHash() == claimedHash {
+		e.persistLineage(gameID, peer.ID, local, local) // identical sides: lineage = our own paths
+		_ = e.Store.SetAgreedHash(gameID, peer.ID, claimedHash)
+		_ = e.Store.UpdatePeerLastSynced(peer.ID, time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
+		return
+	}
+	e.RefreshLineage(ctx, gameID, peer)
+}
+
 // RefreshLineage re-fetches the peer's manifest and re-persists the shared
 // lineage. Called when a peer reports it finished pulling from us: the
 // files we pushed are now really on both sides, so they can safely enter
@@ -394,6 +444,11 @@ func (e *Engine) RefreshLineage(ctx context.Context, gameID string, peer Peer) {
 		return
 	}
 	e.persistLineage(gameID, peer.ID, local, remoteData.Manifest)
+	// Peer finished pulling: if both sides now hash identically, that's a
+	// verified convergence — ratchet the merge-base.
+	if local.ManifestHash() == remoteData.Manifest.ManifestHash() {
+		_ = e.Store.SetAgreedHash(gameID, peer.ID, local.ManifestHash())
+	}
 }
 
 func (e *Engine) registerConflict(gameID string, peer Peer, localManifest delta.Manifest, remoteData ManifestResponse) {

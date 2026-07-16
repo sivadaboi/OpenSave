@@ -18,28 +18,28 @@ type TranslationRule struct {
 
 // Settings is the singleton device configuration row.
 type Settings struct {
-	ID               int               `db:"id" json:"-"`
-	DeviceName       string            `db:"device_name" json:"deviceName"`
-	NodeID           string            `db:"node_id" json:"nodeId"`
-	DeviceType       string            `db:"device_type" json:"deviceType"`
-	Port             int               `db:"port" json:"port"`
-	SyncInterval     int               `db:"sync_interval" json:"syncInterval"`
-	SyncOnWatch      bool              `db:"sync_on_watch" json:"syncOnWatch"`
-	DataDir          string            `db:"data_dir" json:"dataDir"`
-	BackupsDir       string            `db:"backups_dir" json:"backupsDir"`
-	SyncBackupsDir   string            `db:"sync_backups_dir" json:"syncBackupsDir"`
-	AutoDeleteBackups bool             `db:"auto_delete_backups" json:"autoDeleteBackups"`
-	AutoDeleteDays   int               `db:"auto_delete_days" json:"autoDeleteDays"`
-	AutoSyncOnTrack  bool              `db:"auto_sync_on_track" json:"autoSyncOnTrack"`
-	CustomScanPaths  []string          `db:"-" json:"customScanPaths"`
-	PathTranslations []TranslationRule `db:"-" json:"pathTranslations"`
-	RelayURL         string            `db:"relay_url" json:"relayUrl"`
-	SyncCode         string            `db:"sync_code" json:"syncCode"`
-	HostRelay        bool              `db:"host_relay" json:"hostRelay"`
-	RelayPort        int               `db:"relay_port" json:"relayPort"`
-	StartOnBoot      bool              `db:"start_on_boot" json:"startOnBoot"`
-	SpeedLimitKbps   int               `db:"speed_limit_kbps" json:"speedLimit"`
-	UIMode           string            `db:"ui_mode" json:"uiMode"`
+	ID                int               `db:"id" json:"-"`
+	DeviceName        string            `db:"device_name" json:"deviceName"`
+	NodeID            string            `db:"node_id" json:"nodeId"`
+	DeviceType        string            `db:"device_type" json:"deviceType"`
+	Port              int               `db:"port" json:"port"`
+	SyncInterval      int               `db:"sync_interval" json:"syncInterval"`
+	SyncOnWatch       bool              `db:"sync_on_watch" json:"syncOnWatch"`
+	DataDir           string            `db:"data_dir" json:"dataDir"`
+	BackupsDir        string            `db:"backups_dir" json:"backupsDir"`
+	SyncBackupsDir    string            `db:"sync_backups_dir" json:"syncBackupsDir"`
+	AutoDeleteBackups bool              `db:"auto_delete_backups" json:"autoDeleteBackups"`
+	AutoDeleteDays    int               `db:"auto_delete_days" json:"autoDeleteDays"`
+	AutoSyncOnTrack   bool              `db:"auto_sync_on_track" json:"autoSyncOnTrack"`
+	CustomScanPaths   []string          `db:"-" json:"customScanPaths"`
+	PathTranslations  []TranslationRule `db:"-" json:"pathTranslations"`
+	RelayURL          string            `db:"relay_url" json:"relayUrl"`
+	SyncCode          string            `db:"sync_code" json:"syncCode"`
+	HostRelay         bool              `db:"host_relay" json:"hostRelay"`
+	RelayPort         int               `db:"relay_port" json:"relayPort"`
+	StartOnBoot       bool              `db:"start_on_boot" json:"startOnBoot"`
+	SpeedLimitKbps    int               `db:"speed_limit_kbps" json:"speedLimit"`
+	UIMode            string            `db:"ui_mode" json:"uiMode"`
 
 	CustomScanPathsJSON  string `db:"custom_scan_paths" json:"-"`
 	PathTranslationsJSON string `db:"path_translations" json:"-"`

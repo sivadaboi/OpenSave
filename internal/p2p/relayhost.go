@@ -11,11 +11,11 @@ import (
 // user enables "host a relay" — so friends can connect directly to this
 // machine without a third-party relay. Safe for concurrent use.
 type RelayHost struct {
-	mu      sync.Mutex
-	server  *relay.Server
-	port    int
-	addr    string
-	logf    func(level, msg string)
+	mu     sync.Mutex
+	server *relay.Server
+	port   int
+	addr   string
+	logf   func(level, msg string)
 }
 
 // NewRelayHost creates an idle relay host.

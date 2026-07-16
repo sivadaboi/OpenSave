@@ -7,6 +7,14 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- **Content-based conflict detection.** Sync now records the manifest
+  hash both devices verifiably held at each convergence (a merge-base,
+  like git) and flags a conflict only when BOTH sides changed relative to
+  it — replacing wall-clock mtime comparisons that had a blind window
+  right after each sync under clock skew.
+- Two devices that start with identical saves no longer hit a false
+  "both sides modified" conflict on the first change: an in-sync check
+  now records the shared state on both peers, not just the initiator.
 - Unpairing a device now proactively notifies it (LAN and relay), so the
   other side stops treating you as paired immediately — no more ghost
   sync attempts or phantom "1 sync in progress" after an unpair.

@@ -61,15 +61,15 @@ type WanPeer struct {
 type WanClient struct {
 	engine *Engine
 
-	mu          sync.Mutex
-	conn        *websocket.Conn
-	state       string // disconnected | connecting | connected | error
-	lastError   string
-	discovered  map[string]WanPeer
-	pending     map[string]chan RelayMessage
-	generation  int // bumped on every (re)connect to invalidate stale loops
-	stopped     bool
-	cancelConn  context.CancelFunc
+	mu         sync.Mutex
+	conn       *websocket.Conn
+	state      string // disconnected | connecting | connected | error
+	lastError  string
+	discovered map[string]WanPeer
+	pending    map[string]chan RelayMessage
+	generation int // bumped on every (re)connect to invalidate stale loops
+	stopped    bool
+	cancelConn context.CancelFunc
 }
 
 func newWanClient(e *Engine) *WanClient {
@@ -197,7 +197,7 @@ func (w *WanClient) run(ctx context.Context, gen int, settings store.Settings) {
 				w.send(RelayMessage{
 					Type: "ping", From: w.localPeerID(),
 					DeviceName: s.DeviceName, DeviceType: s.DeviceType, Port: s.Port,
-					Games: w.gamesStateJSON(),
+					Games:      w.gamesStateJSON(),
 					AppVersion: version.Version, BuildTimeMs: version.BuildTimeMs(),
 				})
 				w.expireStalePeers()

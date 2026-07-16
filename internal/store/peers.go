@@ -39,15 +39,15 @@ func (n *NullString) UnmarshalJSON(b []byte) error {
 
 // Peer is a paired remote device.
 type Peer struct {
-	ID          string     `db:"id" json:"id"`
-	Name        string     `db:"name" json:"name"`
-	DeviceType  string     `db:"device_type" json:"deviceType"`
-	Address     string     `db:"address" json:"address"`
-	Port        int        `db:"port" json:"port"`
-	PairedAt    string     `db:"paired_at" json:"pairedAt"`
-	LastSynced  NullString `db:"last_synced" json:"lastSynced"`
-	LastSeenMs  int64      `db:"last_seen_ms" json:"-"`
-	Status      string     `db:"status" json:"status"`
+	ID         string     `db:"id" json:"id"`
+	Name       string     `db:"name" json:"name"`
+	DeviceType string     `db:"device_type" json:"deviceType"`
+	Address    string     `db:"address" json:"address"`
+	Port       int        `db:"port" json:"port"`
+	PairedAt   string     `db:"paired_at" json:"pairedAt"`
+	LastSynced NullString `db:"last_synced" json:"lastSynced"`
+	LastSeenMs int64      `db:"last_seen_ms" json:"-"`
+	Status     string     `db:"status" json:"status"`
 }
 
 // UpsertPeer inserts a new paired peer or updates an existing one's
@@ -177,6 +177,35 @@ type GamePeerSyncState struct {
 	PeerID          string `db:"peer_id"`
 	LastSyncedFiles string `db:"last_synced_files"`
 	LastSyncedDirs  string `db:"last_synced_dirs"`
+	// AgreedHash is the manifest hash both sides held at the last true
+	// convergence — the merge-base for content-based conflict detection.
+	// Empty means no convergence recorded yet.
+	AgreedHash string `db:"agreed_hash"`
+}
+
+// GetAgreedHash returns the last-convergence manifest hash for a
+// game+peer ("" if never converged).
+func (s *Store) GetAgreedHash(gameID, peerID string) string {
+	var hash string
+	if err := s.db.Get(&hash,
+		`SELECT agreed_hash FROM game_peer_sync_state WHERE game_id = ? AND peer_id = ?`,
+		gameID, peerID); err != nil {
+		return ""
+	}
+	return hash
+}
+
+// SetAgreedHash records the manifest hash both sides verifiably held.
+func (s *Store) SetAgreedHash(gameID, peerID, hash string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO game_peer_sync_state (game_id, peer_id, last_synced_files, last_synced_dirs, agreed_hash)
+		VALUES (?, ?, '[]', '[]', ?)
+		ON CONFLICT(game_id, peer_id) DO UPDATE SET agreed_hash = excluded.agreed_hash`,
+		gameID, peerID, hash)
+	if err != nil {
+		return fmt.Errorf("set agreed hash %s/%s: %w", gameID, peerID, err)
+	}
+	return nil
 }
 
 // GetSyncState returns the last-synced file/dir path sets for a game+peer,

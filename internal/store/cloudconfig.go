@@ -9,20 +9,20 @@ import (
 // the current provider's OAuth tokens. It mirrors the JS app's
 // settings.cloudSync object, flattened (tokens.* -> top-level columns).
 type CloudConfig struct {
-	ID                  int    `db:"id" json:"-"`
-	Enabled             bool   `db:"enabled" json:"enabled"`
-	Provider            string `db:"provider" json:"provider"`
-	URL                 string `db:"url" json:"url"`
-	Username            string `db:"username" json:"username"`
-	Password            string `db:"password" json:"password"`
-	HeadersJSON         string `db:"headers_json" json:"headers"`
-	FolderID            string `db:"folder_id" json:"folderId"`
+	ID                  int               `db:"id" json:"-"`
+	Enabled             bool              `db:"enabled" json:"enabled"`
+	Provider            string            `db:"provider" json:"provider"`
+	URL                 string            `db:"url" json:"url"`
+	Username            string            `db:"username" json:"username"`
+	Password            string            `db:"password" json:"password"`
+	HeadersJSON         string            `db:"headers_json" json:"headers"`
+	FolderID            string            `db:"folder_id" json:"folderId"`
 	CustomClientIDs     map[string]string `db:"-" json:"customClientIds"`
 	CustomClientSecrets map[string]string `db:"-" json:"customClientSecrets"`
-	AccessToken         string `db:"access_token" json:"-"`
-	RefreshToken        string `db:"refresh_token" json:"-"`
-	ExpiryTimeMs        int64  `db:"expiry_time_ms" json:"-"`
-	UserEmail           string `db:"user_email" json:"-"`
+	AccessToken         string            `db:"access_token" json:"-"`
+	RefreshToken        string            `db:"refresh_token" json:"-"`
+	ExpiryTimeMs        int64             `db:"expiry_time_ms" json:"-"`
+	UserEmail           string            `db:"user_email" json:"-"`
 
 	CustomClientIDsJSON     string `db:"custom_client_ids" json:"-"`
 	CustomClientSecretsJSON string `db:"custom_client_secrets" json:"-"`

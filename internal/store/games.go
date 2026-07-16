@@ -27,20 +27,20 @@ var ErrNotFound = errors.New("not found")
 
 // Game is a tracked title/save-folder record.
 type Game struct {
-	ID            string `db:"id" json:"id"`
-	Name          string `db:"name" json:"name"`
-	SavePath      string `db:"save_path" json:"savePath"`
-	ActiveBranch  string `db:"active_branch" json:"activeBranch"`
-	AutoSync      bool   `db:"auto_sync" json:"autoSync"`
-	MaxSnapshots  int    `db:"max_snapshots" json:"maxSnapshots"`
-	AppID         string `db:"app_id" json:"appId"`
-	ExePath       string `db:"exe_path" json:"exePath"`
-	CoverURL      string `db:"cover_url" json:"coverUrl"`
+	ID           string `db:"id" json:"id"`
+	Name         string `db:"name" json:"name"`
+	SavePath     string `db:"save_path" json:"savePath"`
+	ActiveBranch string `db:"active_branch" json:"activeBranch"`
+	AutoSync     bool   `db:"auto_sync" json:"autoSync"`
+	MaxSnapshots int    `db:"max_snapshots" json:"maxSnapshots"`
+	AppID        string `db:"app_id" json:"appId"`
+	ExePath      string `db:"exe_path" json:"exePath"`
+	CoverURL     string `db:"cover_url" json:"coverUrl"`
 	// LastManifestHash is the manifest hash at the moment of the last
 	// auto-snapshot; the watcher compares against it before snapshotting
 	// again, preventing feedback loops (snapshot -> event -> snapshot).
 	LastManifestHash string `db:"last_manifest_hash" json:"-"`
-	CreatedAt     string `db:"created_at" json:"createdAt"`
+	CreatedAt        string `db:"created_at" json:"createdAt"`
 }
 
 // CreateGame inserts a new game and its default "main" branch in one

@@ -81,7 +81,7 @@ func TestDetectConflict(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := DetectConflict(tc.local, tc.remote, tc.lastSyncMs); got != tc.want {
+			if got := DetectConflict(tc.local, tc.remote, tc.lastSyncMs, ""); got != tc.want {
 				t.Errorf("DetectConflict = %v, want %v", got, tc.want)
 			}
 		})
@@ -246,5 +246,38 @@ func TestIntersectLineage_UnconfirmedPushNeverEntersLineage(t *testing.T) {
 	}
 	if len(d.FilesToPush) != 1 || d.FilesToPush[0] != "OpenSave.exe" {
 		t.Fatalf("expected OpenSave.exe re-push, got %v", d.FilesToPush)
+	}
+}
+
+// TestDetectConflict_ContentBased pins the merge-base semantics: with an
+// agreed hash recorded, conflicts are purely content-based — no clocks.
+func TestDetectConflict_ContentBased(t *testing.T) {
+	m := func(name, content string) delta.Manifest {
+		return delta.Manifest{Files: map[string]delta.FileEntry{
+			name: {Hash: content},
+		}}
+	}
+	base := m("save.dat", "v1")
+	agreed := base.ManifestHash()
+
+	localChanged := m("save.dat", "v2-local")
+	remoteChanged := m("save.dat", "v2-remote")
+
+	cases := []struct {
+		name          string
+		local, remote delta.Manifest
+		want          bool
+	}{
+		{"identical never conflicts", localChanged, localChanged, false},
+		{"only local changed — one-sided, no conflict", localChanged, base, false},
+		{"only remote changed — one-sided, no conflict", base, remoteChanged, false},
+		{"both changed — conflict regardless of mtimes", localChanged, remoteChanged, true},
+	}
+	for _, tc := range cases {
+		// lastSyncMs deliberately absurd (future) to prove clocks are
+		// ignored when an agreed hash exists.
+		if got := DetectConflict(tc.local, tc.remote, 1<<62, agreed); got != tc.want {
+			t.Errorf("%s: DetectConflict = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

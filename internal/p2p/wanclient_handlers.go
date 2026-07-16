@@ -52,7 +52,7 @@ func (w *WanClient) handleMessage(ctx context.Context, msg RelayMessage) {
 			w.send(RelayMessage{
 				Type: "hello-reply", To: msg.From, From: localID,
 				DeviceName: settings.DeviceName, DeviceType: settings.DeviceType, Port: settings.Port,
-				Games: w.gamesStateJSON(),
+				Games:      w.gamesStateJSON(),
 				AppVersion: version.Version, BuildTimeMs: version.BuildTimeMs(),
 			})
 		}
@@ -96,6 +96,22 @@ func (w *WanClient) handleMessage(ctx context.Context, msg RelayMessage) {
 					refreshCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 					defer cancel()
 					w.engine.Sync.RefreshLineage(refreshCtx, msg.GameID, sp)
+				}()
+			}
+		case "in-sync":
+			// Peer verified both sides match: confirm on our side (hash
+			// re-check) before recording lineage + last-synced.
+			var payload struct {
+				ManifestHash string `json:"manifestHash"`
+			}
+			_ = json.Unmarshal(msg.Data, &payload)
+			claimedHash := payload.ManifestHash
+			if peer, err := w.engine.Store.GetPeer(msg.From); err == nil {
+				sp := syncengine.Peer{ID: peer.ID, Name: peer.Name, Address: "relay", Port: peer.Port, IsWan: true}
+				go func() {
+					refreshCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					defer cancel()
+					w.engine.Sync.ConfirmInSync(refreshCtx, msg.GameID, sp, claimedHash)
 				}()
 			}
 		case "sync-error":
