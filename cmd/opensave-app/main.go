@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -21,6 +22,15 @@ var assets embed.FS
 var appIcon []byte
 
 func main() {
+	// WebKitGTK's DMA-BUF renderer instantly crashes or blanks the window
+	// on a range of GPU/driver combos (AMD handhelds like the ROG Ally,
+	// NVIDIA+Wayland). Shared-memory rendering is imperceptibly slower for
+	// a UI like ours and works everywhere — default to it, but respect an
+	// explicit user override of the variable.
+	if runtime.GOOS == "linux" && os.Getenv("WEBKIT_DISABLE_DMABUF_RENDERER") == "" {
+		os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+	}
+
 	// After a self-update this waits for the replaced process to exit (and
 	// removes its leftover binary) before claiming the single-instance lock.
 	cleanupReplacedBinary()
