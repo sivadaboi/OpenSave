@@ -30,8 +30,19 @@ jobs:
       - name: Ensure NSIS (makensis) is on PATH
         shell: bash
         run: |
+          export PATH="$PATH:/c/Program Files (x86)/NSIS:/c/Program Files (x86)/NSIS/Bin"
+          # chocolatey.org has intermittent 503s — retry, and fail THIS step
+          # if makensis still isn't available (a late "installer missing"
+          # failure after a full build wastes the whole job).
+          for attempt in 1 2 3; do
+            command -v makensis >/dev/null 2>&1 && break
+            choco install nsis -y --no-progress && break
+            echo "choco install nsis failed (attempt $attempt); retrying in 30s"
+            sleep 30
+          done
           if ! command -v makensis >/dev/null 2>&1; then
-            choco install nsis -y --no-progress || true
+            echo "::error::makensis unavailable after 3 install attempts"
+            exit 1
           fi
           echo 'C:\Program Files (x86)\NSIS' >> "$GITHUB_PATH"
           echo 'C:\Program Files (x86)\NSIS\Bin' >> "$GITHUB_PATH"
@@ -169,7 +180,7 @@ jobs:
       - name: Install flatpak-builder + GNOME runtime
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak flatpak-builder imagemagick
           # ubuntu-24.04 restricts unprivileged user namespaces, which
           # breaks bwrap (flatpak's sandbox) — relax it for this job.
           sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0 || true
@@ -181,8 +192,10 @@ jobs:
           tar -xzf linux/opensave-linux-amd64.tar.gz
           mkdir -p packaging/flatpak/stage
           cp opensave-linux/opensave opensave-linux/opensave-cli \
-             opensave-linux/opensave.png opensave-linux/opensave.desktop \
+             opensave-linux/opensave.desktop \
              packaging/flatpak/stage/
+          # Flatpak export rejects icons over 512x512; the appicon is 1024.
+          convert opensave-linux/opensave.png -resize 512x512 packaging/flatpak/stage/opensave.png
           sed "s/__VERSION__/$V/; s/__DATE__/$(date +%F)/" \
             packaging/flatpak/io.github.sivadaboi.OpenSave.metainfo.xml \
             > packaging/flatpak/stage/io.github.sivadaboi.OpenSave.metainfo.xml
