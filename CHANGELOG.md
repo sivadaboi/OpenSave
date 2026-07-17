@@ -36,6 +36,18 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **Choose-what-to-export save backups.** "Export saves…" now opens a
+  picker listing every save on the machine — tracked games plus
+  auto-detected ones — with select-all / tracked-only shortcuts. The
+  .sscb file carries each game's current save AND where it belongs
+  (paths stored in a machine-portable form, so a different PC or user
+  account restores to the right place).
+- **Two import modes.** "Add to snapshots" (the default) imports the
+  saves into snapshot history without touching a single live file;
+  "Overwrite current saves" restores everything onto disk — tracked
+  games get a safety snapshot first, untracked targets get a safety zip
+  in the backups folder before anything is replaced. The Activity tab
+  records every game: what was restored, to which path, tracked or not.
 - **Steam Deck: official Flatpak.** Every release now ships an
   `OpenSave.flatpak` that runs on stock SteamOS — no system packages, no
   lost install after SteamOS updates (the GNOME runtime provides the

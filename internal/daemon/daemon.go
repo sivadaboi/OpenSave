@@ -307,13 +307,53 @@ func (d *Daemon) validateSavePath(rawPath string) (string, error) {
 	if _, err := os.Stat(abs); err != nil {
 		return "", fmt.Errorf("save path does not exist: %s", abs)
 	}
+	if err := d.checkSavePathShape(abs); err != nil {
+		return "", err
+	}
 
+	// One folder, one game: a second tracker on the same path means double
+	// watchers, duplicate snapshots, and sync confusion.
+	norm := strings.ToLower(abs)
+	games, err := d.Store.ListGames()
+	if err == nil {
+		for _, g := range games {
+			if strings.ToLower(filepath.Clean(g.SavePath)) == norm {
+				return "", fmt.Errorf("%q already tracks this folder", g.Name)
+			}
+		}
+	}
+
+	return abs, nil
+}
+
+// CheckRestoreTarget validates a path files are about to be restored into
+// (backup import onto a possibly-fresh machine): same shape rules as
+// tracking — no drive roots, profile/system folders, or OpenSave's own
+// data dir — but the path is allowed to not exist yet.
+func (d *Daemon) CheckRestoreTarget(rawPath string) (string, error) {
+	if strings.TrimSpace(rawPath) == "" {
+		return "", fmt.Errorf("restore path is required")
+	}
+	abs, err := filepath.Abs(rawPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid restore path: %w", err)
+	}
+	abs = filepath.Clean(abs)
+	if err := d.checkSavePathShape(abs); err != nil {
+		return "", err
+	}
+	return abs, nil
+}
+
+// checkSavePathShape rejects locations that must never hold a single
+// game's save wholesale, regardless of whether they exist yet.
+func (d *Daemon) checkSavePathShape(abs string) error {
 	norm := strings.ToLower(abs)
 	sep := string(filepath.Separator)
 
 	// Drive / filesystem roots.
 	if filepath.Dir(abs) == abs {
-		return "", fmt.Errorf("refusing to track a drive root (%s) — pick the game's save folder", abs)
+		return fmt.Errorf("refusing to use a drive root (%s) — pick the game's save folder", abs)
 	}
 
 	// Whole-profile and system folders: tracking these would snapshot and
@@ -341,8 +381,8 @@ func (d *Daemon) validateSavePath(rawPath string) (string, error) {
 			continue
 		}
 		if norm == strings.ToLower(filepath.Clean(b)) {
-			return "", fmt.Errorf(
-				"refusing to track %q — that's a system or profile folder, not a save location; pick the game's own folder inside it", abs)
+			return fmt.Errorf(
+				"refusing to use %q — that's a system or profile folder, not a save location; pick the game's own folder inside it", abs)
 		}
 	}
 
@@ -350,21 +390,9 @@ func (d *Daemon) validateSavePath(rawPath string) (string, error) {
 	// recurse forever).
 	dataDir := strings.ToLower(filepath.Clean(d.Paths.HomeDir))
 	if norm == dataDir || strings.HasPrefix(norm, dataDir+sep) || strings.HasPrefix(dataDir, norm+sep) {
-		return "", fmt.Errorf("refusing to track OpenSave's own data folder (%s)", abs)
+		return fmt.Errorf("refusing to use OpenSave's own data folder (%s)", abs)
 	}
-
-	// One folder, one game: a second tracker on the same path means double
-	// watchers, duplicate snapshots, and sync confusion.
-	games, err := d.Store.ListGames()
-	if err == nil {
-		for _, g := range games {
-			if strings.ToLower(filepath.Clean(g.SavePath)) == norm {
-				return "", fmt.Errorf("%q already tracks this folder", g.Name)
-			}
-		}
-	}
-
-	return abs, nil
+	return nil
 }
 
 // EnsureImportedSnapshot registers a snapshot restored from an .sscb

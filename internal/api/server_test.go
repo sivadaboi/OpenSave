@@ -264,6 +264,9 @@ func TestBackupExportImportRoundTrip(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatal("track failed")
 	}
+	// The initial snapshot is async; the whole-library export below needs
+	// it to exist deterministically.
+	waitInitialSnapshot(t, ts, "exported-game")
 
 	exportPath := filepath.Join(t.TempDir(), "backup.sscb")
 	resp, body := ts.do(t, http.MethodPost, "/api/backup/export", map[string]string{"targetPath": exportPath})
