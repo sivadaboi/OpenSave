@@ -121,6 +121,8 @@
           <button class="link" disabled={installStarted} on:click={installRelease}>
             {installStarted ? 'Starting…' : 'Install & restart'}
           </button>
+        {:else if update.flatpak}
+          <button class="link" on:click={() => native.openExternal(update.url)}>Get .flatpak</button>
         {:else}
           <button class="link" on:click={() => native.openExternal(update.url)}>Download</button>
         {/if}

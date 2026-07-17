@@ -39,14 +39,23 @@ func SetAutostart(enabled bool) error {
 		return nil
 	}
 
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("resolve executable path: %w", err)
+	// Inside a Flatpak sandbox os.Executable() is /app/bin/opensave, a path
+	// that doesn't exist on the host session that runs autostart entries —
+	// launch through flatpak instead.
+	launch := ""
+	if id := os.Getenv("FLATPAK_ID"); id != "" {
+		launch = "flatpak run " + id
+	} else {
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("resolve executable path: %w", err)
+		}
+		launch = exe
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(fmt.Sprintf(desktopEntry, exe)), 0o644)
+	return os.WriteFile(path, []byte(fmt.Sprintf(desktopEntry, launch)), 0o644)
 }
 
 // AutostartEnabled reports whether the .desktop file exists.

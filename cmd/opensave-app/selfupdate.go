@@ -37,6 +37,21 @@ func (a *App) updateEvent(state string, pct int, errMsg string) {
 	})
 }
 
+// runningInFlatpak reports whether the app runs inside a Flatpak sandbox,
+// where /app is read-only and the rename-swap self-update cannot work —
+// updates arrive through flatpak itself (or a newer bundle from the
+// release page).
+func runningInFlatpak() bool {
+	if os.Getenv("FLATPAK_ID") != "" {
+		return true
+	}
+	_, err := os.Stat("/.flatpak-info")
+	return err == nil
+}
+
+const flatpakUpdateMsg = "OpenSave is installed as a Flatpak, which updates through Flatpak itself — " +
+	"run \"flatpak update\", or install the newer OpenSave.flatpak from the GitHub release page."
+
 // dirWritable reports whether the current process can create files in dir.
 // False for Program Files installs running without elevation — the case
 // where the rename-swap self-update cannot work.
@@ -57,6 +72,9 @@ func dirWritable(dir string) bool {
 func (a *App) InstallUpdateFromPeer(peerID string) string {
 	if a.daemon == nil {
 		return "app is not fully started"
+	}
+	if runningInFlatpak() {
+		return flatpakUpdateMsg
 	}
 	go func() {
 		exe, err := os.Executable()
@@ -101,6 +119,9 @@ func (a *App) InstallUpdateFromPeer(peerID string) string {
 func (a *App) InstallUpdateFromURL(url string) string {
 	if !strings.HasPrefix(url, "https://") {
 		return "update URL must be https"
+	}
+	if runningInFlatpak() {
+		return flatpakUpdateMsg
 	}
 	go func() {
 		exe, err := os.Executable()

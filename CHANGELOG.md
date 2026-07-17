@@ -36,6 +36,12 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **Steam Deck: official Flatpak.** Every release now ships an
+  `OpenSave.flatpak` that runs on stock SteamOS — no system packages, no
+  lost install after SteamOS updates (the GNOME runtime provides the
+  WebKit the app needs). SD-card saves (`/run/media`) are visible to the
+  sandbox, and the in-app updater is Flatpak-aware (points at the new
+  bundle instead of trying to self-swap the read-only install).
 - **System tray on Linux** (StatusNotifier/D-Bus): close-to-tray with
   Open / Sync all / Quit, matching Windows. On desktops without a tray
   host (stock GNOME without an extension), closing the window quits

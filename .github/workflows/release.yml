@@ -153,6 +153,57 @@ jobs:
           name: linux
           path: opensave-linux-amd64.tar.gz
 
+  # Flatpak bundle: the only install that works on a stock Steam Deck.
+  # SteamOS ships no WebKitGTK and wipes pacman installs on OS updates; the
+  # GNOME runtime provides libwebkit2gtk-4.1 (exactly what -tags webkit2_41
+  # links), so the flatpak runs untouched across SteamOS updates.
+  flatpak:
+    needs: [linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: linux
+      - name: Install flatpak-builder + GNOME runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          # ubuntu-24.04 restricts unprivileged user namespaces, which
+          # breaks bwrap (flatpak's sandbox) — relax it for this job.
+          sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0 || true
+          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub org.gnome.Platform//48 org.gnome.Sdk//48
+      - name: Stage prebuilt binaries
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          tar -xzf linux/opensave-linux-amd64.tar.gz
+          mkdir -p packaging/flatpak/stage
+          cp opensave-linux/opensave opensave-linux/opensave-cli \
+             opensave-linux/opensave.png opensave-linux/opensave.desktop \
+             packaging/flatpak/stage/
+          sed "s/__VERSION__/$V/; s/__DATE__/$(date +%F)/" \
+            packaging/flatpak/io.github.sivadaboi.OpenSave.metainfo.xml \
+            > packaging/flatpak/stage/io.github.sivadaboi.OpenSave.metainfo.xml
+      - name: Build bundle
+        run: |
+          flatpak-builder --user --force-clean --repo=flatpak-repo \
+            flatpak-build packaging/flatpak/io.github.sivadaboi.OpenSave.yml
+          flatpak build-bundle flatpak-repo OpenSave.flatpak io.github.sivadaboi.OpenSave
+      - name: Smoke test (every linked library must resolve in the sandbox)
+        run: |
+          flatpak install --user -y --noninteractive ./OpenSave.flatpak
+          flatpak run --command=sh io.github.sivadaboi.OpenSave -c 'ldd /app/bin/opensave' | tee ldd.out
+          if grep -q "not found" ldd.out; then
+            echo "::error::unresolved libraries inside the flatpak sandbox"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: OpenSave.flatpak
+
   relay-docker:
     runs-on: ubuntu-latest
     steps:
@@ -162,7 +213,7 @@ jobs:
 
   # Publish a real GitHub Release with all downloadable assets on tag push.
   release:
-    needs: [windows, linux]
+    needs: [windows, linux, flatpak]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -174,6 +225,10 @@ jobs:
         with:
           name: linux
           path: linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: flatpak
+          path: flatpak
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -189,3 +244,4 @@ jobs:
           files: |
             windows/**/*.exe
             linux/*.tar.gz
+            flatpak/*.flatpak

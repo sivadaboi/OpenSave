@@ -1,0 +1,40 @@
+app-id: io.github.sivadaboi.OpenSave
+runtime: org.gnome.Platform
+# GNOME runtime ships libwebkit2gtk-4.1 — the exact webview our Linux build
+# links (wails -tags webkit2_41). This is what makes the app run on stock
+# SteamOS, which does not ship WebKitGTK at all.
+runtime-version: "48"
+sdk: org.gnome.Sdk
+command: opensave
+rename-desktop-file: opensave.desktop
+rename-icon: opensave
+
+finish-args:
+  # LAN peers, relay, cloud providers.
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Game saves live throughout the user profile (AppData equivalents,
+  # Documents, Steam userdata/compatdata); SD cards and external drives
+  # mount under /run/media on SteamOS.
+  - --filesystem=home
+  - --filesystem=/run/media
+  # Tray icon (StatusNotifier — KDE Plasma is the Steam Deck desktop).
+  - --talk-name=org.kde.StatusNotifierWatcher
+
+modules:
+  - name: opensave
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 opensave /app/bin/opensave
+      - install -Dm755 opensave-cli /app/bin/opensave-cli
+      - install -Dm644 opensave.png /app/share/icons/hicolor/512x512/apps/opensave.png
+      - install -Dm644 opensave.desktop /app/share/applications/opensave.desktop
+      - install -Dm644 io.github.sivadaboi.OpenSave.metainfo.xml /app/share/metainfo/io.github.sivadaboi.OpenSave.metainfo.xml
+    sources:
+      # CI stages the prebuilt release binaries here (see release.yml,
+      # "flatpak" job) — the app itself is built once, in the linux job.
+      - type: dir
+        path: stage
