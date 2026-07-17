@@ -101,6 +101,12 @@ prefixes. The plain Linux tarball also works on the Deck if you install
 Flatpak is the supported path. A Decky plugin for Game Mode lives in
 [`opensave-decky-plugin/`](opensave-decky-plugin/).
 
+**Other handhelds / Arch-based distros (CachyOS, Bazzite-likes):** if
+your distro is *not* immutable (CachyOS isn't), the plain Linux tarball
+with your distro's `webkit2gtk-4.1` package is the best install — it
+survives updates and uses your native graphics stack. The Flatpak is
+for immutable systems like stock SteamOS.
+
 **Troubleshooting:**
 - *"runtime org.gnome.Platform … not found"* during install — your
   flatpak user installation doesn't have Flathub configured yet:
