@@ -148,6 +148,13 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	// coder/websocket's default read limit is 32 KB — smaller than a single
+	// sync block message (up to ~2 MB of save data, base64-encoded, plus
+	// envelope; the app client allows 16 MB, see wanclient.go). Without
+	// this, the relay kills a peer's connection the moment a real save
+	// transfer starts: manifests (small JSON) pass, every block payload
+	// drops the link, and syncs die in an endless reconnect-retry loop.
+	conn.SetReadLimit(16 << 20)
 	if roomCode == "" {
 		conn.Close(websocket.StatusCode(4001), "Missing 'room' parameter")
 		return
