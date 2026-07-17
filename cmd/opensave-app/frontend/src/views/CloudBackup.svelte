@@ -1,5 +1,5 @@
 <script>
-  import { gameList, toast, cloudAuthEvent, cloudUploadEvent, askConfirm } from '../lib/stores.js';
+  import { gameList, toast, cloudAuthEvent, cloudUploadEvent, backupProgressEvent, askConfirm } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
   import { onMount, onDestroy } from 'svelte';
 
@@ -293,9 +293,14 @@
   // Export: a picker modal lists tracked games plus auto-detected saves;
   // the selection's LIVE saves (with their locations) go into the file.
   let exportOpen = false;
-  let exportItems = null; // [{id,name,savePath,appId,tracked}], null while loading
+  let exportItems = null; // [{id,name,savePath,appId,cover,tracked}], null while loading
   let exportSel = {};
   let exporting = false;
+
+  // Small cover art next to each row — same Steam box-art the auto-scan
+  // grid uses, with the tracked game's own coverUrl taking precedence.
+  const portraitUrl = (appId) =>
+    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`;
 
   const openExportPicker = async () => {
     exportOpen = true;
@@ -304,13 +309,17 @@
     try {
       const [games, scan] = await Promise.all([api.get('/api/games'), api.get('/api/presets/scan')]);
       const tracked = Object.values(games ?? {}).map((g) => ({
-        id: g.id, name: g.name, savePath: g.savePath, appId: g.appId, tracked: true,
+        id: g.id, name: g.name, savePath: g.savePath, appId: g.appId,
+        cover: g.coverUrl || (g.appId ? portraitUrl(g.appId) : ''), tracked: true,
       }));
       const knownPaths = new Set(tracked.map((g) => g.savePath.toLowerCase()));
       const knownIds = new Set(tracked.map((g) => g.id));
       const detected = (scan ?? [])
         .filter((d) => !knownPaths.has(d.savePath.toLowerCase()) && !knownIds.has(d.id))
-        .map((d) => ({ id: d.id, name: d.name, savePath: d.savePath, appId: d.appId, tracked: false }));
+        .map((d) => ({
+          id: d.id, name: d.name, savePath: d.savePath, appId: d.appId,
+          cover: d.appId ? portraitUrl(d.appId) : '', tracked: false,
+        }));
       for (const g of tracked) exportSel[g.id] = true; // tracked pre-selected
       exportItems = [...tracked, ...detected];
     } catch (e) {
@@ -327,6 +336,7 @@
   };
 
   $: exportCount = exportItems ? exportItems.filter((it) => exportSel[it.id]).length : 0;
+  $: allSelected = !!exportItems && exportItems.length > 0 && exportCount === exportItems.length;
 
   const runExport = async () => {
     const chosen = (exportItems ?? []).filter((it) => exportSel[it.id]);
@@ -361,12 +371,19 @@
   let importing = false;
 
   const pickImportFile = async () => {
-    const src = await native.selectFile('Select an .sscb backup to import');
+    const src = await native.selectBackupFile('Select an .sscb backup to import');
     if (!src) return;
     importSrc = src;
     importMode = 'snapshots';
     importOpen = true;
   };
+
+  // Live per-game progress while the daemon walks the export/import.
+  let backupProg = null;
+  const unsubBackupProg = backupProgressEvent.subscribe((ev) => {
+    backupProg = ev && !ev.complete ? ev : null;
+  });
+  onDestroy(unsubBackupProg);
 
   const runImport = async () => {
     importing = true;
@@ -593,9 +610,10 @@
         <div class="cloud-loading"><span class="cspin"></span> Listing tracked games and scanning for saves…</div>
       {:else}
         <div class="export-toolbar">
-          <button class="btn small" on:click={() => exportSetAll(true)}>Select all</button>
+          <button class="btn small" on:click={() => exportSetAll(!allSelected)}>
+            {allSelected ? 'Unselect all' : 'Select all'}
+          </button>
           <button class="btn small" on:click={() => { exportSetAll(false); exportSetAll(true, true); }}>Tracked only</button>
-          <button class="btn small" on:click={() => exportSetAll(false)}>None</button>
         </div>
         <div class="cloud-modal-list">
           {#if exportItems.length === 0}
@@ -607,6 +625,12 @@
             {#each exportItems as it (it.id)}
               <label class="export-item">
                 <input type="checkbox" bind:checked={exportSel[it.id]} />
+                <div class="export-cover">
+                  {#if it.cover}
+                    <img src={it.cover} alt="" loading="lazy" on:error={(e) => (e.currentTarget.style.display = 'none')} />
+                  {/if}
+                  <span class="export-cover-fallback">🎮</span>
+                </div>
                 <div class="cloud-info">
                   <div class="cloud-name">
                     {it.name}
@@ -618,6 +642,18 @@
             {/each}
           {/if}
         </div>
+        {#if exporting && backupProg}
+          <div class="upload-progress">
+            <div class="upload-progress-text">
+              <span class="cspin"></span>
+              Exporting {Math.min(backupProg.done + 1, backupProg.total)} of {backupProg.total}
+              {#if backupProg.current}&nbsp;— <code>{backupProg.current}</code>{/if}
+            </div>
+            <div class="upload-bar">
+              <div class="upload-bar-fill" style="width: {backupProg.total > 0 ? Math.round((backupProg.done / backupProg.total) * 100) : 8}%"></div>
+            </div>
+          </div>
+        {/if}
         <div class="cloud-modal-foot">
           <span class="quiet">Detected saves export fine without being tracked.</span>
           <div class="export-foot-actions">
@@ -676,6 +712,18 @@
         </label>
       </div>
 
+      {#if importing && backupProg}
+        <div class="upload-progress">
+          <div class="upload-progress-text">
+            <span class="cspin"></span>
+            Importing {Math.min(backupProg.done + 1, backupProg.total)} of {backupProg.total}
+            {#if backupProg.current}&nbsp;— <code>{backupProg.current}</code>{/if}
+          </div>
+          <div class="upload-bar">
+            <div class="upload-bar-fill" style="width: {backupProg.total > 0 ? Math.round((backupProg.done / backupProg.total) * 100) : 8}%"></div>
+          </div>
+        </div>
+      {/if}
       <div class="cloud-modal-foot">
         <span class="quiet">Nothing is ever overwritten without a safety copy.</span>
         <div class="export-foot-actions">
@@ -1430,12 +1478,38 @@
     font-size: 0.72rem;
     word-break: break-all;
   }
+  .export-cover {
+    position: relative;
+    width: 34px;
+    height: 46px;
+    border-radius: 5px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: var(--bg-hover, rgba(128, 128, 128, 0.12));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .export-cover img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .export-cover-fallback {
+    font-size: 1rem;
+  }
   .export-foot-actions {
     display: flex;
     gap: 8px;
   }
   .import-modal {
     max-width: 560px;
+    /* Two radio cards + a footer don't need the full browser-modal
+       height — size to content so the dialog doesn't look hollow. */
+    height: auto;
+    max-height: min(78vh, 720px);
   }
   .import-modes {
     display: flex;

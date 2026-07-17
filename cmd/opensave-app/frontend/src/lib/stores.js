@@ -41,6 +41,7 @@ setInterval(() => {
 export const toasts = writable([]);
 export const cloudAuthEvent = writable(null); // {success, userEmail?, error?} from the OAuth callback
 export const cloudUploadEvent = writable(null); // {gameId, done, total, current, complete} while sync-local runs
+export const backupProgressEvent = writable(null); // {op, done, total, current, complete} while an .sscb export/import runs
 export const conflictResolution = writable(null); // {gameId, resolution, branchName?, error?} when a background resolution finishes
 export const appUpdate = writable(null); // {state: downloading|installing|restarting|error, percentage, error} during self-update
 export const showAbout = writable(false); // About dialog visibility (shared so any surface can open it)
@@ -177,6 +178,9 @@ export function applyMessage(msg) {
       break;
     case 'cloud-upload':
       cloudUploadEvent.set(data ?? null);
+      break;
+    case 'backup-progress':
+      backupProgressEvent.set(data ?? null);
       break;
     case 'app-update':
       appUpdate.set(data ?? null);

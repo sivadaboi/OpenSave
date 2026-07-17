@@ -270,7 +270,10 @@ func (s *Server) exportSelectedSaves(outPath string, games []backupManifestGame)
 	zw := zip.NewWriter(bw)
 	defer zw.Close()
 
-	for _, g := range games {
+	for i, g := range games {
+		s.Hub.Broadcast("backup-progress", map[string]any{
+			"op": "export", "done": i, "total": len(games), "current": g.Name,
+		})
 		tmp, tmpErr := os.CreateTemp("", "opensave-export-*.zip")
 		if tmpErr != nil {
 			return exported, skipped, tmpErr
@@ -302,6 +305,8 @@ func (s *Server) exportSelectedSaves(outPath string, games []backupManifestGame)
 		}
 		exported = append(exported, g)
 	}
+
+	defer s.Hub.Broadcast("backup-progress", map[string]any{"op": "export", "complete": true})
 
 	manifest := backupManifest{
 		Version:    2,
@@ -521,9 +526,14 @@ func (s *Server) importBackupV2(zr *zip.Reader, manifest *backupManifest, mode s
 		return []importResult{{Action: "skipped", Error: err.Error()}}
 	}
 
+	defer s.Hub.Broadcast("backup-progress", map[string]any{"op": "import", "complete": true})
+
 	var results []importResult
 	baseMs := time.Now().UnixMilli()
 	for i, g := range manifest.Games {
+		s.Hub.Broadcast("backup-progress", map[string]any{
+			"op": "import", "done": i, "total": len(manifest.Games), "current": g.Name,
+		})
 		res := importResult{ID: g.ID, Name: g.Name}
 		entry, ok := saves[g.ID]
 		if !ok {

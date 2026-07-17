@@ -200,6 +200,25 @@ func (a *App) SelectFile(title string) string {
 	return file
 }
 
+// SelectBackupFile opens the native file picker filtered to .sscb
+// backup files (import source).
+func (a *App) SelectBackupFile(title string) string {
+	if title == "" {
+		title = "Select backup file"
+	}
+	file, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: title,
+		Filters: []runtime.FileFilter{
+			{DisplayName: "OpenSave backup (*.sscb)", Pattern: "*.sscb"},
+			{DisplayName: "All files", Pattern: "*.*"},
+		},
+	})
+	if err != nil {
+		return ""
+	}
+	return file
+}
+
 // SelectSaveFile opens the native save dialog (backup export target).
 func (a *App) SelectSaveFile(title, defaultName string) string {
 	file, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
