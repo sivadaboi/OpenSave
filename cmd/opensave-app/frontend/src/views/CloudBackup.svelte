@@ -310,7 +310,9 @@
       const [games, scan] = await Promise.all([api.get('/api/games'), api.get('/api/presets/scan')]);
       const tracked = Object.values(games ?? {}).map((g) => ({
         id: g.id, name: g.name, savePath: g.savePath, appId: g.appId,
-        cover: g.coverUrl || (g.appId ? portraitUrl(g.appId) : ''), tracked: true,
+        // Portrait box art first (matches the auto-scan tiles); the stored
+        // coverUrl is Steam's landscape header — wrong shape for tiles.
+        cover: (g.appId ? portraitUrl(g.appId) : '') || g.coverUrl || '', tracked: true,
       }));
       const knownPaths = new Set(tracked.map((g) => g.savePath.toLowerCase()));
       const knownIds = new Set(tracked.map((g) => g.id));
@@ -622,24 +624,39 @@
               <p>No saves found to export.</p>
             </div>
           {:else}
-            {#each exportItems as it (it.id)}
-              <label class="export-item">
-                <input type="checkbox" bind:checked={exportSel[it.id]} />
-                <div class="export-cover">
-                  {#if it.cover}
-                    <img src={it.cover} alt="" loading="lazy" on:error={(e) => (e.currentTarget.style.display = 'none')} />
-                  {/if}
-                  <span class="export-cover-fallback">🎮</span>
-                </div>
-                <div class="cloud-info">
-                  <div class="cloud-name">
-                    {it.name}
-                    {#if it.tracked}<span class="badge online">tracked</span>{:else}<span class="badge offline">detected</span>{/if}
+            <div class="export-grid">
+              {#each exportItems as it (it.id)}
+                <div
+                  class="cover-tile"
+                  class:sel={exportSel[it.id]}
+                  on:click={() => { exportSel[it.id] = !exportSel[it.id]; }}
+                  on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), (exportSel[it.id] = !exportSel[it.id]))}
+                  role="button"
+                  tabindex="0"
+                  title={it.savePath}
+                >
+                  <div class="cover-art">
+                    {#if it.cover}
+                      <img
+                        src={it.cover}
+                        alt={it.name}
+                        loading="lazy"
+                        on:error={(e) => (e.currentTarget.style.display = 'none')}
+                      />
+                    {/if}
+                    <div class="cover-fallback">
+                      <span class="cover-emoji">🎮</span>
+                      <span class="cover-fallback-name">{it.name}</span>
+                    </div>
+                    {#if exportSel[it.id]}
+                      <div class="cover-check">✓</div>
+                    {/if}
+                    <span class="cover-type">{it.tracked ? 'Tracked' : 'Detected'}</span>
                   </div>
-                  <div class="cloud-meta"><code>{it.savePath}</code></div>
+                  <div class="cover-name" title={it.name}>{it.name}</div>
                 </div>
-              </label>
-            {/each}
+              {/each}
+            </div>
           {/if}
         </div>
         {#if exporting && backupProg}
@@ -1460,45 +1477,109 @@
     gap: 8px;
     padding: 10px 20px 0;
   }
-  .export-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 8px;
+  /* Cover-tile grid — same look as the auto-scan modal. */
+  .export-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px;
+    padding: 4px;
+  }
+  .cover-tile {
     cursor: pointer;
   }
-  .export-item:hover {
-    background: var(--bg-hover, rgba(128, 128, 128, 0.08));
-  }
-  .export-item input {
-    flex-shrink: 0;
-  }
-  .export-item code {
-    font-size: 0.72rem;
-    word-break: break-all;
-  }
-  .export-cover {
+  .cover-art {
     position: relative;
-    width: 56px;
-    height: 84px;
-    border-radius: 6px;
+    aspect-ratio: 600 / 900;
+    border-radius: 10px;
     overflow: hidden;
-    flex-shrink: 0;
-    background: var(--bg-hover, rgba(128, 128, 128, 0.12));
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    background: var(--bg-active);
+    border: 2px solid transparent;
+    transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
   }
-  .export-cover img {
+  .cover-tile:hover .cover-art {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  }
+  .cover-tile.sel .cover-art {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  .cover-art img {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    z-index: 2;
   }
-  .export-cover-fallback {
-    font-size: 1.5rem;
+  .cover-fallback {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px;
+    text-align: center;
+    background: linear-gradient(160deg, rgba(138, 99, 244, 0.22), rgba(138, 99, 244, 0.04));
+  }
+  .cover-emoji {
+    font-size: 2.2rem;
+  }
+  .cover-fallback-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--text);
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .cover-check {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 3;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  .cover-type {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 3;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--text-dim);
+    backdrop-filter: blur(2px);
+  }
+  .cover-name {
+    margin-top: 7px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cover-tile.sel .cover-name {
+    color: var(--text);
   }
   .export-foot-actions {
     display: flex;
