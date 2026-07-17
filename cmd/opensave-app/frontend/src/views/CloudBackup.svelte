@@ -1480,9 +1480,9 @@
   }
   .export-cover {
     position: relative;
-    width: 34px;
-    height: 46px;
-    border-radius: 5px;
+    width: 56px;
+    height: 84px;
+    border-radius: 6px;
     overflow: hidden;
     flex-shrink: 0;
     background: var(--bg-hover, rgba(128, 128, 128, 0.12));
@@ -1498,7 +1498,7 @@
     object-fit: cover;
   }
   .export-cover-fallback {
-    font-size: 1rem;
+    font-size: 1.5rem;
   }
   .export-foot-actions {
     display: flex;
