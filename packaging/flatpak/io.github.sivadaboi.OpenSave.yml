@@ -22,7 +22,13 @@ finish-args:
   - --filesystem=home
   - --filesystem=/run/media
   # Tray icon (StatusNotifier — KDE Plasma is the Steam Deck desktop).
+  # Talking to the watcher is not enough: the app must also OWN its item
+  # name on the bus. Inside a flatpak sandbox the app's PID is 2, and
+  # fyne/systray names its item org.kde.StatusNotifierItem-<pid>-1 —
+  # without this the tray fails with DBus ServiceUnknown (cosmetic, but
+  # no tray icon).
   - --talk-name=org.kde.StatusNotifierWatcher
+  - --own-name=org.kde.StatusNotifierItem-2-1
 
 modules:
   - name: opensave

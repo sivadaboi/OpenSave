@@ -101,6 +101,15 @@ prefixes. The plain Linux tarball also works on the Deck if you install
 Flatpak is the supported path. A Decky plugin for Game Mode lives in
 [`opensave-decky-plugin/`](opensave-decky-plugin/).
 
+**Troubleshooting:**
+- *"runtime org.gnome.Platform … not found"* during install — your
+  flatpak user installation doesn't have Flathub configured yet:
+  `flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo`
+  then install the bundle again.
+- The app must be launched in **Desktop Mode** (or added to Steam to run
+  from Game Mode) — running it from a bare terminal session shows no
+  window.
+
 > **Upgrading from the original (JS) OpenSave?** Your data migrates automatically on first launch — tracked games, snapshots, pairings, and cloud settings are imported from `~/.opensave/opensave-db.json` (kept as a backup, never deleted). Go and JS devices can pair and sync with each other during the transition.
 
 ## Quick start
