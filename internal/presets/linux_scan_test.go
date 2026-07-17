@@ -131,3 +131,83 @@ func TestScan_ProtonCompatdata(t *testing.T) {
 		t.Error("Microsoft vendor folder should be skipped, not offered as a save")
 	}
 }
+
+// TestProtonCoarseScanDefersToManifestHits guards the "38 identical
+// tiles" bug: a busy prefix's AppData/Documents vendor folders each
+// became a discovery named after the prefix's game, and resolveNames
+// then erased the "(subfolder)" qualifiers that told them apart.
+func TestProtonCoarseScanDefersToManifestHits(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+	lib := filepath.Join(home, ".local", "share", "Steam")
+	steamuser := filepath.Join(lib, "steamapps", "compatdata", "2161700", "pfx", "drive_c", "users", "steamuser")
+
+	// The real save (manifest will pinpoint it) plus prefix junk.
+	realSave := filepath.Join(steamuser, "AppData", "Roaming", "SEGA", "P3R", "Steam")
+	junk := [][]string{
+		{"AppData", "Roaming", "CRIWARE"},          // vendor-skip list
+		{"AppData", "Local", "Temp"},               // vendor-skip list
+		{"Documents", "SomeUnknownVendor"},         // legit coarse candidate
+	}
+	for _, dir := range append([][]string{{"AppData", "Roaming", "SEGA", "P3R", "Steam"}}, junk...) {
+		p := filepath.Join(append([]string{steamuser}, dir...)...)
+		if err := os.MkdirAll(p, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p, "data.bin"), []byte("x"), 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = realSave
+
+	sc := manifestScanner(t, `
+Persona 3 Reload:
+  files:
+    <winAppData>/SEGA/P3R/Steam:
+      tags: [save]
+      when:
+        - os: windows
+  steam:
+    id: 2161700
+`)
+	sc.GOOS = "linux"
+	sc.HomeDir = home
+	sc.SteamRoots = []string{lib}
+
+	// Mirror Scan()'s order: precise manifest pass first…
+	seen := map[string]bool{}
+	manifestHits := sc.scanLudusavi(seen)
+	if len(manifestHits) != 1 {
+		t.Fatalf("expected 1 manifest hit, got %d: %+v", len(manifestHits), manifestHits)
+	}
+	for _, d := range manifestHits {
+		seen[d.SavePath] = true
+	}
+
+	// …then the coarse prefix listing, which must not re-offer the
+	// SEGA parent (a precise hit lives inside it) nor the vendor junk.
+	coarse := sc.scanProtonCompat(sc.steamLibraryPaths(), seen, map[string]string{"2161700": "Persona 3 Reload"})
+	if len(coarse) != 1 {
+		t.Fatalf("expected only the unknown-vendor coarse hit, got %d: %+v", len(coarse), coarse)
+	}
+	if got := coarse[0].Name; got != "Persona 3 Reload (SomeUnknownVendor)" {
+		t.Errorf("coarse name = %q, want the qualified form", got)
+	}
+}
+
+// TestRenameKeepingSuffix guards resolveNames against collapsing
+// qualified names into identical tiles.
+func TestRenameKeepingSuffix(t *testing.T) {
+	cases := []struct{ old, base, want string }{
+		{"2161700 (SEGA)", "Persona 3 Reload", "Persona 3 Reload (SEGA)"},
+		{"Persona 3 Reload (CRIWARE)", "Persona 3 Reload", "Persona 3 Reload (CRIWARE)"},
+		{"plain-name", "Resolved Title", "Resolved Title"},
+		{"Dir (Epic/Unreal Save)", "Real Game", "Real Game (Epic/Unreal Save)"},
+	}
+	for _, c := range cases {
+		if got := renameKeepingSuffix(c.old, c.base); got != c.want {
+			t.Errorf("renameKeepingSuffix(%q, %q) = %q, want %q", c.old, c.base, got, c.want)
+		}
+	}
+}

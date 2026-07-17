@@ -31,6 +31,12 @@ var protonVendorSkip = map[string]bool{
 	"packages": true, "programs": true, "connecteddevicesplatform": true,
 	"comms": true, "d3dscache": true, "inputmethod": true, "vulkan": true,
 	"crashdumps": true, "diagnostics": true, "history": true,
+	// GPU vendors, middleware, and launcher plumbing that show up in busy
+	// prefixes — never a game's own save.
+	"nvidia": true, "nvidia corporation": true, "amd": true, "intel": true,
+	"criware": true, "unity": true, "unitycrashhandler": true,
+	"easyanticheat": true, "battleye": true, "steam": true, "valve": true,
+	"epicgameslauncher": true, "goginstaller": true,
 }
 
 // scanProtonCompat walks every Steam library's compatdata prefixes and
@@ -67,6 +73,11 @@ func (sc *Scanner) scanProtonCompat(libraries []string, seen map[string]bool, ap
 					savePath := filepath.Join(rootPath, sub)
 					abs, err := filepath.Abs(savePath)
 					if err != nil || seen[abs] || !dirNonEmpty(abs) {
+						continue
+					}
+					// The Ludusavi pass already found a precise save inside
+					// this folder — the broad parent would be junk on top.
+					if seenInside(seen, abs) {
 						continue
 					}
 					seen[abs] = true
