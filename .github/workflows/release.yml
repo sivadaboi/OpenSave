@@ -185,7 +185,8 @@ jobs:
           # breaks bwrap (flatpak's sandbox) — relax it for this job.
           sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0 || true
           flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y --noninteractive flathub org.gnome.Platform//48 org.gnome.Sdk//48
+          # Keep in sync with runtime-version in packaging/flatpak/*.yml.
+          flatpak install --user -y --noninteractive flathub org.gnome.Platform//49 org.gnome.Sdk//49
       - name: Stage prebuilt binaries
         run: |
           V="${GITHUB_REF_NAME#v}"

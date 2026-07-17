@@ -3,7 +3,13 @@ runtime: org.gnome.Platform
 # GNOME runtime ships libwebkit2gtk-4.1 — the exact webview our Linux build
 # links (wails -tags webkit2_41). This is what makes the app run on stock
 # SteamOS, which does not ship WebKitGTK at all.
-runtime-version: "48"
+#
+# 49 (freedesktop 25.08 base) matters for new handheld silicon: the 48
+# runtime's Mesa predates the ROG Ally X-class APUs, and the webview died
+# on GPU init there while the same app ran fine against the host's native
+# Mesa. CI's ldd smoke test verifies webkit2gtk-4.1 is still present on
+# every runtime bump.
+runtime-version: "49"
 sdk: org.gnome.Sdk
 command: opensave
 rename-desktop-file: opensave.desktop
