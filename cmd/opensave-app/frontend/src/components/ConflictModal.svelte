@@ -154,9 +154,11 @@
         </button>
       </div>
       <p class="hint-line">
-        🛡️ Each device decides for itself — <strong>“Keep mine” never overwrites {peerName}'s save</strong>
-        (they choose for their device). Nothing is lost either way: “Keep both” parks {peerName}'s version on a
-        branch, and “Keep theirs” snapshots yours first. Restore anything from the game's Snapshots / Branches tabs.
+        🛡️ Nothing is lost whichever you pick. <strong>“Keep both”</strong> (recommended) parks
+        {peerName}'s version on a branch and keeps playing yours. <strong>“Keep mine”</strong> makes your
+        version the shared one — {peerName} receives it (their old save is snapshotted first).
+        <strong>“Keep theirs”</strong> adopts {peerName}'s version here, snapshotting yours first.
+        Restore anything from the game's Snapshots / Branches tabs.
       </p>
     </div>
   </div>

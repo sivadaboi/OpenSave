@@ -397,11 +397,11 @@ func TestSync_ConflictResolvedKeepLocal(t *testing.T) {
 	if _, err := env.engine.ResolveConflict(context.Background(), "game1", env.peer.ID, "keep-local"); err != nil {
 		t.Fatal(err)
 	}
-	// keep-local is purely local: our files are untouched AND we must NOT
-	// force the peer to overwrite its save (consent — the peer decides for
-	// itself).
-	if env.transport.pullTriggers != 0 {
-		t.Errorf("keep-local must not force the peer; pull triggers = %d, want 0", env.transport.pullTriggers)
+	// keep-local keeps our files untouched and makes our version the
+	// resolved state: it records the agreed merge-base (so the divergence
+	// never re-prompts) and asks the peer to adopt our version.
+	if env.transport.pullTriggers != 1 {
+		t.Errorf("keep-local should propagate our version; pull triggers = %d, want 1", env.transport.pullTriggers)
 	}
 	local, _ := os.ReadFile(filepath.Join(env.localDir, "save.dat"))
 	if string(local) != "local version" {
@@ -409,6 +409,57 @@ func TestSync_ConflictResolvedKeepLocal(t *testing.T) {
 	}
 	if len(env.engine.ActiveConflicts()) != 0 {
 		t.Error("conflict should be cleared after keep-local")
+	}
+	// The resolution must STICK: an immediate re-sync must not re-raise the
+	// same conflict (the "keeps popping up" bug).
+	res, err := env.engine.SyncWithPeer(context.Background(), "game1", env.peer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status == "conflict" {
+		t.Fatal("keep-local resolution did not stick — conflict re-raised on the next sync")
+	}
+}
+
+// TestConflictResolutionSticks is the direct regression for the reported
+// "Keep both keeps popping up" loop: after ANY resolution, subsequent
+// syncs must not re-raise the same conflict.
+func TestConflictResolutionSticks(t *testing.T) {
+	for _, resolution := range []string{"keep-remote", "merge-branch", "keep-local"} {
+		t.Run(resolution, func(t *testing.T) {
+			env := setupEngine(t)
+			write(t, env.localDir, "save.dat", "local version")
+			write(t, env.remoteDir, "save.dat", "remote version")
+			if err := env.store.SetSyncState("game1", env.peer.ID, []string{"save.dat"}, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := env.store.UpdatePeerLastSynced(env.peer.ID, "2026-01-01T00:00:00.000Z"); err != nil {
+				t.Fatal(err)
+			}
+
+			if res, err := env.engine.SyncWithPeer(context.Background(), "game1", env.peer); err != nil || res.Status != "conflict" {
+				t.Fatalf("expected conflict, got %+v err=%v", res, err)
+			}
+			if _, err := env.engine.ResolveConflict(context.Background(), "game1", env.peer.ID, resolution); err != nil {
+				t.Fatalf("ResolveConflict(%s): %v", resolution, err)
+			}
+
+			// Several follow-up syncs (mimicking the watcher + peer both
+			// kicking syncs) must never re-raise the conflict.
+			for i := 0; i < 3; i++ {
+				res, err := env.engine.SyncWithPeer(context.Background(), "game1", env.peer)
+				if err != nil {
+					t.Fatalf("re-sync %d: %v", i, err)
+				}
+				if res.Status == "conflict" {
+					t.Fatalf("%s: conflict re-raised on re-sync %d — resolution did not stick", resolution, i)
+				}
+			}
+			// A durable merge-base must be recorded.
+			if env.store.GetAgreedHash("game1", env.peer.ID) == "" {
+				t.Errorf("%s: no agreed merge-base recorded after resolution", resolution)
+			}
+		})
 	}
 }
 
