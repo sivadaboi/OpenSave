@@ -16,6 +16,23 @@ All notable changes to OpenSave are documented here. This project adheres to
   supported by watch, snapshot, and sync.
 - Save files sitting directly in broad folders like Documents are now
   offered as single-file saves instead of being skipped entirely.
+- **Relay: large save transfers no longer kill the connection.** The
+  relay's WebSocket message limit (32 KB by default) was far below a
+  sync block (~2.7 MB), so every real transfer dropped the link and
+  looped on reconnect-retry. The public relay is already fixed; this
+  release carries the fix into the bundled `opensave-relay` and the
+  in-app "host a relay" feature.
+- **Handheld launch crashes fixed** (ROG Ally-class devices): WebKit's
+  DMA-BUF renderer is disabled by default on Linux (it crashes on a
+  range of GPU drivers; an explicitly set WEBKIT_DISABLE_DMABUF_RENDERER
+  is respected), and the Flatpak moved to the GNOME 49 runtime, whose
+  Mesa supports current handheld APUs. The tray icon now also works
+  inside the Flatpak sandbox.
+- Auto-scan no longer floods results with identical tiles from a busy
+  Proton prefix (the "38× Persona 3 Reload" report): the precise
+  manifest pass runs first, the coarse prefix listing defers to it,
+  vendor/middleware folders are excluded, and entries keep their
+  "(subfolder)" qualifier when renamed.
 - **Content-based conflict detection.** Sync now records the manifest
   hash both devices verifiably held at each convergence (a merge-base,
   like git) and flags a conflict only when BOTH sides changed relative to
@@ -54,6 +71,11 @@ All notable changes to OpenSave are documented here. This project adheres to
   WebKit the app needs). SD-card saves (`/run/media`) are visible to the
   sandbox, and the in-app updater is Flatpak-aware (points at the new
   bundle instead of trying to self-swap the read-only install).
+- **EmuDeck detection.** Auto-scan finds the `Emulation/saves` tree
+  EmuDeck routes every emulator into — internal storage and SD card —
+  offering each emulator as its own entry ("EmuDeck (retroarch)").
+- **New app icon** — the pixel-art OS logo, across the app, installer,
+  tray, and website.
 - **System tray on Linux** (StatusNotifier/D-Bus): close-to-tray with
   Open / Sync all / Quit, matching Windows. On desktops without a tray
   host (stock GNOME without an extension), closing the window quits
