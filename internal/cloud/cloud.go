@@ -285,7 +285,8 @@ func (s *Service) Upload(filePath, fileName string) error {
 		if cfg.URL == "" {
 			return fmt.Errorf("no destination URL configured")
 		}
-		req, err := http.NewRequest(http.MethodPut, joinURL(cfg.URL, url.PathEscape(fileName)), f)
+		target := joinURL(cfg.URL, url.PathEscape(fileName))
+		req, err := http.NewRequest(http.MethodPut, target, f)
 		if err != nil {
 			return err
 		}
@@ -300,6 +301,21 @@ func (s *Service) Upload(filePath, fileName string) error {
 		defer resp.Body.Close()
 		if err := transferOK(resp); err != nil {
 			return err
+		}
+		// Trust but verify: a server that accepted the PUT but stored a
+		// truncated/empty file (quota, proxy, redirect quirks) must fail
+		// the upload loudly, not sit as a silently useless backup.
+		head, err := http.NewRequest(http.MethodHead, target, nil)
+		if err == nil {
+			applyCustomHeaders(head, cfg.HeadersJSON)
+			applyBasicAuth(head, cfg.Username, cfg.Password)
+			if hresp, herr := s.doTransfer(head); herr == nil {
+				hresp.Body.Close()
+				if hresp.StatusCode < 300 && hresp.ContentLength >= 0 && hresp.ContentLength != size {
+					return fmt.Errorf("WebDAV upload verification failed: server stored %d of %d bytes for %s",
+						hresp.ContentLength, size, fileName)
+				}
+			}
 		}
 
 	case "webhook":

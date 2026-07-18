@@ -1,6 +1,6 @@
 <script>
   import { native } from '../lib/api.js';
-  import logoUrl from '../assets/logo.svg';
+  import logoUrl from '../assets/logo.png';
 </script>
 
 <div class="titlebar" role="banner" style="--wails-draggable: drag" on:dblclick={() => native.toggleMaximise()}>

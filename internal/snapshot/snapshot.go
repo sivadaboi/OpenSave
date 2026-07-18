@@ -7,6 +7,7 @@
 package snapshot
 
 import (
+	"archive/zip"
 	"errors"
 	"fmt"
 	"io"
@@ -137,12 +138,42 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 
 	m.pruneRetention(game)
 
+	// A snapshot with no files inside is almost always a wrong tracked
+	// path (native location tracked while the game plays through
+	// Proton, dir emptied by an uninstall, ...). Keep it locally — it's
+	// honest history — but say so loudly and never mirror it to the
+	// cloud, where an "empty backup" destroys trust silently.
+	if fileCount, cErr := zipFileCount(zipPath); cErr == nil && fileCount == 0 {
+		if m.Log != nil {
+			m.Log("warn", fmt.Sprintf(
+				"snapshot of %q contains no files — check that the tracked save location (%s) is where the game actually saves; cloud mirror skipped",
+				game.Name, game.SavePath))
+		}
+		return snap, nil
+	}
+
 	if m.OnUpload != nil {
 		remoteName := fmt.Sprintf("%s__%s__%s.zip", gameID, game.ActiveBranch, snapshotID)
 		go m.OnUpload(zipPath, remoteName)
 	}
 
 	return snap, nil
+}
+
+// zipFileCount returns the number of regular-file entries in a zip.
+func zipFileCount(zipPath string) (int, error) {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return 0, err
+	}
+	defer r.Close()
+	n := 0
+	for _, f := range r.File {
+		if !f.FileInfo().IsDir() {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // pruneRetention deletes the oldest snapshots (metadata + zip file,

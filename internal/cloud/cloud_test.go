@@ -94,6 +94,10 @@ func TestWebDAVProvider(t *testing.T) {
 		case http.MethodPut:
 			uploaded, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusCreated)
+		case http.MethodHead:
+			// Post-upload verification: report what was actually stored.
+			w.Header().Set("Content-Length", fmt.Sprint(len(uploaded)))
+			w.WriteHeader(http.StatusOK)
 		case "PROPFIND":
 			w.WriteHeader(http.StatusMultiStatus)
 			fmt.Fprint(w, `<?xml version="1.0"?>
@@ -712,4 +716,36 @@ func TestChunkedUploads(t *testing.T) {
 			t.Errorf("chunks = %d, want 4", chunks)
 		}
 	})
+}
+
+// TestWebDAVUploadVerificationCatchesTruncation: a server that accepts
+// the PUT but stores a truncated/empty file must fail the upload loudly
+// (field report: an uploaded snapshot zip arrived empty and nobody knew).
+func TestWebDAVUploadVerificationCatchesTruncation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.WriteHeader(http.StatusCreated) // "fine!" — but stores nothing
+		case http.MethodHead:
+			w.Header().Set("Content-Length", "0")
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	svc, s := newTestService(t)
+	setCloudConfig(t, s, func(c *store.CloudConfig) {
+		c.Enabled = true
+		c.Provider = "webdav"
+		c.URL = server.URL + "/dav"
+	})
+
+	err := svc.Upload(writeTempZip(t, "real data that must arrive"), "game__main__snap_1.zip")
+	if err == nil {
+		t.Fatal("truncated upload was reported as success")
+	}
+	if !strings.Contains(err.Error(), "verification failed") {
+		t.Errorf("unexpected error: %v", err)
+	}
 }

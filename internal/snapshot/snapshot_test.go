@@ -3,6 +3,7 @@ package snapshot
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -307,5 +308,50 @@ func TestUploadHookFires(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("upload hook never fired")
+	}
+}
+
+// TestEmptySnapshotNeverMirrorsToCloud: a snapshot of an empty save dir
+// (usually a mis-tracked path) stays local with a loud warning and is
+// never uploaded — field report was an "empty backup" sitting silently
+// in a tester's WebDAV storage.
+func TestEmptySnapshotNeverMirrorsToCloud(t *testing.T) {
+	env := setup(t)
+
+	uploads := 0
+	env.mgr.OnUpload = func(zipPath, remoteName string) { uploads++ }
+	var warned string
+	env.mgr.Log = func(level, msg string) {
+		if level == "warn" {
+			warned = msg
+		}
+	}
+
+	// Save dir exists but holds nothing.
+	snap, err := env.mgr.Create("game1", "", true)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := os.Stat(snap.ZipPath); err != nil {
+		t.Fatalf("empty snapshot should still exist locally: %v", err)
+	}
+	if uploads != 0 {
+		t.Errorf("empty snapshot was mirrored to cloud (%d uploads)", uploads)
+	}
+	if warned == "" || !strings.Contains(warned, "no files") {
+		t.Errorf("expected a loud warning about the empty snapshot, got %q", warned)
+	}
+
+	// With real content the mirror fires again.
+	writeSave(t, env.saveDir, "slot1.sav", "actual progress")
+	if _, err := env.mgr.Create("game1", "", true); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for uploads == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if uploads != 1 {
+		t.Errorf("non-empty snapshot should mirror exactly once, got %d", uploads)
 	}
 }

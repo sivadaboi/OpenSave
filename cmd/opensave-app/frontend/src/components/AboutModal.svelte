@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { native } from '../lib/api.js';
   import { aboutChangelogOpen } from '../lib/stores.js';
-  import logoUrl from '../assets/logo.svg';
+  import logoUrl from '../assets/logo.png';
 
   export let onClose = () => {};
 
