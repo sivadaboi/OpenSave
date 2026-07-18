@@ -264,21 +264,43 @@
       </div>
 
       <div class="arch-panel">
-        <div class="arch-code">
-<pre>     Your Desktop                           Your Steam Deck
-   ┌──────────────┐                        ┌──────────────┐
-   │   watcher    │      LAN · direct      │   watcher    │
-   │  snapshots   │◀──────────────────────▶│  snapshots   │
-   │    delta     │                        │    delta     │
-   └──────┬───────┘                        └──────┬───────┘
-          │                                       │
-          └───────────────┐      ┌───────────────┘
-                          ▼      ▼
-                      ┌──────────────┐
-                      │    relay     │
-                      │  routes · ∅  │
-                      └──────────────┘
-            WAN · encrypted relay · never stores a save</pre>
+        <div class="arch-diagram">
+          <svg viewBox="0 0 680 396" role="img" aria-label="Two devices — your desktop and your Steam Deck — sync directly over the LAN, or across the internet through a stateless relay that stores nothing." xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+              </marker>
+            </defs>
+
+            <!-- device: desktop -->
+            <text class="d-title" x="160" y="34" text-anchor="middle">Your Desktop</text>
+            <rect class="d-box" x="52" y="46" width="216" height="118" rx="14"/>
+            <text class="d-row" x="160" y="84"  text-anchor="middle">watcher</text>
+            <text class="d-row" x="160" y="112" text-anchor="middle">snapshots</text>
+            <text class="d-row" x="160" y="140" text-anchor="middle">delta</text>
+
+            <!-- device: steam deck -->
+            <text class="d-title" x="520" y="34" text-anchor="middle">Your Steam Deck</text>
+            <rect class="d-box" x="412" y="46" width="216" height="118" rx="14"/>
+            <text class="d-row" x="520" y="84"  text-anchor="middle">watcher</text>
+            <text class="d-row" x="520" y="112" text-anchor="middle">snapshots</text>
+            <text class="d-row" x="520" y="140" text-anchor="middle">delta</text>
+
+            <!-- LAN direct link -->
+            <line class="wire" x1="276" y1="105" x2="404" y2="105" marker-start="url(#ah)" marker-end="url(#ah)"/>
+            <text class="wire-label" x="340" y="94" text-anchor="middle">LAN · direct</text>
+
+            <!-- WAN links to relay -->
+            <path class="wire" d="M160,164 V232 Q160,248 176,248 H300" fill="none" marker-end="url(#ah)"/>
+            <path class="wire" d="M520,164 V232 Q520,248 504,248 H380" fill="none" marker-end="url(#ah)"/>
+            <rect class="wan-chip" x="286" y="188" width="108" height="26" rx="13"/>
+            <text class="wire-label" x="340" y="205" text-anchor="middle">WAN · room code</text>
+
+            <!-- relay -->
+            <rect class="r-box" x="248" y="292" width="184" height="70" rx="14"/>
+            <text class="r-title" x="340" y="324" text-anchor="middle">relay</text>
+            <text class="r-sub" x="340" y="346" text-anchor="middle">routes only · stores nothing</text>
+          </svg>
         </div>
         <div class="arch-notes">
           <h3>Local-first by design</h3>

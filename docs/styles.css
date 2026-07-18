@@ -315,8 +315,17 @@ code {
 .how-step p { font-size: 13.5px; color: var(--text-secondary); }
 .how-arrow { display: flex; align-items: center; color: var(--accent); font-size: 22px; font-weight: 700; }
 
-.arch-panel { display: grid; grid-template-columns: 1.15fr 1fr; gap: 24px; align-items: center; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; }
-.arch-code pre { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5; color: var(--accent-hover); overflow-x: auto; }
+.arch-panel { display: grid; grid-template-columns: 1.15fr 1fr; gap: 32px; align-items: center; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; }
+.arch-diagram svg { width: 100%; height: auto; display: block; }
+.arch-diagram .d-box { fill: var(--bg); stroke: var(--border-strong); stroke-width: 1.5; }
+.arch-diagram .r-box { fill: var(--accent-soft); stroke: var(--accent-line); stroke-width: 1.5; }
+.arch-diagram .d-title { fill: var(--text); font-family: var(--font-display); font-size: 16px; font-weight: 600; }
+.arch-diagram .d-row { fill: var(--text-secondary); font-family: var(--font-mono); font-size: 14px; }
+.arch-diagram .r-title { fill: var(--text); font-family: var(--font-display); font-size: 17px; font-weight: 600; }
+.arch-diagram .r-sub { fill: var(--text-secondary); font-family: var(--font-sans); font-size: 12.5px; }
+.arch-diagram .wire { stroke: var(--accent); stroke-width: 2; }
+.arch-diagram .wire-label { fill: var(--accent-hover); font-family: var(--font-mono); font-size: 12.5px; }
+.arch-diagram .wan-chip { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1; }
 .arch-notes h3 { font-size: 20px; margin-bottom: 12px; }
 .arch-notes p { font-size: 14.5px; color: var(--text-secondary); margin-bottom: 12px; }
 .arch-notes strong { color: var(--text); }
