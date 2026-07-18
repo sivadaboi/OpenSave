@@ -3,6 +3,7 @@ package presets
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -209,5 +210,62 @@ func TestRenameKeepingSuffix(t *testing.T) {
 		if got := renameKeepingSuffix(c.old, c.base); got != c.want {
 			t.Errorf("renameKeepingSuffix(%q, %q) = %q, want %q", c.old, c.base, got, c.want)
 		}
+	}
+}
+
+// TestEmuDeckDetection: EmuDeck routes every emulator's saves into one
+// Emulation/saves tree (internal or SD card) — each emulator subfolder
+// must surface as its own tracked candidate. Reported missing by both a
+// Steam Deck tester and a Reddit user.
+func TestEmuDeckDetection(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+	for _, emu := range []string{"retroarch", "dolphin"} {
+		p := filepath.Join(home, "Emulation", "saves", emu)
+		if err := os.MkdirAll(p, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p, "save.srm"), []byte("x"), 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sc := &Scanner{CacheFile: filepath.Join(t.TempDir(), "cache.json"), GOOS: "linux", HomeDir: home}
+	found := sc.Scan(nil)
+
+	got := map[string]string{}
+	for _, d := range found {
+		if strings.HasPrefix(d.ID, "emudeck-") {
+			got[d.ID] = d.Name
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 EmuDeck discoveries, got %d: %v", len(got), got)
+	}
+	if got["emudeck-retroarch"] != "EmuDeck (retroarch)" {
+		t.Errorf("retroarch entry = %q", got["emudeck-retroarch"])
+	}
+	if got["emudeck-dolphin"] != "EmuDeck (dolphin)" {
+		t.Errorf("dolphin entry = %q", got["emudeck-dolphin"])
+	}
+}
+
+// TestPresetGlobPaths: SD-card style wildcard locations resolve through
+// filepath.Glob.
+func TestPresetGlobPaths(t *testing.T) {
+	home := t.TempDir()
+	target := filepath.Join(home, "run-media", "mmcblk0p1", "Emulation", "saves")
+	if err := os.MkdirAll(target, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	p := preset{ID: "glob-test", Name: "Glob", Type: "emulator", IsWrapper: true,
+		LinuxPath: []string{"~/run-media/*/Emulation/saves"}}
+	sc := &Scanner{GOOS: "linux", HomeDir: home}
+
+	paths := p.resolvedPaths(sc)
+	if len(paths) != 1 || paths[0] != target {
+		t.Fatalf("resolvedPaths = %v, want [%s]", paths, target)
 	}
 }

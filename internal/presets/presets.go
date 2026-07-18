@@ -55,6 +55,16 @@ var presetDefs = []preset{
 	{ID: "retroarch-saves", Name: "RetroArch Save Files", Type: "emulator", Path: "%APPDATA%/RetroArch/saves",
 		LinuxPath: []string{"~/.config/retroarch/saves", "~/.var/app/org.libretro.RetroArch/config/retroarch/saves"}},
 
+	// EmuDeck (Steam Deck & co.) relocates every emulator's saves into one
+	// tree: Emulation/saves/<emulator>. Internal storage plus SD card
+	// (SteamOS mounts cards under /run/media/<dev> or /run/media/deck/<label>).
+	{ID: "emudeck", Name: "EmuDeck", Type: "emulator", IsWrapper: true,
+		LinuxPath: []string{
+			"~/Emulation/saves",
+			"/run/media/*/Emulation/saves",
+			"/run/media/*/*/Emulation/saves",
+		}},
+
 	// Steam-emulator / repack wrappers (each subfolder = one game). These
 	// are Windows conventions; on Linux the same games run under Proton and
 	// their saves live in the compatdata prefix (see scanProtonCompat).
@@ -159,12 +169,23 @@ func resolveLinuxPath(p, homeOverride string) string {
 // candidate that exists). Non-existent paths are dropped by the caller.
 func (p preset) resolvedPaths(sc *Scanner) []string {
 	if sc.goos() == "windows" {
+		if p.Path == "" {
+			return nil // Linux-only preset (EmuDeck)
+		}
 		return []string{ResolvePath(p.Path)}
 	}
-	// Non-Windows: only presets with Linux locations apply.
+	// Non-Windows: only presets with Linux locations apply. A location may
+	// contain wildcards (SD-card mount points vary per device/label).
 	var out []string
 	for _, lp := range p.LinuxPath {
-		out = append(out, resolveLinuxPath(lp, sc.linuxHome()))
+		resolved := resolveLinuxPath(lp, sc.linuxHome())
+		if strings.ContainsAny(resolved, "*?[") {
+			if matches, err := filepath.Glob(resolved); err == nil {
+				out = append(out, matches...)
+			}
+			continue
+		}
+		out = append(out, resolved)
 	}
 	return out
 }

@@ -86,9 +86,16 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 					if wrapperSystemDirs[toLowerASCII(sub)] {
 						continue
 					}
+					// Repack wrappers hold one AppID folder per game;
+					// emulator wrappers (EmuDeck) hold one folder per
+					// emulator — name them accordingly.
+					name := fmt.Sprintf("%s - Game ID: %s", p.Name, sub)
+					if p.Type == "emulator" {
+						name = fmt.Sprintf("%s (%s)", p.Name, sub)
+					}
 					d := DiscoveredSave{
 						ID:       p.ID + "-" + sub,
-						Name:     fmt.Sprintf("%s - Game ID: %s", p.Name, sub),
+						Name:     name,
 						Type:     p.Type,
 						SavePath: filepath.Join(resolved, sub),
 					}
