@@ -3,43 +3,60 @@
 (function () {
   'use strict';
 
-  // Mobile nav toggle
+  // ---- Mobile nav toggle ----
   var toggle = document.getElementById('nav-toggle');
   var links = document.getElementById('nav-links');
   if (toggle && links) {
-    toggle.addEventListener('click', function () {
-      links.classList.toggle('open');
-    });
+    toggle.addEventListener('click', function () { links.classList.toggle('open'); });
     links.addEventListener('click', function (e) {
       if (e.target.tagName === 'A') links.classList.remove('open');
     });
   }
 
-  // Scroll-reveal for cards and sections
+  // ---- Scroll-reveal ----
   var revealables = document.querySelectorAll(
-    '.feature-card, .why-card, .how-step, .dl-card, .stat, .arch-panel, .oss-panel, .faq-item'
+    '.feature-card, .why-card, .how-step, .dl-card, .stat, .arch-panel, .oss-panel, .faq-item, .shot-card'
   );
   revealables.forEach(function (el) { el.classList.add('reveal'); });
-
   if ('IntersectionObserver' in window) {
     var io = new IntersectionObserver(
       function (entries) {
         entries.forEach(function (entry) {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('visible');
-            io.unobserve(entry.target);
-          }
+          if (entry.isIntersecting) { entry.target.classList.add('visible'); io.unobserve(entry.target); }
         });
       },
-      { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
+      { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
     );
     revealables.forEach(function (el) { io.observe(el); });
   } else {
     revealables.forEach(function (el) { el.classList.add('visible'); });
   }
 
-  // Point Windows/Linux download buttons at the exact latest release assets
-  // (best-effort; falls back to the releases page if the API is unavailable).
+  // ---- Screenshot lightbox ----
+  var lb = document.getElementById('lightbox');
+  var lbImg = document.getElementById('lightbox-img');
+  var lbClose = document.getElementById('lightbox-close');
+  if (lb && lbImg) {
+    document.querySelectorAll('[data-zoom] img').forEach(function (img) {
+      img.addEventListener('click', function () {
+        lbImg.src = img.currentSrc || img.src;
+        lbImg.alt = img.alt || '';
+        lb.classList.add('open');
+        lb.setAttribute('aria-hidden', 'false');
+      });
+    });
+    var close = function () {
+      lb.classList.remove('open');
+      lb.setAttribute('aria-hidden', 'true');
+      lbImg.src = '';
+    };
+    lb.addEventListener('click', function (e) { if (e.target === lb || e.target === lbImg) close(); });
+    if (lbClose) lbClose.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  }
+
+  // ---- Point download buttons at the exact latest release assets ----
+  // Best-effort; falls back to the releases page (already the href) on failure.
   var API = 'https://api.github.com/repos/sivadaboi/OpenSave/releases/latest';
   fetch(API)
     .then(function (r) { return r.ok ? r.json() : null; })
@@ -49,27 +66,32 @@
         var a = rel.assets.filter(function (x) { return test(x.name.toLowerCase()); })[0];
         return a && a.browser_download_url;
       };
-      var winUrl = find(function (n) { return n.indexOf('setup') !== -1 && n.slice(-4) === '.exe'; }) ||
-                   find(function (n) { return n.slice(-4) === '.exe'; });
-      var linuxUrl = find(function (n) { return n.indexOf('linux') !== -1 && n.indexOf('.tar') !== -1; });
+      // Windows: prefer the NSIS installer, else any non-CLI/relay exe.
+      var winUrl =
+        find(function (n) { return (n.indexOf('setup') !== -1 || n.indexOf('installer') !== -1) && n.slice(-4) === '.exe'; }) ||
+        find(function (n) { return n.slice(-4) === '.exe' && n.indexOf('cli') === -1 && n.indexOf('relay') === -1; });
+      // Linux: the app tarball (not the bare cli/relay binaries).
+      var linuxUrl =
+        find(function (n) { return n.indexOf('linux') !== -1 && n.indexOf('.tar') !== -1; }) ||
+        find(function (n) { return n.indexOf('.tar.gz') !== -1; });
 
-      document.querySelectorAll('a.btn-primary').forEach(function (a) {
-        var t = (a.textContent || '').toLowerCase();
-        if (winUrl && t.indexOf('windows') !== -1) a.href = winUrl;
-        if (linuxUrl && t.indexOf('linux') !== -1) a.href = linuxUrl;
+      document.querySelectorAll('a[data-dl]').forEach(function (a) {
+        var os = a.getAttribute('data-dl');
+        if (os === 'windows' && winUrl) a.href = winUrl;
+        if (os === 'linux' && linuxUrl) a.href = linuxUrl;
       });
 
-      // Show the live version in the hero eyebrow — but only once a 2.x
-      // (Go rewrite) release exists; older tags belong to the JS app.
-      var major = parseInt(String(rel.tag_name || '').replace(/^v/, ''), 10);
+      // Show the live version in the hero eyebrow — only for 2.x+ (Go) tags.
+      var tag = String(rel.tag_name || '');
+      var major = parseInt(tag.replace(/^v/, ''), 10);
       var eyebrow = document.querySelector('.hero-eyebrow');
-      if (eyebrow && rel.tag_name && major >= 2) {
+      if (eyebrow && tag && major >= 2) {
         eyebrow.childNodes.forEach(function (n) {
-          if (n.nodeType === 3 && n.textContent.indexOf('v2.0') !== -1) {
-            n.textContent = n.textContent.replace('v2.0', rel.tag_name);
+          if (n.nodeType === 3 && /v2\.\d/.test(n.textContent)) {
+            n.textContent = n.textContent.replace(/v2\.\d[\w.-]*/, tag);
           }
         });
       }
     })
-    .catch(function () { /* releases page fallback already in place */ });
+    .catch(function () { /* releases-page fallback already in the href */ });
 })();
