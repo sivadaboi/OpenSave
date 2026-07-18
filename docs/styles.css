@@ -343,7 +343,10 @@ code {
 .dl-os { font-size: 40px; margin-bottom: 14px; }
 .dl-card h3 { font-size: 21px; font-weight: 600; margin-bottom: 8px; }
 .dl-card p { font-size: 14px; color: var(--text-secondary); margin-bottom: 22px; flex: 1; }
-.dl-card .btn-primary { width: 100%; }
+.dl-card .btn-primary, .dl-card .btn-secondary { width: 100%; }
+.dl-choices { display: flex; gap: 10px; width: 100%; }
+.dl-choices .btn-primary, .dl-choices .btn-secondary { flex: 1; flex-direction: column; gap: 1px; padding: 11px 12px; line-height: 1.15; }
+.dl-sub { font-family: var(--font-sans); font-weight: 400; font-size: 11px; opacity: 0.72; }
 .dl-note { font-size: 12px; color: var(--text-dim); margin-top: 12px; font-family: var(--font-mono); }
 .dl-upgrade { text-align: center; margin-top: 34px; font-size: 14.5px; color: var(--text-secondary); max-width: 720px; margin-inline: auto; }
 .dl-upgrade strong { color: var(--text); }

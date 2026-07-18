@@ -66,19 +66,24 @@
         var a = rel.assets.filter(function (x) { return test(x.name.toLowerCase()); })[0];
         return a && a.browser_download_url;
       };
-      // Windows: prefer the NSIS installer, else any non-CLI/relay exe.
-      var winUrl =
-        find(function (n) { return (n.indexOf('setup') !== -1 || n.indexOf('installer') !== -1) && n.slice(-4) === '.exe'; }) ||
-        find(function (n) { return n.slice(-4) === '.exe' && n.indexOf('cli') === -1 && n.indexOf('relay') === -1; });
+      var isExe = function (n) { return n.slice(-4) === '.exe' && n.indexOf('cli') === -1 && n.indexOf('relay') === -1; };
+      // Windows installer (NSIS) vs portable exe.
+      var winInstaller = find(function (n) { return (n.indexOf('setup') !== -1 || n.indexOf('installer') !== -1) && isExe(n); });
+      var winPortable = find(function (n) { return isExe(n) && n.indexOf('setup') === -1 && n.indexOf('installer') === -1; });
       // Linux: the app tarball (not the bare cli/relay binaries).
       var linuxUrl =
         find(function (n) { return n.indexOf('linux') !== -1 && n.indexOf('.tar') !== -1; }) ||
         find(function (n) { return n.indexOf('.tar.gz') !== -1; });
 
+      var map = {
+        'windows': winInstaller || winPortable,   // generic CTAs -> installer
+        'windows-installer': winInstaller,
+        'windows-portable': winPortable,
+        'linux': linuxUrl
+      };
       document.querySelectorAll('a[data-dl]').forEach(function (a) {
-        var os = a.getAttribute('data-dl');
-        if (os === 'windows' && winUrl) a.href = winUrl;
-        if (os === 'linux' && linuxUrl) a.href = linuxUrl;
+        var url = map[a.getAttribute('data-dl')];
+        if (url) a.href = url;
       });
 
       // Show the live version in the hero eyebrow — only for 2.x+ (Go) tags.

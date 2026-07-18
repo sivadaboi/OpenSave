@@ -265,17 +265,20 @@
 
       <div class="arch-panel">
         <div class="arch-code">
-<pre>   Your Desktop                      Your Steam Deck
- ┌─────────────┐   LAN · auto-discovery  ┌─────────────┐
- │  watcher    │◀───────────────────────▶│  watcher    │
- │  snapshots  │                         │  snapshots  │
- │  delta      │      WAN · room code    │  delta      │
- └──────┬──────┘    (encrypted frames)   └──────┬──────┘
-        │             ┌───────────┐             │
-        └────────────▶│   relay   │◀────────────┘
-                      │ routes    │
-                      │ stores ∅  │
-                      └───────────┘</pre>
+<pre>     Your Desktop                           Your Steam Deck
+   ┌──────────────┐                        ┌──────────────┐
+   │   watcher    │      LAN · direct      │   watcher    │
+   │  snapshots   │◀──────────────────────▶│  snapshots   │
+   │    delta     │                        │    delta     │
+   └──────┬───────┘                        └──────┬───────┘
+          │                                       │
+          └───────────────┐      ┌───────────────┘
+                          ▼      ▼
+                      ┌──────────────┐
+                      │    relay     │
+                      │  routes · ∅  │
+                      └──────────────┘
+            WAN · encrypted relay · never stores a save</pre>
         </div>
         <div class="arch-notes">
           <h3>Local-first by design</h3>
@@ -344,9 +347,18 @@
         <div class="dl-card">
           <div class="dl-os">🪟</div>
           <h3>Windows</h3>
-          <p>Installer or portable exe. Runs in the tray, starts with Windows if you want it to.</p>
-          <a class="btn-primary" data-dl="windows" href="https://github.com/sivadaboi/OpenSave/releases/latest" target="_blank" rel="noopener">Download for Windows</a>
-          <span class="dl-note">OpenSave.Setup.exe · or portable OpenSave.exe</span>
+          <p>Runs in the tray, updates itself, and can start with Windows. Not sure? The installer's the easy choice.</p>
+          <div class="dl-choices">
+            <a class="btn-primary" data-dl="windows-installer" href="https://github.com/sivadaboi/OpenSave/releases/latest" target="_blank" rel="noopener">
+              Installer
+              <span class="dl-sub">recommended</span>
+            </a>
+            <a class="btn-secondary" data-dl="windows-portable" href="https://github.com/sivadaboi/OpenSave/releases/latest" target="_blank" rel="noopener">
+              Portable
+              <span class="dl-sub">no install</span>
+            </a>
+          </div>
+          <span class="dl-note">OpenSave.Setup.exe · OpenSave.exe</span>
         </div>
         <div class="dl-card">
           <div class="dl-os">🐧</div>
