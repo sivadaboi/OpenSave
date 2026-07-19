@@ -84,6 +84,10 @@
     if (!(await askConfirm(`Delete branch "${name}" and all its snapshots? Your current save and other branches aren't affected.`, { title: 'Delete branch?', confirmText: 'Delete', danger: true }))) return;
     run(`Deleted branch "${name}"`, () => api.del(`/api/games/${game.id}/branch/${encodeURIComponent(name)}`));
   }
+  async function deleteSnapshot(snap) {
+    if (!(await askConfirm(`Delete snapshot ${snap.id}? This can't be undone; your current save isn't affected.`, { title: 'Delete snapshot?', confirmText: 'Delete', danger: true }))) return;
+    run('Snapshot deleted', () => api.del(`/api/games/${game.id}/snapshot/${snap.id}`));
+  }
 
   async function browseSnapshot(snap) {
     try {
@@ -282,6 +286,7 @@
             <div class="snap-actions">
               <button class="btn small" on:click={() => browseSnapshot(snap)}>Browse files</button>
               <button class="btn small primary" disabled={busy} on:click={() => rollback(snap)}>Restore</button>
+              <button class="btn small danger" disabled={busy} on:click={() => deleteSnapshot(snap)}>Delete</button>
             </div>
           </div>
         {/each}

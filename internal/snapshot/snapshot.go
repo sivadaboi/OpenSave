@@ -249,6 +249,26 @@ func (m *Manager) PruneAllGames() (removed int, freed int64, err error) {
 	return removed, freed, nil
 }
 
+// DeleteSnapshot removes one snapshot (metadata row + its zip file) for a
+// game. Returns the bytes freed.
+func (m *Manager) DeleteSnapshot(gameID, snapshotID string) (freed int64, err error) {
+	snap, err := m.Store.GetSnapshot(snapshotID)
+	if err != nil {
+		return 0, err
+	}
+	if snap.GameID != gameID {
+		return 0, fmt.Errorf("snapshot %q does not belong to game %q", snapshotID, gameID)
+	}
+	if info, statErr := os.Stat(snap.ZipPath); statErr == nil {
+		freed = info.Size()
+	}
+	if err := m.Store.DeleteSnapshot(snapshotID); err != nil {
+		return 0, err
+	}
+	os.Remove(snap.ZipPath) // best-effort
+	return freed, nil
+}
+
 // DeleteBranch removes a branch entirely — every snapshot (metadata + zip)
 // and the branch row. Refuses the game's active branch. Returns snapshots
 // removed and bytes freed.

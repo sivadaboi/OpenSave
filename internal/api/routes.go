@@ -30,6 +30,7 @@ func (s *Server) routes(r chi.Router) {
 	r.Post("/api/games/{gameId}/rollback", s.handleRollback)
 	r.Get("/api/games/{gameId}/snapshot/{snapshotId}/files", s.handleSnapshotFiles)
 	r.Post("/api/games/{gameId}/snapshot/{snapshotId}/restore-file", s.handleRestoreFile)
+	r.Delete("/api/games/{gameId}/snapshot/{snapshotId}", s.handleDeleteSnapshot)
 
 	r.Post("/api/games/{gameId}/branch", s.handleCreateBranch)
 	r.Post("/api/games/{gameId}/branch/switch", s.handleSwitchBranch)
@@ -394,6 +395,20 @@ func (s *Server) handleSwitchBranch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.BroadcastGamesUpdate()
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+// handleDeleteSnapshot removes a single snapshot (metadata + zip).
+func (s *Server) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request) {
+	gameID := chi.URLParam(r, "gameId")
+	snapshotID := chi.URLParam(r, "snapshotId")
+	freed, err := s.Daemon.Snapshots.DeleteSnapshot(gameID, snapshotID)
+	if err != nil {
+		writeError(w, notFoundToStatus(err), err.Error())
+		return
+	}
+	s.Daemon.Log.Log("info", fmt.Sprintf("deleted snapshot %s (%.1f MB)", snapshotID, float64(freed)/(1<<20)))
+	s.BroadcastGamesUpdate()
+	writeJSON(w, http.StatusOK, map[string]any{"freedBytes": freed})
 }
 
 // handleDeleteBranch removes a branch and all its snapshots. The active
