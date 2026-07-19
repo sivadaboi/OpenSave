@@ -286,11 +286,13 @@
         </span>
       </div>
       <div class="field" style="margin-bottom: 0;">
-        <button class="btn" disabled={pruning} on:click={cleanUpSnapshots}>
-          {pruning ? 'Cleaning up…' : '🧹 Apply limit to all games & clean up now'}
-        </button>
+        <div>
+          <button class="btn small" disabled={pruning} on:click={cleanUpSnapshots}>
+            {pruning ? 'Cleaning up…' : '🧹 Clean up now'}
+          </button>
+        </div>
         <span class="hint">
-          Sets every existing game to the limit above and deletes snapshots beyond it across all
+          Applies the limit to every existing game and deletes snapshots beyond it across all
           branches — frees disk space immediately.
         </span>
       </div>
