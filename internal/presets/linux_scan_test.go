@@ -269,3 +269,42 @@ func TestPresetGlobPaths(t *testing.T) {
 		t.Fatalf("resolvedPaths = %v, want [%s]", paths, target)
 	}
 }
+
+// TestYuzuFamilyForks: the Yuzu-lineage Switch emulators (Suyu, Sudachi,
+// Citron, Eden) share Yuzu's nand/user/save layout under a fork-specific
+// config dir. All must be detected, not just Yuzu.
+func TestYuzuFamilyForks(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+
+	forks := map[string]string{
+		"yuzu": "Yuzu Switch Emulator", "suyu": "Suyu Switch Emulator",
+		"sudachi": "Sudachi Switch Emulator", "citron": "Citron Switch Emulator",
+		"eden": "Eden Switch Emulator",
+	}
+	for dir := range forks {
+		save := filepath.Join(home, ".local", "share", dir, "nand", "user", "save", "0000")
+		if err := os.MkdirAll(save, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(save, "save.bin"), []byte("x"), 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sc := &Scanner{CacheFile: filepath.Join(t.TempDir(), "cache.json"), GOOS: "linux", HomeDir: home}
+	found := sc.Scan(nil)
+
+	got := map[string]bool{}
+	for _, d := range found {
+		if name, ok := forks[d.ID]; ok && d.Name == name {
+			got[d.ID] = true
+		}
+	}
+	for id, name := range forks {
+		if !got[id] {
+			t.Errorf("%s (%q) not detected", id, name)
+		}
+	}
+}
