@@ -29,6 +29,8 @@ func (e *Engine) RegisterRoutes(r chi.Router) {
 	r.Group(func(r chi.Router) {
 		r.Use(e.requirePairedPeer)
 		r.Post("/api/p2p/unpair", e.handleUnpair)
+		r.Post("/api/p2p/untrack", e.handlePeerUntrack)
+		r.Post("/api/p2p/retrack", e.handlePeerRetrack)
 		r.Get("/api/p2p/manifest/{gameId}", e.handleManifest)
 		r.Post("/api/p2p/blocks/{gameId}", e.handleBlocks)
 		r.Post("/api/p2p/delete-file/{gameId}", e.handleDeleteFile)
@@ -208,6 +210,31 @@ func (e *Engine) handleUnpair(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = e.Store.UnpairPeer(body.PeerID)
 	e.notifyPeerUpdate()
+	jsonOK(w, map[string]any{"success": true})
+}
+
+// handlePeerUntrack / handlePeerRetrack mirror a paired peer's game op.
+func (e *Engine) handlePeerUntrack(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		GameID string `json:"gameId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.GameID == "" {
+		jsonError(w, http.StatusBadRequest, "gameId is required")
+		return
+	}
+	e.applyPeerUntrack(body.GameID)
+	jsonOK(w, map[string]any{"success": true})
+}
+
+func (e *Engine) handlePeerRetrack(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		GameID string `json:"gameId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.GameID == "" {
+		jsonError(w, http.StatusBadRequest, "gameId is required")
+		return
+	}
+	e.applyPeerRetrack(body.GameID)
 	jsonOK(w, map[string]any{"success": true})
 }
 

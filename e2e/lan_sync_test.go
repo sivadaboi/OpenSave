@@ -320,13 +320,11 @@ func TestUnpairNotifiesPeer(t *testing.T) {
 	}
 }
 
-// TestUntrackDoesNotBounceBack is the direct regression for "I untrack a
-// game and it comes right back". Untrack is a LOCAL decision: it must stay
-// untracked on A even though B still tracks it and keeps requesting A's
-// manifest (the tombstone blocks auto-re-create). B keeps its own copy —
-// untrack is NOT propagated. Re-tracking on A clears the tombstone and
-// resumes normal syncing.
-func TestUntrackDoesNotBounceBack(t *testing.T) {
+// TestUntrackPropagatesAndRecovers covers the full track/untrack lifecycle
+// across two devices: untracking on one removes it on both (propagation),
+// it does NOT bounce back, and re-tracking on one restores it on both
+// (retrack clears tombstones + sync-on-track re-populates).
+func TestUntrackPropagatesAndRecovers(t *testing.T) {
 	a := testutil.NewTestDaemon(t, "Untrack-A")
 	b := testutil.NewTestDaemon(t, "Untrack-B")
 	a.PairWith(b)
@@ -339,35 +337,42 @@ func TestUntrackDoesNotBounceBack(t *testing.T) {
 		t.Fatal("initial sync failed")
 	}
 
-	// A untracks the game.
+	// A untracks → propagates → B loses it too.
 	a.API(http.MethodDelete, "/api/games/"+gameID, nil, nil)
 	if _, err := a.Daemon.Store.GetGame(gameID); err == nil {
 		t.Fatal("game still tracked on A right after untrack")
 	}
-	// B keeps its copy — untrack is local, not propagated.
-	if _, err := b.Daemon.Store.GetGame(gameID); err != nil {
-		t.Error("B lost the game — untrack must not propagate destructively")
+	if !testutil.WaitFor(10*time.Second, func() bool {
+		_, err := b.Daemon.Store.GetGame(gameID)
+		return err != nil
+	}) {
+		t.Error("untrack did not propagate — B still tracks the game")
 	}
 
-	// B (still tracking) keeps syncing, which makes B request A's manifest.
-	// A must NOT auto-re-add it (the tombstone), so it stays gone on A and
-	// B's sync just reports the peer no longer has it — no bounce-back.
+	// No bounce-back: it stays gone on A across several sync ticks.
 	for i := 0; i < 3; i++ {
-		b.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
-		time.Sleep(400 * time.Millisecond)
+		a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+		time.Sleep(300 * time.Millisecond)
 	}
 	if _, err := a.Daemon.Store.GetGame(gameID); err == nil {
-		t.Fatal("game came back on A after untrack — tombstone/auto-track guard failed")
+		t.Fatal("game bounced back on A after untrack")
 	}
 
-	// Re-tracking explicitly must work (clears the tombstone) and sync again.
+	// Re-tracking on A restores it on BOTH (retrack clears B's tombstone,
+	// sync-on-track re-populates B).
 	a.WriteSave("slot1.sav", "re-tracked save")
 	newID := a.TrackGame("Untrack Game")
 	if _, err := a.Daemon.Store.GetGame(newID); err != nil {
 		t.Fatalf("re-tracking after untrack failed: %v", err)
 	}
-	a.API(http.MethodPost, "/api/games/"+newID+"/sync", nil, nil)
-	if !testutil.WaitFor(20*time.Second, func() bool { return b.ReadSave("slot1.sav") == "re-tracked save" }) {
-		t.Error("re-tracked game did not sync to B — recovery after untrack broken")
+	if !testutil.WaitFor(20*time.Second, func() bool {
+		g, err := b.Daemon.Store.GetGame(newID)
+		if err != nil {
+			return false
+		}
+		data, _ := os.ReadFile(filepath.Join(g.SavePath, "slot1.sav"))
+		return string(data) == "re-tracked save"
+	}) {
+		t.Error("re-tracked game did not come back on B — recovery broken")
 	}
 }

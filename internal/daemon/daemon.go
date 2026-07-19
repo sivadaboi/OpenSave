@@ -110,6 +110,10 @@ func New(opts Options) (*Daemon, error) {
 		opts:      opts,
 	}
 
+	// A paired peer untracking/re-tracking a game mirrors here.
+	d.P2P.OnUntrackRequest = d.untrackFromPeer
+	d.P2P.OnRetrackRequest = d.retrackFromPeer
+
 
 	// Every new snapshot mirrors to the configured cloud provider in the
 	// background; failures are logged, never fatal.
@@ -250,9 +254,12 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 	}
 	game.SavePath = abs
 
-	// Explicit (re)tracking overrides any earlier untrack: clear the
-	// tombstone so this game can auto-sync/auto-track normally again.
+	// Explicit (re)tracking overrides any earlier untrack: clear the local
+	// tombstone, and tell peers to clear theirs too so a peer that mirrored
+	// an earlier untrack will accept this game again (otherwise its
+	// tombstone would block the sync-on-track below).
 	_ = d.Store.ClearUntrackedTombstone(game.ID)
+	d.P2P.NotifyRetrack(game.ID)
 
 	game.AutoSync = true
 	if game.ActiveBranch == "" {
@@ -291,6 +298,17 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 		d.Log.Log("success", fmt.Sprintf("now tracking %q at %q", game.Name, game.SavePath))
 		if d.OnGameChanged != nil {
 			d.OnGameChanged(game.ID)
+		}
+		// Push the newly tracked game to paired peers so it shows up and
+		// syncs on their side too (they auto-track it from our manifest
+		// request) — without this it only reaches them on the next slow
+		// periodic reconcile. Honors the auto-sync-on-track setting.
+		if settings, err := d.Store.GetSettings(); err != nil || settings.AutoSyncOnTrack {
+			syncCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			if _, err := d.P2P.SyncGame(syncCtx, game.ID); err != nil {
+				d.Log.Log("info", fmt.Sprintf("initial peer sync for %q: %v", game.Name, err))
+			}
 		}
 	}()
 
@@ -461,16 +479,31 @@ func (d *Daemon) UntrackGame(gameID string) error {
 	if err := d.Store.DeleteGame(gameID); err != nil {
 		return err
 	}
-	// Untracking is a LOCAL decision: it stops tracking/syncing the game on
-	// THIS device only. It is deliberately NOT propagated to peers — a peer
-	// that still tracks the game keeps its own copy and snapshots, and just
-	// sees this device as no longer sharing it (handled gracefully, no retry
-	// spam). Propagating a destructive untrack surprised users and could
-	// wedge re-tracking. The tombstone below still prevents this device from
-	// auto-re-creating the game the instant a still-tracking peer asks for
-	// its manifest (the "it keeps coming back" bug).
+	// Tombstone stops this device from auto-re-creating the game when a
+	// still-tracking peer asks for its manifest (the "it keeps coming back"
+	// bounce). Propagate the untrack so it registers on paired devices too
+	// (they remove it and tombstone it). Re-tracking on any device clears
+	// the tombstones (NotifyRetrack) and re-shares via sync-on-track.
 	_ = d.Store.AddUntrackedTombstone(gameID)
-	// Stop the failsafe retry loop from chasing a game we no longer track.
 	d.P2P.ClearPendingResync(gameID)
+	d.P2P.NotifyUntrack(gameID)
 	return nil
+}
+
+// untrackFromPeer mirrors a peer's untrack: remove the game + tombstone it,
+// WITHOUT re-notifying (no loop).
+func (d *Daemon) untrackFromPeer(gameID string) {
+	d.Watcher.Unwatch(gameID)
+	if err := d.Store.DeleteGame(gameID); err != nil && err != store.ErrNotFound {
+		d.Log.Log("warn", fmt.Sprintf("untrack from peer: delete %q failed: %v", gameID, err))
+	}
+	_ = d.Store.AddUntrackedTombstone(gameID)
+	d.P2P.ClearPendingResync(gameID)
+	d.Log.Log("info", fmt.Sprintf("game %q untracked on a paired device", gameID))
+}
+
+// retrackFromPeer clears a tombstone a peer's re-track cleared, so this
+// device will accept the game again when the peer's sync-on-track arrives.
+func (d *Daemon) retrackFromPeer(gameID string) {
+	_ = d.Store.ClearUntrackedTombstone(gameID)
 }

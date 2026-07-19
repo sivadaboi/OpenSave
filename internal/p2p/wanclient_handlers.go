@@ -72,6 +72,21 @@ func (w *WanClient) handleMessage(ctx context.Context, msg RelayMessage) {
 			w.engine.notifyPeerUpdate()
 		}
 
+	case "untrack-notify":
+		if msg.From == localID || msg.GameID == "" {
+			return
+		}
+		if _, err := w.engine.Store.GetPeer(msg.From); err == nil {
+			w.engine.applyPeerUntrack(msg.GameID)
+		}
+
+	case "retrack-notify":
+		if msg.From == localID || msg.GameID == "" {
+			return
+		}
+		if _, err := w.engine.Store.GetPeer(msg.From); err == nil {
+			w.engine.applyPeerRetrack(msg.GameID)
+		}
 
 	case "sync-event":
 		var ev syncengine.ProgressEvent

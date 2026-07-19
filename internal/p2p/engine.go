@@ -57,6 +57,13 @@ type Engine struct {
 	// May be nil.
 	OnGamesUpdate func()
 
+	// OnUntrackRequest / OnRetrackRequest fire when a paired peer tells us it
+	// untracked or re-tracked a game, so this device mirrors the change
+	// (remove + tombstone / clear tombstone) without re-notifying. Wired by
+	// the daemon. May be nil.
+	OnUntrackRequest func(gameID string)
+	OnRetrackRequest func(gameID string)
+
 	// Failsafe: games whose last sync was interrupted (network error mid-
 	// transfer) are queued here and retried automatically, no prompt, until
 	// they complete.
@@ -557,6 +564,63 @@ func (e *Engine) ClearPendingResync(gameID string) {
 	e.pendingMu.Lock()
 	delete(e.pendingResync, gameID)
 	e.pendingMu.Unlock()
+}
+
+// NotifyUntrack / NotifyRetrack tell every paired peer that a game was
+// untracked / re-tracked here, so the change registers on their side too
+// (untrack removes it there; retrack clears their tombstone so a following
+// sync-on-track re-populates it). Best-effort and async — offline peers
+// miss it, which is fine: the sync engine handles a one-sided state
+// gracefully (peer_missing, no retry spam).
+func (e *Engine) NotifyUntrack(gameID string) { e.notifyPeersGameOp("untrack", gameID) }
+func (e *Engine) NotifyRetrack(gameID string) { e.notifyPeersGameOp("retrack", gameID) }
+
+func (e *Engine) notifyPeersGameOp(op, gameID string) {
+	peers, err := e.Store.ListPeers()
+	if err != nil {
+		return
+	}
+	settings, err := e.Store.GetSettings()
+	if err != nil {
+		return
+	}
+	for _, peer := range peers {
+		peer := peer
+		go func() {
+			if peer.Address == "relay" {
+				e.Wan.SendRelayMessage(RelayMessage{
+					Type: op + "-notify", To: peer.ID, From: settings.NodeID, GameID: gameID,
+				})
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			body, _ := json.Marshal(map[string]string{"peerId": settings.NodeID, "gameId": gameID})
+			url := fmt.Sprintf("http://%s:%d/api/p2p/%s", peer.Address, peer.Port, op)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+			if err != nil {
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				resp.Body.Close()
+			}
+		}()
+	}
+}
+
+// applyPeerUntrack / applyPeerRetrack mirror a peer's game op locally.
+func (e *Engine) applyPeerUntrack(gameID string) {
+	if e.OnUntrackRequest != nil {
+		e.OnUntrackRequest(gameID)
+	}
+	e.notifyGamesUpdate()
+}
+
+func (e *Engine) applyPeerRetrack(gameID string) {
+	if e.OnRetrackRequest != nil {
+		e.OnRetrackRequest(gameID)
+	}
 }
 
 func (e *Engine) notifyPeerUpdate() {
