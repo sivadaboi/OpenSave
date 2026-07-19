@@ -33,6 +33,7 @@ func (s *Server) routes(r chi.Router) {
 
 	r.Post("/api/games/{gameId}/branch", s.handleCreateBranch)
 	r.Post("/api/games/{gameId}/branch/switch", s.handleSwitchBranch)
+	r.Delete("/api/games/{gameId}/branch/{branch}", s.handleDeleteBranch)
 	r.Post("/api/games/{gameId}/launch", s.handleLaunchGame)
 
 	r.Post("/api/backup/export", s.handleBackupExport)
@@ -393,6 +394,30 @@ func (s *Server) handleSwitchBranch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.BroadcastGamesUpdate()
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+// handleDeleteBranch removes a branch and all its snapshots. The active
+// branch and "main" can't be deleted.
+func (s *Server) handleDeleteBranch(w http.ResponseWriter, r *http.Request) {
+	gameID := chi.URLParam(r, "gameId")
+	branch := chi.URLParam(r, "branch")
+	if branch == "main" {
+		writeError(w, http.StatusBadRequest, "the main branch can't be deleted")
+		return
+	}
+	game, err := s.Daemon.Store.GetGame(gameID)
+	if err != nil {
+		writeError(w, notFoundToStatus(err), err.Error())
+		return
+	}
+	if branch == game.ActiveBranch {
+		writeError(w, http.StatusBadRequest, "switch to another branch before deleting this one")
+		return
+	}
+	removed, freed := s.Daemon.Snapshots.DeleteBranch(gameID, branch)
+	s.Daemon.Log.Log("info", fmt.Sprintf("deleted branch %q of %q (%d snapshot(s), %.1f MB)", branch, game.Name, removed, float64(freed)/(1<<20)))
+	s.BroadcastGamesUpdate()
+	writeJSON(w, http.StatusOK, map[string]any{"removed": removed, "freedBytes": freed})
 }
 
 func (s *Server) handlePresetScan(w http.ResponseWriter, r *http.Request) {

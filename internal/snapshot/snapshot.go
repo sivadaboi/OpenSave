@@ -218,8 +218,11 @@ func (m *Manager) pruneGameAllBranches(game store.Game) (removed int, freed int6
 }
 
 // PruneAllGames applies each game's retention limit across all its
-// branches immediately — the "clean up old snapshots now" action.
-// Returns the total snapshots removed and bytes freed.
+// branches immediately — the "clean up old snapshots now" action. It also
+// sweeps abandoned conflict-* branches (non-active leftovers, chiefly from
+// resolved "keep both" conflicts), whose snapshots the per-branch limit
+// never touches because each branch stays under it. Returns the total
+// snapshots removed and bytes freed.
 func (m *Manager) PruneAllGames() (removed int, freed int64, err error) {
 	games, err := m.Store.ListGames()
 	if err != nil {
@@ -229,8 +232,50 @@ func (m *Manager) PruneAllGames() (removed int, freed int64, err error) {
 		r, f := m.pruneGameAllBranches(game)
 		removed += r
 		freed += f
+
+		branches, bErr := m.Store.ListBranches(game.ID)
+		if bErr != nil {
+			continue
+		}
+		for _, branch := range branches {
+			if branch == game.ActiveBranch || !strings.HasPrefix(branch, "conflict-") {
+				continue
+			}
+			r, f := m.DeleteBranch(game.ID, branch)
+			removed += r
+			freed += f
+		}
 	}
 	return removed, freed, nil
+}
+
+// DeleteBranch removes a branch entirely — every snapshot (metadata + zip)
+// and the branch row. Refuses the game's active branch. Returns snapshots
+// removed and bytes freed.
+func (m *Manager) DeleteBranch(gameID, branch string) (removed int, freed int64) {
+	game, err := m.Store.GetGame(gameID)
+	if err != nil {
+		return 0, 0
+	}
+	if branch == game.ActiveBranch {
+		return 0, 0 // never delete the branch currently in play
+	}
+	snaps, err := m.Store.ListSnapshots(gameID, branch)
+	if err != nil {
+		return 0, 0
+	}
+	for _, snap := range snaps {
+		if err := m.Store.DeleteSnapshot(snap.ID); err != nil {
+			continue
+		}
+		if info, statErr := os.Stat(snap.ZipPath); statErr == nil {
+			freed += info.Size()
+		}
+		os.Remove(snap.ZipPath)
+		removed++
+	}
+	_ = m.Store.DeleteBranchRow(gameID, branch)
+	return removed, freed
 }
 
 // Restore extracts the given snapshot over the game's save path, taking a

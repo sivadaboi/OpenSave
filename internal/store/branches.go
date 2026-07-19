@@ -20,6 +20,16 @@ func (s *Store) ListBranches(gameID string) ([]string, error) {
 	return names, nil
 }
 
+// DeleteBranchRow removes a branch's row (its snapshots are deleted
+// separately by the snapshot manager so the zip files go too).
+func (s *Store) DeleteBranchRow(gameID, name string) error {
+	_, err := s.db.Exec(`DELETE FROM branches WHERE game_id = ? AND name = ?`, gameID, name)
+	if err != nil {
+		return fmt.Errorf("delete branch %s/%s: %w", gameID, name, err)
+	}
+	return nil
+}
+
 // SwitchActiveBranch updates a game's active_branch pointer. Callers are
 // responsible for the filesystem side (auto-snapshotting the outgoing
 // branch, clearing the save folder, restoring the incoming branch's latest

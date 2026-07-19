@@ -410,3 +410,49 @@ func TestPruneAllBranches(t *testing.T) {
 		}
 	}
 }
+
+// TestCleanupSweepsAbandonedConflictBranches reproduces the real report:
+// a game with many conflict-* branches, each UNDER the per-branch limit,
+// so per-branch pruning finds nothing — yet the branches are junk from
+// resolved conflicts and should be swept by the cleanup action.
+func TestCleanupSweepsAbandonedConflictBranches(t *testing.T) {
+	env := setup(t)
+	g, _ := env.store.GetGame("game1")
+	g.MaxSnapshots = 10
+	_ = env.store.UpdateGame(g)
+
+	writeSave(t, env.saveDir, "slot.sav", "main-state")
+	if _, err := env.mgr.Create("game1", "", true); err != nil {
+		t.Fatal(err)
+	}
+	// Three abandoned conflict branches, 2 snapshots each (all < limit 10).
+	for _, b := range []string{"conflict-omar-1111", "conflict-omar-2222", "conflict-omar-3333"} {
+		if _, err := env.mgr.CreateBranch("game1", b); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 2; i++ {
+			env.store.CreateSnapshot(store.Snapshot{
+				ID: b + "-snap" + string(rune('0'+i)), GameID: "game1", BranchName: b,
+				Timestamp: "2026-01-01T00:00:00.000Z", ZipPath: filepath.Join(env.backups, "x.zip"),
+			})
+		}
+	}
+
+	removed, _, err := env.mgr.PruneAllGames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 6 { // 3 branches * 2 snapshots
+		t.Errorf("cleanup removed %d, want 6 (the abandoned conflict-branch snapshots)", removed)
+	}
+	// The active branch (main) and its snapshot must survive.
+	remaining, _ := env.store.ListBranches("game1")
+	for _, b := range remaining {
+		if strings.HasPrefix(b, "conflict-") {
+			t.Errorf("abandoned conflict branch %q was not swept", b)
+		}
+	}
+	if snaps, _ := env.store.ListSnapshots("game1", "main"); len(snaps) != 1 {
+		t.Errorf("main branch lost its snapshot: %d remain", len(snaps))
+	}
+}
