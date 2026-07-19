@@ -51,7 +51,7 @@ func (s *Store) CreateGame(g Game) error {
 		g.ActiveBranch = "main"
 	}
 	if g.MaxSnapshots == 0 {
-		g.MaxSnapshots = 5
+		g.MaxSnapshots = 20
 	}
 
 	tx, err := s.db.Beginx()

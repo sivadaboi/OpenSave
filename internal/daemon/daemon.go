@@ -260,7 +260,7 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 	}
 	if game.MaxSnapshots == 0 {
 		// Inherit the global default retention limit.
-		game.MaxSnapshots = 5
+		game.MaxSnapshots = 20
 		if s, err := d.Store.GetSettings(); err == nil && s.DefaultMaxSnapshots > 0 {
 			game.MaxSnapshots = s.DefaultMaxSnapshots
 		}
