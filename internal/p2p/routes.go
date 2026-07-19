@@ -29,6 +29,7 @@ func (e *Engine) RegisterRoutes(r chi.Router) {
 	r.Group(func(r chi.Router) {
 		r.Use(e.requirePairedPeer)
 		r.Post("/api/p2p/unpair", e.handleUnpair)
+		r.Post("/api/p2p/untrack", e.handleUntrack)
 		r.Get("/api/p2p/manifest/{gameId}", e.handleManifest)
 		r.Post("/api/p2p/blocks/{gameId}", e.handleBlocks)
 		r.Post("/api/p2p/delete-file/{gameId}", e.handleDeleteFile)
@@ -211,6 +212,21 @@ func (e *Engine) handleUnpair(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{"success": true})
 }
 
+// handleUntrack applies an untrack a paired peer performed: remove the
+// game here too and tombstone it, so it doesn't bounce back.
+func (e *Engine) handleUntrack(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PeerID string `json:"peerId"`
+		GameID string `json:"gameId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.GameID == "" {
+		jsonError(w, http.StatusBadRequest, "gameId is required")
+		return
+	}
+	e.applyPeerUntrack(body.GameID)
+	jsonOK(w, map[string]any{"success": true})
+}
+
 // manifestGameQuery is what a peer's manifest request tells us about the
 // game, used for auto-tracking and cover backfill.
 type manifestGameQuery struct {
@@ -254,6 +270,12 @@ func (e *Engine) ensureManifestGame(gameID string, q manifestGameQuery) (store.G
 	}
 
 	if q.Name == "" || q.SavePath == "" {
+		return store.Game{}, fmt.Errorf("Game not found.")
+	}
+	// The user deliberately untracked this game here — do NOT auto-recreate
+	// it just because a peer that still tracks it asked for its manifest.
+	// Re-tracking it explicitly clears the tombstone.
+	if e.Store.IsUntracked(gameID) {
 		return store.Game{}, fmt.Errorf("Game not found.")
 	}
 	settings, sErr := e.Store.GetSettings()

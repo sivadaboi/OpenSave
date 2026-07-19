@@ -110,6 +110,10 @@ func New(opts Options) (*Daemon, error) {
 		opts:      opts,
 	}
 
+	// A paired peer untracking a game removes it here too (watcher stop +
+	// tombstone), so the untrack is mutual and doesn't bounce back.
+	d.P2P.OnUntrackRequest = d.untrackFromPeer
+
 	// Every new snapshot mirrors to the configured cloud provider in the
 	// background; failures are logged, never fatal.
 	snaps.OnUpload = func(zipPath, remoteFileName string) {
@@ -248,6 +252,10 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 		return store.Game{}, err
 	}
 	game.SavePath = abs
+
+	// Explicit (re)tracking overrides any earlier untrack: clear the
+	// tombstone so this game can auto-sync/auto-track normally again.
+	_ = d.Store.ClearUntrackedTombstone(game.ID)
 
 	game.AutoSync = true
 	if game.ActiveBranch == "" {
@@ -449,5 +457,26 @@ func snapIDToTimestamp(snapID string) string {
 // is removed — same as the JS app.
 func (d *Daemon) UntrackGame(gameID string) error {
 	d.Watcher.Unwatch(gameID)
-	return d.Store.DeleteGame(gameID)
+	if err := d.Store.DeleteGame(gameID); err != nil {
+		return err
+	}
+	// Durably remember the untrack so a peer that still tracks the game
+	// can't auto-re-create it here (the "it keeps coming back" bug), and
+	// proactively tell paired peers so the untrack registers on their side
+	// too instead of them re-sharing it right back.
+	_ = d.Store.AddUntrackedTombstone(gameID)
+	d.P2P.NotifyUntrack(gameID)
+	return nil
+}
+
+// untrackFromPeer applies an untrack a peer told us about: it removes the
+// game locally and tombstones it, WITHOUT notifying peers back (avoids a
+// notification loop).
+func (d *Daemon) untrackFromPeer(gameID string) {
+	d.Watcher.Unwatch(gameID)
+	if err := d.Store.DeleteGame(gameID); err != nil && err != store.ErrNotFound {
+		d.Log.Log("warn", fmt.Sprintf("untrack from peer: delete %q failed: %v", gameID, err))
+	}
+	_ = d.Store.AddUntrackedTombstone(gameID)
+	d.Log.Log("info", fmt.Sprintf("game %q untracked by a paired device", gameID))
 }

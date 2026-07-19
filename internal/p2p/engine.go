@@ -57,6 +57,11 @@ type Engine struct {
 	// May be nil.
 	OnGamesUpdate func()
 
+	// OnUntrackRequest fires when a paired peer tells us it untracked a
+	// game, so this device removes it locally too (without re-notifying).
+	// Wired by the daemon to its untrack-from-peer handler. May be nil.
+	OnUntrackRequest func(gameID string)
+
 	// Failsafe: games whose last sync was interrupted (network error mid-
 	// transfer) are queued here and retried automatically, no prompt, until
 	// they complete.
@@ -549,6 +554,52 @@ func (e *Engine) Unpair(peerID string) error {
 		}()
 	}
 	return nil
+}
+
+// NotifyUntrack tells every paired peer that a game was untracked here, so
+// the untrack registers on their side and they stop re-sharing it back.
+// Best-effort and async (peers may be offline); the tombstone on this
+// device already blocks any racing auto-re-track locally.
+func (e *Engine) NotifyUntrack(gameID string) {
+	peers, err := e.Store.ListPeers()
+	if err != nil {
+		return
+	}
+	settings, err := e.Store.GetSettings()
+	if err != nil {
+		return
+	}
+	for _, peer := range peers {
+		peer := peer
+		go func() {
+			if peer.Address == "relay" {
+				e.Wan.SendRelayMessage(RelayMessage{
+					Type: "untrack-notify", To: peer.ID, From: settings.NodeID, GameID: gameID,
+				})
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			body, _ := json.Marshal(map[string]string{"peerId": settings.NodeID, "gameId": gameID})
+			url := fmt.Sprintf("http://%s:%d/api/p2p/untrack", peer.Address, peer.Port)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+			if err != nil {
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if resp, err := http.DefaultClient.Do(req); err == nil {
+				resp.Body.Close()
+			}
+		}()
+	}
+}
+
+// applyPeerUntrack removes a game a peer untracked and refreshes the UI.
+func (e *Engine) applyPeerUntrack(gameID string) {
+	if e.OnUntrackRequest != nil {
+		e.OnUntrackRequest(gameID)
+	}
+	e.notifyGamesUpdate()
 }
 
 func (e *Engine) notifyPeerUpdate() {

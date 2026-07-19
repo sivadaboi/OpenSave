@@ -319,3 +319,56 @@ func TestUnpairNotifiesPeer(t *testing.T) {
 		t.Fatal("B never learned about A's unpair — ghost pairing persists")
 	}
 }
+
+// TestUntrackDoesNotBounceBack is the direct regression for "I untrack a
+// game and it comes right back": untracking on A must (1) stay untracked
+// on A even though B still tracks it and keeps syncing, and (2) register
+// on B so B drops it too.
+func TestUntrackDoesNotBounceBack(t *testing.T) {
+	a := testutil.NewTestDaemon(t, "Untrack-A")
+	b := testutil.NewTestDaemon(t, "Untrack-B")
+	a.PairWith(b)
+
+	a.WriteSave("slot1.sav", "shared save")
+	gameID := a.TrackGame("Untrack Game")
+	b.API(http.MethodPost, "/api/games", map[string]string{"name": "Untrack Game", "savePath": b.SaveDir}, nil)
+	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+	if !testutil.WaitFor(30*time.Second, func() bool { return b.ReadSave("slot1.sav") == "shared save" }) {
+		t.Fatal("initial sync failed")
+	}
+
+	// A untracks the game.
+	a.API(http.MethodDelete, "/api/games/"+gameID, nil, nil)
+	if _, err := a.Daemon.Store.GetGame(gameID); err == nil {
+		t.Fatal("game still tracked on A right after untrack")
+	}
+
+	// B must learn about the untrack and drop it too.
+	if !testutil.WaitFor(10*time.Second, func() bool {
+		_, err := b.Daemon.Store.GetGame(gameID)
+		return err != nil
+	}) {
+		t.Error("B never registered A's untrack — it still tracks the game")
+	}
+
+	// Now the bounce-back path: B re-tracks the game and syncs, which makes
+	// B request A's manifest. A must NOT auto-re-add it (the tombstone), so
+	// the game stays gone on A.
+	if st := b.APIStatus(http.MethodPost, "/api/games", map[string]string{"name": "Untrack Game", "savePath": b.SaveDir}, nil); st != 200 {
+		t.Fatalf("B re-track returned %d", st)
+	}
+	for i := 0; i < 3; i++ {
+		b.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+		time.Sleep(400 * time.Millisecond)
+	}
+	if _, err := a.Daemon.Store.GetGame(gameID); err == nil {
+		t.Fatal("game came back on A after untrack — tombstone/auto-track guard failed")
+	}
+
+	// Re-tracking explicitly must work (clears the tombstone).
+	a.WriteSave("slot1.sav", "shared save")
+	newID := a.TrackGame("Untrack Game")
+	if _, err := a.Daemon.Store.GetGame(newID); err != nil {
+		t.Errorf("re-tracking after untrack failed: %v", err)
+	}
+}

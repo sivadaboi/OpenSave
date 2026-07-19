@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var (
@@ -138,6 +139,33 @@ func (s *Store) DeleteGame(id string) error {
 		return fmt.Errorf("delete game %s: %w", id, err)
 	}
 	return checkRowAffected(res)
+}
+
+// AddUntrackedTombstone records that a game was deliberately untracked, so
+// a peer that still tracks it can't silently auto-re-create it here.
+func (s *Store) AddUntrackedTombstone(gameID string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO untracked_games (game_id, untracked_at_ms) VALUES (?, ?)
+		 ON CONFLICT(game_id) DO UPDATE SET untracked_at_ms = excluded.untracked_at_ms`,
+		gameID, time.Now().UnixMilli())
+	if err != nil {
+		return fmt.Errorf("add untracked tombstone %s: %w", gameID, err)
+	}
+	return nil
+}
+
+// IsUntracked reports whether a game id carries an untrack tombstone.
+func (s *Store) IsUntracked(gameID string) bool {
+	var one int
+	err := s.db.Get(&one, `SELECT 1 FROM untracked_games WHERE game_id = ?`, gameID)
+	return err == nil
+}
+
+// ClearUntrackedTombstone removes the tombstone (called when the user
+// explicitly re-tracks the game).
+func (s *Store) ClearUntrackedTombstone(gameID string) error {
+	_, err := s.db.Exec(`DELETE FROM untracked_games WHERE game_id = ?`, gameID)
+	return err
 }
 
 func checkRowAffected(res sql.Result) error {
