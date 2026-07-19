@@ -110,9 +110,6 @@ func New(opts Options) (*Daemon, error) {
 		opts:      opts,
 	}
 
-	// A paired peer untracking a game removes it here too (watcher stop +
-	// tombstone), so the untrack is mutual and doesn't bounce back.
-	d.P2P.OnUntrackRequest = d.untrackFromPeer
 
 	// Every new snapshot mirrors to the configured cloud provider in the
 	// background; failures are logged, never fatal.
@@ -464,23 +461,16 @@ func (d *Daemon) UntrackGame(gameID string) error {
 	if err := d.Store.DeleteGame(gameID); err != nil {
 		return err
 	}
-	// Durably remember the untrack so a peer that still tracks the game
-	// can't auto-re-create it here (the "it keeps coming back" bug), and
-	// proactively tell paired peers so the untrack registers on their side
-	// too instead of them re-sharing it right back.
+	// Untracking is a LOCAL decision: it stops tracking/syncing the game on
+	// THIS device only. It is deliberately NOT propagated to peers — a peer
+	// that still tracks the game keeps its own copy and snapshots, and just
+	// sees this device as no longer sharing it (handled gracefully, no retry
+	// spam). Propagating a destructive untrack surprised users and could
+	// wedge re-tracking. The tombstone below still prevents this device from
+	// auto-re-creating the game the instant a still-tracking peer asks for
+	// its manifest (the "it keeps coming back" bug).
 	_ = d.Store.AddUntrackedTombstone(gameID)
-	d.P2P.NotifyUntrack(gameID)
+	// Stop the failsafe retry loop from chasing a game we no longer track.
+	d.P2P.ClearPendingResync(gameID)
 	return nil
-}
-
-// untrackFromPeer applies an untrack a peer told us about: it removes the
-// game locally and tombstones it, WITHOUT notifying peers back (avoids a
-// notification loop).
-func (d *Daemon) untrackFromPeer(gameID string) {
-	d.Watcher.Unwatch(gameID)
-	if err := d.Store.DeleteGame(gameID); err != nil && err != store.ErrNotFound {
-		d.Log.Log("warn", fmt.Sprintf("untrack from peer: delete %q failed: %v", gameID, err))
-	}
-	_ = d.Store.AddUntrackedTombstone(gameID)
-	d.Log.Log("info", fmt.Sprintf("game %q untracked by a paired device", gameID))
 }

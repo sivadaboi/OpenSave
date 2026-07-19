@@ -72,14 +72,6 @@ func (w *WanClient) handleMessage(ctx context.Context, msg RelayMessage) {
 			w.engine.notifyPeerUpdate()
 		}
 
-	case "untrack-notify":
-		if msg.From == localID || msg.GameID == "" {
-			return
-		}
-		// Only honor it from a device we're actually paired with.
-		if _, err := w.engine.Store.GetPeer(msg.From); err == nil {
-			w.engine.applyPeerUntrack(msg.GameID)
-		}
 
 	case "sync-event":
 		var ev syncengine.ProgressEvent

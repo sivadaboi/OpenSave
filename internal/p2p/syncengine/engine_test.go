@@ -2,6 +2,7 @@ package syncengine
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,7 @@ type fakeTransport struct {
 	remoteDir    string
 	remoteBranch string
 	latestSnap   *SnapshotInfo
+	manifestErr  error // when set, FetchManifest returns it (peer-missing sim)
 
 	deletedOnPeer []string
 	pullTriggers  int
@@ -28,6 +30,9 @@ type fakeTransport struct {
 }
 
 func (f *fakeTransport) FetchManifest(ctx context.Context, peer Peer, gameID string, q ManifestQuery) (ManifestResponse, error) {
+	if f.manifestErr != nil {
+		return ManifestResponse{}, f.manifestErr
+	}
 	m, err := delta.BuildManifest(f.remoteDir)
 	if err != nil {
 		return ManifestResponse{}, err
@@ -593,5 +598,29 @@ func TestLineageSurvivesMidSyncDeletion(t *testing.T) {
 	}
 	if !got["save.dat"] {
 		t.Error("stable file missing from lineage")
+	}
+}
+
+// TestSyncPeerMissingGame: when a peer isn't tracking the game (its
+// manifest fetch returns "not found"), the sync must resolve to
+// "peer_missing" — NOT an error — so the failsafe retry loop stops
+// hammering it every tick (the "Game not found" log-spam report).
+func TestSyncPeerMissingGame(t *testing.T) {
+	env := setupEngine(t)
+	write(t, env.localDir, "save.dat", "local only")
+	env.transport.manifestErr = errors.New("Game not found.")
+
+	res, err := env.engine.SyncWithPeer(context.Background(), "game1", env.peer)
+	if err != nil {
+		t.Fatalf("peer-missing sync should not error, got %v", err)
+	}
+	if res.Status != "peer_missing" {
+		t.Fatalf("status = %q, want peer_missing", res.Status)
+	}
+
+	// A generic transport error is still a real error (retryable).
+	env.transport.manifestErr = errors.New("connection reset")
+	if _, err := env.engine.SyncWithPeer(context.Background(), "game1", env.peer); err == nil {
+		t.Error("a genuine transport failure must still surface as an error")
 	}
 }
