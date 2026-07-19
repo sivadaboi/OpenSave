@@ -355,3 +355,58 @@ func TestEmptySnapshotNeverMirrorsToCloud(t *testing.T) {
 		t.Errorf("non-empty snapshot should mirror exactly once, got %d", uploads)
 	}
 }
+
+// TestPruneAllBranches: retention must clean EVERY branch, not just the
+// active one — conflict-* and manual branches otherwise pile up snapshots
+// forever (a real disk-filler behind "my system is full of snapshots").
+func TestPruneAllBranches(t *testing.T) {
+	env := setup(t)
+	// Limit 2 per branch.
+	g, _ := env.store.GetGame("game1")
+	g.MaxSnapshots = 2
+	_ = env.store.UpdateGame(g)
+
+	// main branch: 4 snapshots.
+	for i := 0; i < 4; i++ {
+		writeSave(t, env.saveDir, "slot.sav", string(rune('a'+i)))
+		if _, err := env.mgr.Create("game1", "", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// a side branch with its own snapshots (simulating a conflict branch).
+	if _, err := env.mgr.CreateBranch("game1", "side"); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.mgr.SwitchBranch("game1", "side"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		writeSave(t, env.saveDir, "slot.sav", string(rune('m'+i)))
+		if _, err := env.mgr.Create("game1", "", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The active branch (side) auto-pruned during Create; now prune all.
+	removed, freed, err := env.mgr.PruneAllGames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = removed
+	_ = freed
+
+	for _, branch := range []string{"main", "side"} {
+		snaps, err := env.store.ListSnapshots("game1", branch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(snaps) != 2 {
+			t.Errorf("branch %q has %d snapshots after prune, want 2 (limit)", branch, len(snaps))
+		}
+		for _, s := range snaps {
+			if _, err := os.Stat(s.ZipPath); err != nil {
+				t.Errorf("kept snapshot %s has no zip: %v", s.ID, err)
+			}
+		}
+	}
+}

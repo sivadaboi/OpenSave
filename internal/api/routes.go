@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -36,6 +37,8 @@ func (s *Server) routes(r chi.Router) {
 
 	r.Post("/api/backup/export", s.handleBackupExport)
 	r.Post("/api/backup/restore", s.handleBackupRestore)
+
+	r.Post("/api/snapshots/prune", s.handlePruneSnapshots)
 
 	r.Get("/api/presets/scan", s.handlePresetScan)
 
@@ -191,6 +194,46 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 
 func (s *Server) handleListGames(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.gamesPayload())
+}
+
+// handlePruneSnapshots cleans up old snapshots across all games and every
+// branch. With applyDefaultToAll, it first sets every game's retention
+// limit to the global default (so the cleanup uses the new limit). Returns
+// how many snapshots were removed and the disk space freed.
+func (s *Server) handlePruneSnapshots(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ApplyDefaultToAll bool `json:"applyDefaultToAll"`
+	}
+	_ = readJSON(r, &body)
+
+	if body.ApplyDefaultToAll {
+		settings, err := s.Daemon.Store.GetSettings()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		limit := settings.DefaultMaxSnapshots
+		games, err := s.Daemon.Store.ListGames()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, g := range games {
+			if g.MaxSnapshots != limit {
+				g.MaxSnapshots = limit
+				_ = s.Daemon.Store.UpdateGame(g)
+			}
+		}
+	}
+
+	removed, freed, err := s.Daemon.Snapshots.PruneAllGames()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.Daemon.Log.Log("success", fmt.Sprintf("snapshot cleanup: removed %d snapshot(s), freed %.1f MB", removed, float64(freed)/(1<<20)))
+	s.BroadcastGamesUpdate()
+	writeJSON(w, http.StatusOK, map[string]any{"removed": removed, "freedBytes": freed})
 }
 
 func (s *Server) handleTrackGame(w http.ResponseWriter, r *http.Request) {

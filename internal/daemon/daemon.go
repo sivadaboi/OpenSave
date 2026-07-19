@@ -262,7 +262,11 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 		game.ActiveBranch = "main"
 	}
 	if game.MaxSnapshots == 0 {
+		// Inherit the global default retention limit.
 		game.MaxSnapshots = 5
+		if s, err := d.Store.GetSettings(); err == nil && s.DefaultMaxSnapshots > 0 {
+			game.MaxSnapshots = s.DefaultMaxSnapshots
+		}
 	}
 	if game.CoverURL == "" {
 		game.CoverURL = SteamCoverURL(game.AppID)

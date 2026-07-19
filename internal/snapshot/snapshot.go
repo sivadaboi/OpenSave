@@ -179,20 +179,58 @@ func zipFileCount(zipPath string) (int, error) {
 // pruneRetention deletes the oldest snapshots (metadata + zip file,
 // best-effort on the file) beyond the game's maxSnapshots limit. A limit
 // of 0 or below disables pruning, matching the JS `maxSnapshots > 0` guard.
+//
+// Retention applies to EVERY branch, not just the active one: conflict
+// resolutions and manual branching create side branches whose snapshots
+// would otherwise accumulate forever (a real disk-filler once a game has
+// picked up a few conflict-* branches).
 func (m *Manager) pruneRetention(game store.Game) {
+	m.pruneGameAllBranches(game)
+}
+
+// pruneGameAllBranches deletes snapshots beyond the limit on every branch
+// of a game and returns how many were removed and the bytes freed.
+func (m *Manager) pruneGameAllBranches(game store.Game) (removed int, freed int64) {
 	if game.MaxSnapshots <= 0 {
-		return
+		return 0, 0
 	}
-	beyond, err := m.Store.SnapshotsBeyondRetention(game.ID, game.ActiveBranch, game.MaxSnapshots)
+	branches, err := m.Store.ListBranches(game.ID)
 	if err != nil {
-		return
+		return 0, 0
 	}
-	for _, snap := range beyond {
-		if err := m.Store.DeleteSnapshot(snap.ID); err != nil {
+	for _, branch := range branches {
+		beyond, err := m.Store.SnapshotsBeyondRetention(game.ID, branch, game.MaxSnapshots)
+		if err != nil {
 			continue
 		}
-		os.Remove(snap.ZipPath) // best-effort, same as the JS app
+		for _, snap := range beyond {
+			if err := m.Store.DeleteSnapshot(snap.ID); err != nil {
+				continue
+			}
+			if info, statErr := os.Stat(snap.ZipPath); statErr == nil {
+				freed += info.Size()
+			}
+			os.Remove(snap.ZipPath) // best-effort, same as the JS app
+			removed++
+		}
 	}
+	return removed, freed
+}
+
+// PruneAllGames applies each game's retention limit across all its
+// branches immediately — the "clean up old snapshots now" action.
+// Returns the total snapshots removed and bytes freed.
+func (m *Manager) PruneAllGames() (removed int, freed int64, err error) {
+	games, err := m.Store.ListGames()
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, game := range games {
+		r, f := m.pruneGameAllBranches(game)
+		removed += r
+		freed += f
+	}
+	return removed, freed, nil
 }
 
 // Restore extracts the given snapshot over the game's save path, taking a
