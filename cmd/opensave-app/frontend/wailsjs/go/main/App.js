@@ -30,6 +30,10 @@ export function OpenExternal(arg1) {
   return window['go']['main']['App']['OpenExternal'](arg1);
 }
 
+export function SelectBackupFile(arg1) {
+  return window['go']['main']['App']['SelectBackupFile'](arg1);
+}
+
 export function SelectDirectory(arg1) {
   return window['go']['main']['App']['SelectDirectory'](arg1);
 }

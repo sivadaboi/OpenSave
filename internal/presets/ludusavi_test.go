@@ -130,6 +130,112 @@ Glob Game:
 	}
 }
 
+func TestLudusavi_InstallRootSaveFileTracksFileNotDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+
+	// A game that keeps its save file directly in the install dir — the
+	// discovery must be the file, never the (multi-GB) install dir itself.
+	steamRoot := t.TempDir()
+	installDir := filepath.Join(steamRoot, "steamapps", "common", "Kart Game")
+	if err := os.MkdirAll(installDir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	saveFile := filepath.Join(installDir, "ssr_save.bin")
+	if err := os.WriteFile(saveFile, []byte("x"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installDir, "game_assets.big"), []byte("xxxx"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	sc := manifestScanner(t, `
+Kart Game:
+  files:
+    <base>/ssr_save.bin:
+      tags: [save]
+      when:
+        - os: windows
+  installDir:
+    Kart Game: {}
+`)
+	sc.SteamRoots = []string{steamRoot}
+
+	found := sc.scanLudusavi(map[string]bool{})
+	if len(found) != 1 {
+		t.Fatalf("expected 1 discovery, got %d: %+v", len(found), found)
+	}
+	if found[0].SavePath != saveFile {
+		t.Errorf("SavePath = %q, want the save file %q, not the install dir", found[0].SavePath, saveFile)
+	}
+}
+
+func TestLudusavi_InstallRootItselfNeverOffered(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+
+	steamRoot := t.TempDir()
+	installDir := filepath.Join(steamRoot, "steamapps", "common", "Lazy Manifest Game")
+	if err := os.MkdirAll(installDir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	sc := manifestScanner(t, `
+Lazy Manifest Game:
+  files:
+    "<base>":
+      tags: [save]
+      when:
+        - os: windows
+  installDir:
+    Lazy Manifest Game: {}
+`)
+	sc.SteamRoots = []string{steamRoot}
+
+	if found := sc.scanLudusavi(map[string]bool{}); len(found) != 0 {
+		t.Errorf("a whole install dir must never be offered as a save, got %+v", found)
+	}
+}
+
+func TestLudusavi_FileInBlockedRootTracksFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+
+	// A save file directly in Documents: widening to the parent would offer
+	// all of Documents (blocked), but the file itself is a fine save path.
+	docs := filepath.Join(home, "Documents")
+	if err := os.MkdirAll(docs, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	saveFile := filepath.Join(docs, "loose_save.dat")
+	if err := os.WriteFile(saveFile, []byte("x"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	sc := manifestScanner(t, `
+Loose Game:
+  files:
+    <winDocuments>/loose_save.dat:
+      tags: [save]
+      when:
+        - os: windows
+`)
+
+	found := sc.scanLudusavi(map[string]bool{})
+	if len(found) != 1 {
+		t.Fatalf("expected 1 discovery, got %d: %+v", len(found), found)
+	}
+	if found[0].SavePath != saveFile {
+		t.Errorf("SavePath = %q, want the save file %q", found[0].SavePath, saveFile)
+	}
+}
+
 func TestLudusavi_DedupesAgainstSeen(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("USERPROFILE", home)

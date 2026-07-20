@@ -15,6 +15,8 @@ export function InstallUpdateFromURL(arg1:string):Promise<string>;
 
 export function OpenExternal(arg1:string):Promise<void>;
 
+export function SelectBackupFile(arg1:string):Promise<string>;
+
 export function SelectDirectory(arg1:string):Promise<string>;
 
 export function SelectFile(arg1:string):Promise<string>;

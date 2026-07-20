@@ -107,6 +107,7 @@ export const native = {
   installFromUrl: (url) => app()?.InstallUpdateFromURL?.(url) ?? Promise.resolve('not available in browser preview'),
   selectDirectory: (title) => app()?.SelectDirectory(title ?? '') ?? Promise.resolve(''),
   selectFile: (title) => app()?.SelectFile(title ?? '') ?? Promise.resolve(''),
+  selectBackupFile: (title) => app()?.SelectBackupFile(title ?? '') ?? Promise.resolve(''),
   selectSaveFile: (title, name) => app()?.SelectSaveFile(title ?? '', name ?? '') ?? Promise.resolve(''),
   openExternal: (url) => app()?.OpenExternal(url),
   minimise: () => app()?.WindowMinimise(),

@@ -1,5 +1,5 @@
 <script>
-  import { gameList, toast, cloudAuthEvent, cloudUploadEvent, askConfirm } from '../lib/stores.js';
+  import { gameList, toast, cloudAuthEvent, cloudUploadEvent, backupProgressEvent, askConfirm } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
   import { onMount, onDestroy } from 'svelte';
 
@@ -290,31 +290,121 @@
   };
 
   // ── .sscb export/import ──────────────────────────────────────────
-  const exportBackup = async () => {
-    const target = await native.selectSaveFile('Export all snapshots', 'opensave-backup.sscb');
-    if (!target) return;
-    busy = true;
+  // Export: a picker modal lists tracked games plus auto-detected saves;
+  // the selection's LIVE saves (with their locations) go into the file.
+  let exportOpen = false;
+  let exportItems = null; // [{id,name,savePath,appId,cover,tracked}], null while loading
+  let exportSel = {};
+  let exporting = false;
+
+  // Small cover art next to each row — same Steam box-art the auto-scan
+  // grid uses, with the tracked game's own coverUrl taking precedence.
+  const portraitUrl = (appId) =>
+    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`;
+
+  const openExportPicker = async () => {
+    exportOpen = true;
+    exportItems = null;
+    exportSel = {};
     try {
-      const res = await api.post('/api/backup/export', { targetPath: target });
-      toast(`Exported ${res.snapshotCount} snapshot(s)`, 'success');
+      const [games, scan] = await Promise.all([api.get('/api/games'), api.get('/api/presets/scan')]);
+      const tracked = Object.values(games ?? {}).map((g) => ({
+        id: g.id, name: g.name, savePath: g.savePath, appId: g.appId,
+        // Portrait box art first (matches the auto-scan tiles); the stored
+        // coverUrl is Steam's landscape header — wrong shape for tiles.
+        cover: (g.appId ? portraitUrl(g.appId) : '') || g.coverUrl || '', tracked: true,
+      }));
+      const knownPaths = new Set(tracked.map((g) => g.savePath.toLowerCase()));
+      const knownIds = new Set(tracked.map((g) => g.id));
+      const detected = (scan ?? [])
+        .filter((d) => !knownPaths.has(d.savePath.toLowerCase()) && !knownIds.has(d.id))
+        .map((d) => ({
+          id: d.id, name: d.name, savePath: d.savePath, appId: d.appId,
+          cover: d.appId ? portraitUrl(d.appId) : '', tracked: false,
+        }));
+      for (const g of tracked) exportSel[g.id] = true; // tracked pre-selected
+      exportItems = [...tracked, ...detected];
     } catch (e) {
       toast(e.message, 'error');
-    } finally {
-      busy = false;
+      exportOpen = false;
     }
   };
 
-  const importBackup = async () => {
-    const src = await native.selectFile('Select an .sscb backup to import');
-    if (!src) return;
-    busy = true;
+  const exportSetAll = (value, trackedOnly = false) => {
+    for (const it of exportItems ?? []) {
+      exportSel[it.id] = trackedOnly ? value && it.tracked : value;
+    }
+    exportSel = exportSel;
+  };
+
+  $: exportCount = exportItems ? exportItems.filter((it) => exportSel[it.id]).length : 0;
+  $: allSelected = !!exportItems && exportItems.length > 0 && exportCount === exportItems.length;
+
+  const runExport = async () => {
+    const chosen = (exportItems ?? []).filter((it) => exportSel[it.id]);
+    if (!chosen.length) return;
+    const target = await native.selectSaveFile('Export selected saves', 'opensave-saves.sscb');
+    if (!target) return;
+    exporting = true;
     try {
-      const res = await api.post('/api/backup/restore', { sourcePath: src });
-      toast(`Imported ${res.imported}, skipped ${res.skipped}`, 'success');
+      const res = await api.post('/api/backup/export', {
+        targetPath: target,
+        games: chosen.map(({ id, name, appId, savePath }) => ({ id, name, appId, savePath })),
+      });
+      const skipped = res.skipped?.length ?? 0;
+      toast(
+        `Exported ${res.exported} save${res.exported === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped — see Activity` : ''}`,
+        skipped ? 'info' : 'success'
+      );
+      exportOpen = false;
     } catch (e) {
       toast(e.message, 'error');
     } finally {
-      busy = false;
+      exporting = false;
+    }
+  };
+
+  // Import: mode dialog first. "snapshots" (default) never touches live
+  // files; "overwrite" restores every save in the file onto disk — the
+  // backend takes safety copies of anything it replaces.
+  let importOpen = false;
+  let importSrc = '';
+  let importMode = 'snapshots';
+  let importing = false;
+
+  const pickImportFile = async () => {
+    const src = await native.selectBackupFile('Select an .sscb backup to import');
+    if (!src) return;
+    importSrc = src;
+    importMode = 'snapshots';
+    importOpen = true;
+  };
+
+  // Live per-game progress while the daemon walks the export/import.
+  let backupProg = null;
+  const unsubBackupProg = backupProgressEvent.subscribe((ev) => {
+    backupProg = ev && !ev.complete ? ev : null;
+  });
+  onDestroy(unsubBackupProg);
+
+  const runImport = async () => {
+    importing = true;
+    try {
+      const res = await api.post('/api/backup/restore', { sourcePath: importSrc, mode: importMode });
+      if (res.legacy) {
+        toast(`Imported ${res.imported} snapshot(s), skipped ${res.skipped}`, 'success');
+      } else {
+        const bits = [];
+        if (res.restored) bits.push(`${res.restored} restored`);
+        if (res.snapshots) bits.push(`${res.snapshots} added to snapshots`);
+        if (res.skipped) bits.push(`${res.skipped} skipped`);
+        toast(`Import finished: ${bits.join(', ') || 'nothing imported'} — details in Activity`, res.skipped ? 'info' : 'success');
+      }
+      importOpen = false;
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      importing = false;
     }
   };
 
@@ -477,15 +567,193 @@
     <button class="btn primary" on:click={openCloudBrowser}>☁️ Browse cloud</button>
   </div>
 
-  <h3 class="section">Full backup file</h3>
+  <h3 class="section">Backup file (.sscb)</h3>
   <div class="card export-row">
     <div>
-      <h3>Export / import everything</h3>
-      <p class="quiet">A single compressed .sscb file with every snapshot — for moving to a new PC.</p>
+      <h3>Export / import saves</h3>
+      <p class="quiet">
+        Pick any saves on this machine — tracked or just detected — and export them with their
+        locations into one file. Import adds them to snapshots, or fully restores them onto disk.
+      </p>
     </div>
     <div class="export-actions">
-      <button class="btn" disabled={busy} on:click={importBackup}>Import .sscb</button>
-      <button class="btn primary" disabled={busy} on:click={exportBackup}>Export all</button>
+      <button class="btn" disabled={busy} on:click={pickImportFile}>Import .sscb</button>
+      <button class="btn primary" disabled={busy} on:click={openExportPicker}>Export saves…</button>
+    </div>
+  </div>
+{/if}
+
+{#if exportOpen}
+  <div
+    class="cloud-overlay"
+    on:click|self={() => (exportOpen = false)}
+    on:keydown={(e) => e.key === 'Escape' && (exportOpen = false)}
+    role="presentation"
+  >
+    <div class="cloud-modal">
+      <div class="cloud-modal-head">
+        <div>
+          <h2>📦 Export saves</h2>
+          <p class="cloud-modal-sub">
+            {#if !exportItems}
+              Looking for saves on this machine…
+            {:else}
+              {exportCount} of {exportItems.length} selected — each game's current save is exported
+              along with where it belongs
+            {/if}
+          </p>
+        </div>
+        <div class="cloud-head-actions">
+          <button class="btn icon" on:click={() => (exportOpen = false)} title="Close">✕</button>
+        </div>
+      </div>
+
+      {#if !exportItems}
+        <div class="cloud-loading"><span class="cspin"></span> Listing tracked games and scanning for saves…</div>
+      {:else}
+        <div class="export-toolbar">
+          <button class="btn small" on:click={() => exportSetAll(!allSelected)}>
+            {allSelected ? 'Unselect all' : 'Select all'}
+          </button>
+          <button class="btn small" on:click={() => { exportSetAll(false); exportSetAll(true, true); }}>Tracked only</button>
+        </div>
+        <div class="cloud-modal-list">
+          {#if exportItems.length === 0}
+            <div class="cloud-empty">
+              <div class="cloud-empty-icon">📦</div>
+              <p>No saves found to export.</p>
+            </div>
+          {:else}
+            <div class="export-grid">
+              {#each exportItems as it (it.id)}
+                <div
+                  class="cover-tile"
+                  class:sel={exportSel[it.id]}
+                  on:click={() => { exportSel[it.id] = !exportSel[it.id]; }}
+                  on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), (exportSel[it.id] = !exportSel[it.id]))}
+                  role="button"
+                  tabindex="0"
+                  title={it.savePath}
+                >
+                  <div class="cover-art">
+                    {#if it.cover}
+                      <img
+                        src={it.cover}
+                        alt={it.name}
+                        loading="lazy"
+                        on:error={(e) => (e.currentTarget.style.display = 'none')}
+                      />
+                    {/if}
+                    <div class="cover-fallback">
+                      <span class="cover-emoji">🎮</span>
+                      <span class="cover-fallback-name">{it.name}</span>
+                    </div>
+                    {#if exportSel[it.id]}
+                      <div class="cover-check">✓</div>
+                    {/if}
+                    <span class="cover-type">{it.tracked ? 'Tracked' : 'Detected'}</span>
+                  </div>
+                  <div class="cover-name" title={it.name}>{it.name}</div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+        {#if exporting && backupProg}
+          <div class="upload-progress">
+            <div class="upload-progress-text">
+              <span class="cspin"></span>
+              Exporting {Math.min(backupProg.done + 1, backupProg.total)} of {backupProg.total}
+              {#if backupProg.current}&nbsp;— <code>{backupProg.current}</code>{/if}
+            </div>
+            <div class="upload-bar">
+              <div class="upload-bar-fill" style="width: {backupProg.total > 0 ? Math.round((backupProg.done / backupProg.total) * 100) : 8}%"></div>
+            </div>
+          </div>
+        {/if}
+        <div class="cloud-modal-foot">
+          <span class="quiet">Detected saves export fine without being tracked.</span>
+          <div class="export-foot-actions">
+            <button class="btn" on:click={() => (exportOpen = false)}>Cancel</button>
+            <button class="btn primary" disabled={exporting || exportCount === 0} on:click={runExport}>
+              {exporting ? 'Exporting…' : `Export ${exportCount} save${exportCount === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
+
+{#if importOpen}
+  <div
+    class="cloud-overlay"
+    on:click|self={() => !importing && (importOpen = false)}
+    on:keydown={(e) => e.key === 'Escape' && !importing && (importOpen = false)}
+    role="presentation"
+  >
+    <div class="cloud-modal import-modal">
+      <div class="cloud-modal-head">
+        <div>
+          <h2>📥 Import backup</h2>
+          <p class="cloud-modal-sub"><code>{importSrc}</code></p>
+        </div>
+        <div class="cloud-head-actions">
+          <button class="btn icon" disabled={importing} on:click={() => (importOpen = false)} title="Close">✕</button>
+        </div>
+      </div>
+
+      <div class="import-modes">
+        <label class="mode-option" class:selected={importMode === 'snapshots'}>
+          <input type="radio" bind:group={importMode} value="snapshots" />
+          <div>
+            <div class="mode-title">Add to snapshots <span class="badge online">recommended</span></div>
+            <p class="quiet">
+              Each save in the file is added to its game's snapshot history. Nothing on disk
+              changes — restore individual games whenever you choose. Games not tracked on this
+              machine are reported in Activity and skipped.
+            </p>
+          </div>
+        </label>
+        <label class="mode-option danger-option" class:selected={importMode === 'overwrite'}>
+          <input type="radio" bind:group={importMode} value="overwrite" />
+          <div>
+            <div class="mode-title">Overwrite current saves</div>
+            <p class="quiet">
+              Every save in the file is written to its location on this machine — tracked games to
+              their tracked folder, others to the path recorded in the backup. A safety copy of
+              whatever is there now is taken first. Check Activity afterwards for exactly what was
+              restored where.
+            </p>
+          </div>
+        </label>
+      </div>
+
+      {#if importing && backupProg}
+        <div class="upload-progress">
+          <div class="upload-progress-text">
+            <span class="cspin"></span>
+            Importing {Math.min(backupProg.done + 1, backupProg.total)} of {backupProg.total}
+            {#if backupProg.current}&nbsp;— <code>{backupProg.current}</code>{/if}
+          </div>
+          <div class="upload-bar">
+            <div class="upload-bar-fill" style="width: {backupProg.total > 0 ? Math.round((backupProg.done / backupProg.total) * 100) : 8}%"></div>
+          </div>
+        </div>
+      {/if}
+      <div class="cloud-modal-foot">
+        <span class="quiet">Nothing is ever overwritten without a safety copy.</span>
+        <div class="export-foot-actions">
+          <button class="btn" disabled={importing} on:click={() => (importOpen = false)}>Cancel</button>
+          <button
+            class="btn {importMode === 'overwrite' ? 'danger' : 'primary'}"
+            disabled={importing}
+            on:click={runImport}
+          >
+            {importing ? 'Importing…' : importMode === 'overwrite' ? 'Overwrite saves' : 'Add to snapshots'}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 {/if}
@@ -1201,5 +1469,163 @@
   .export-actions {
     display: flex;
     gap: 8px;
+  }
+
+  /* Export picker + import mode dialog */
+  .export-toolbar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 20px 0;
+  }
+  /* Cover-tile grid — same look as the auto-scan modal. */
+  .export-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 16px;
+    padding: 4px;
+  }
+  .cover-tile {
+    cursor: pointer;
+  }
+  .cover-art {
+    position: relative;
+    aspect-ratio: 600 / 900;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg-active);
+    border: 2px solid transparent;
+    transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+  }
+  .cover-tile:hover .cover-art {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  }
+  .cover-tile.sel .cover-art {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  .cover-art img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 2;
+  }
+  .cover-fallback {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px;
+    text-align: center;
+    background: linear-gradient(160deg, rgba(138, 99, 244, 0.22), rgba(138, 99, 244, 0.04));
+  }
+  .cover-emoji {
+    font-size: 2.2rem;
+  }
+  .cover-fallback-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--text);
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .cover-check {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 3;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  .cover-type {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 3;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--text-dim);
+    backdrop-filter: blur(2px);
+  }
+  .cover-name {
+    margin-top: 7px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cover-tile.sel .cover-name {
+    color: var(--text);
+  }
+  .export-foot-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .import-modal {
+    max-width: 560px;
+    /* Two radio cards + a footer don't need the full browser-modal
+       height — size to content so the dialog doesn't look hollow. */
+    height: auto;
+    max-height: min(78vh, 720px);
+  }
+  .import-modes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 20px;
+  }
+  .mode-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .mode-option input {
+    margin-top: 3px;
+  }
+  .mode-option.selected {
+    border-color: var(--accent);
+    background: var(--bg-hover, rgba(128, 128, 128, 0.06));
+  }
+  .mode-option.danger-option.selected {
+    border-color: var(--danger, #e5484d);
+  }
+  .mode-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mode-option p {
+    margin: 0;
+    font-size: 0.82rem;
   }
 </style>

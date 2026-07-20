@@ -110,6 +110,11 @@ func New(opts Options) (*Daemon, error) {
 		opts:      opts,
 	}
 
+	// A paired peer untracking/re-tracking a game mirrors here.
+	d.P2P.OnUntrackRequest = d.untrackFromPeer
+	d.P2P.OnRetrackRequest = d.retrackFromPeer
+
+
 	// Every new snapshot mirrors to the configured cloud provider in the
 	// background; failures are logged, never fatal.
 	snaps.OnUpload = func(zipPath, remoteFileName string) {
@@ -249,12 +254,23 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 	}
 	game.SavePath = abs
 
+	// Explicit (re)tracking overrides any earlier untrack: clear the local
+	// tombstone, and tell peers to clear theirs too so a peer that mirrored
+	// an earlier untrack will accept this game again (otherwise its
+	// tombstone would block the sync-on-track below).
+	_ = d.Store.ClearUntrackedTombstone(game.ID)
+	d.P2P.NotifyRetrack(game.ID)
+
 	game.AutoSync = true
 	if game.ActiveBranch == "" {
 		game.ActiveBranch = "main"
 	}
 	if game.MaxSnapshots == 0 {
-		game.MaxSnapshots = 5
+		// Inherit the global default retention limit.
+		game.MaxSnapshots = 20
+		if s, err := d.Store.GetSettings(); err == nil && s.DefaultMaxSnapshots > 0 {
+			game.MaxSnapshots = s.DefaultMaxSnapshots
+		}
 	}
 	if game.CoverURL == "" {
 		game.CoverURL = SteamCoverURL(game.AppID)
@@ -283,6 +299,17 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 		if d.OnGameChanged != nil {
 			d.OnGameChanged(game.ID)
 		}
+		// Push the newly tracked game to paired peers so it shows up and
+		// syncs on their side too (they auto-track it from our manifest
+		// request) — without this it only reaches them on the next slow
+		// periodic reconcile. Honors the auto-sync-on-track setting.
+		if settings, err := d.Store.GetSettings(); err != nil || settings.AutoSyncOnTrack {
+			syncCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			if _, err := d.P2P.SyncGame(syncCtx, game.ID); err != nil {
+				d.Log.Log("info", fmt.Sprintf("initial peer sync for %q: %v", game.Name, err))
+			}
+		}
 	}()
 
 	created, err := d.Store.GetGame(game.ID)
@@ -307,13 +334,53 @@ func (d *Daemon) validateSavePath(rawPath string) (string, error) {
 	if _, err := os.Stat(abs); err != nil {
 		return "", fmt.Errorf("save path does not exist: %s", abs)
 	}
+	if err := d.checkSavePathShape(abs); err != nil {
+		return "", err
+	}
 
+	// One folder, one game: a second tracker on the same path means double
+	// watchers, duplicate snapshots, and sync confusion.
+	norm := strings.ToLower(abs)
+	games, err := d.Store.ListGames()
+	if err == nil {
+		for _, g := range games {
+			if strings.ToLower(filepath.Clean(g.SavePath)) == norm {
+				return "", fmt.Errorf("%q already tracks this folder", g.Name)
+			}
+		}
+	}
+
+	return abs, nil
+}
+
+// CheckRestoreTarget validates a path files are about to be restored into
+// (backup import onto a possibly-fresh machine): same shape rules as
+// tracking — no drive roots, profile/system folders, or OpenSave's own
+// data dir — but the path is allowed to not exist yet.
+func (d *Daemon) CheckRestoreTarget(rawPath string) (string, error) {
+	if strings.TrimSpace(rawPath) == "" {
+		return "", fmt.Errorf("restore path is required")
+	}
+	abs, err := filepath.Abs(rawPath)
+	if err != nil {
+		return "", fmt.Errorf("invalid restore path: %w", err)
+	}
+	abs = filepath.Clean(abs)
+	if err := d.checkSavePathShape(abs); err != nil {
+		return "", err
+	}
+	return abs, nil
+}
+
+// checkSavePathShape rejects locations that must never hold a single
+// game's save wholesale, regardless of whether they exist yet.
+func (d *Daemon) checkSavePathShape(abs string) error {
 	norm := strings.ToLower(abs)
 	sep := string(filepath.Separator)
 
 	// Drive / filesystem roots.
 	if filepath.Dir(abs) == abs {
-		return "", fmt.Errorf("refusing to track a drive root (%s) — pick the game's save folder", abs)
+		return fmt.Errorf("refusing to use a drive root (%s) — pick the game's save folder", abs)
 	}
 
 	// Whole-profile and system folders: tracking these would snapshot and
@@ -341,8 +408,8 @@ func (d *Daemon) validateSavePath(rawPath string) (string, error) {
 			continue
 		}
 		if norm == strings.ToLower(filepath.Clean(b)) {
-			return "", fmt.Errorf(
-				"refusing to track %q — that's a system or profile folder, not a save location; pick the game's own folder inside it", abs)
+			return fmt.Errorf(
+				"refusing to use %q — that's a system or profile folder, not a save location; pick the game's own folder inside it", abs)
 		}
 	}
 
@@ -350,21 +417,9 @@ func (d *Daemon) validateSavePath(rawPath string) (string, error) {
 	// recurse forever).
 	dataDir := strings.ToLower(filepath.Clean(d.Paths.HomeDir))
 	if norm == dataDir || strings.HasPrefix(norm, dataDir+sep) || strings.HasPrefix(dataDir, norm+sep) {
-		return "", fmt.Errorf("refusing to track OpenSave's own data folder (%s)", abs)
+		return fmt.Errorf("refusing to use OpenSave's own data folder (%s)", abs)
 	}
-
-	// One folder, one game: a second tracker on the same path means double
-	// watchers, duplicate snapshots, and sync confusion.
-	games, err := d.Store.ListGames()
-	if err == nil {
-		for _, g := range games {
-			if strings.ToLower(filepath.Clean(g.SavePath)) == norm {
-				return "", fmt.Errorf("%q already tracks this folder", g.Name)
-			}
-		}
-	}
-
-	return abs, nil
+	return nil
 }
 
 // EnsureImportedSnapshot registers a snapshot restored from an .sscb
@@ -421,5 +476,34 @@ func snapIDToTimestamp(snapID string) string {
 // is removed — same as the JS app.
 func (d *Daemon) UntrackGame(gameID string) error {
 	d.Watcher.Unwatch(gameID)
-	return d.Store.DeleteGame(gameID)
+	if err := d.Store.DeleteGame(gameID); err != nil {
+		return err
+	}
+	// Tombstone stops this device from auto-re-creating the game when a
+	// still-tracking peer asks for its manifest (the "it keeps coming back"
+	// bounce). Propagate the untrack so it registers on paired devices too
+	// (they remove it and tombstone it). Re-tracking on any device clears
+	// the tombstones (NotifyRetrack) and re-shares via sync-on-track.
+	_ = d.Store.AddUntrackedTombstone(gameID)
+	d.P2P.ClearPendingResync(gameID)
+	d.P2P.NotifyUntrack(gameID)
+	return nil
+}
+
+// untrackFromPeer mirrors a peer's untrack: remove the game + tombstone it,
+// WITHOUT re-notifying (no loop).
+func (d *Daemon) untrackFromPeer(gameID string) {
+	d.Watcher.Unwatch(gameID)
+	if err := d.Store.DeleteGame(gameID); err != nil && err != store.ErrNotFound {
+		d.Log.Log("warn", fmt.Sprintf("untrack from peer: delete %q failed: %v", gameID, err))
+	}
+	_ = d.Store.AddUntrackedTombstone(gameID)
+	d.P2P.ClearPendingResync(gameID)
+	d.Log.Log("info", fmt.Sprintf("game %q untracked on a paired device", gameID))
+}
+
+// retrackFromPeer clears a tombstone a peer's re-track cleared, so this
+// device will accept the game again when the peer's sync-on-track arrives.
+func (d *Daemon) retrackFromPeer(gameID string) {
+	_ = d.Store.ClearUntrackedTombstone(gameID)
 }

@@ -3,6 +3,9 @@ package snapshot
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -307,5 +310,159 @@ func TestUploadHookFires(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("upload hook never fired")
+	}
+}
+
+// TestEmptySnapshotNeverMirrorsToCloud: a snapshot of an empty save dir
+// (usually a mis-tracked path) stays local with a loud warning and is
+// never uploaded — field report was an "empty backup" sitting silently
+// in a tester's WebDAV storage.
+func TestEmptySnapshotNeverMirrorsToCloud(t *testing.T) {
+	env := setup(t)
+
+	// OnUpload fires on a background goroutine, so the counter it writes
+	// must be synchronized against the test's reads (atomic).
+	var uploads atomic.Int32
+	env.mgr.OnUpload = func(zipPath, remoteName string) { uploads.Add(1) }
+	var mu sync.Mutex
+	var warned string
+	env.mgr.Log = func(level, msg string) {
+		if level == "warn" {
+			mu.Lock()
+			warned = msg
+			mu.Unlock()
+		}
+	}
+
+	// Save dir exists but holds nothing.
+	snap, err := env.mgr.Create("game1", "", true)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := os.Stat(snap.ZipPath); err != nil {
+		t.Fatalf("empty snapshot should still exist locally: %v", err)
+	}
+	if uploads.Load() != 0 {
+		t.Errorf("empty snapshot was mirrored to cloud (%d uploads)", uploads.Load())
+	}
+	mu.Lock()
+	gotWarn := warned
+	mu.Unlock()
+	if gotWarn == "" || !strings.Contains(gotWarn, "no files") {
+		t.Errorf("expected a loud warning about the empty snapshot, got %q", gotWarn)
+	}
+
+	// With real content the mirror fires again.
+	writeSave(t, env.saveDir, "slot1.sav", "actual progress")
+	if _, err := env.mgr.Create("game1", "", true); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for uploads.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if uploads.Load() != 1 {
+		t.Errorf("non-empty snapshot should mirror exactly once, got %d", uploads.Load())
+	}
+}
+
+// TestPruneAllBranches: retention must clean EVERY branch, not just the
+// active one — conflict-* and manual branches otherwise pile up snapshots
+// forever (a real disk-filler behind "my system is full of snapshots").
+func TestPruneAllBranches(t *testing.T) {
+	env := setup(t)
+	// Limit 2 per branch.
+	g, _ := env.store.GetGame("game1")
+	g.MaxSnapshots = 2
+	_ = env.store.UpdateGame(g)
+
+	// main branch: 4 snapshots.
+	for i := 0; i < 4; i++ {
+		writeSave(t, env.saveDir, "slot.sav", string(rune('a'+i)))
+		if _, err := env.mgr.Create("game1", "", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// a side branch with its own snapshots (simulating a conflict branch).
+	if _, err := env.mgr.CreateBranch("game1", "side"); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.mgr.SwitchBranch("game1", "side"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		writeSave(t, env.saveDir, "slot.sav", string(rune('m'+i)))
+		if _, err := env.mgr.Create("game1", "", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The active branch (side) auto-pruned during Create; now prune all.
+	removed, freed, err := env.mgr.PruneAllGames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = removed
+	_ = freed
+
+	for _, branch := range []string{"main", "side"} {
+		snaps, err := env.store.ListSnapshots("game1", branch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(snaps) != 2 {
+			t.Errorf("branch %q has %d snapshots after prune, want 2 (limit)", branch, len(snaps))
+		}
+		for _, s := range snaps {
+			if _, err := os.Stat(s.ZipPath); err != nil {
+				t.Errorf("kept snapshot %s has no zip: %v", s.ID, err)
+			}
+		}
+	}
+}
+
+// TestCleanupSweepsAbandonedConflictBranches reproduces the real report:
+// a game with many conflict-* branches, each UNDER the per-branch limit,
+// so per-branch pruning finds nothing — yet the branches are junk from
+// resolved conflicts and should be swept by the cleanup action.
+func TestCleanupSweepsAbandonedConflictBranches(t *testing.T) {
+	env := setup(t)
+	g, _ := env.store.GetGame("game1")
+	g.MaxSnapshots = 10
+	_ = env.store.UpdateGame(g)
+
+	writeSave(t, env.saveDir, "slot.sav", "main-state")
+	if _, err := env.mgr.Create("game1", "", true); err != nil {
+		t.Fatal(err)
+	}
+	// Three abandoned conflict branches, 2 snapshots each (all < limit 10).
+	for _, b := range []string{"conflict-omar-1111", "conflict-omar-2222", "conflict-omar-3333"} {
+		if _, err := env.mgr.CreateBranch("game1", b); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 2; i++ {
+			env.store.CreateSnapshot(store.Snapshot{
+				ID: b + "-snap" + string(rune('0'+i)), GameID: "game1", BranchName: b,
+				Timestamp: "2026-01-01T00:00:00.000Z", ZipPath: filepath.Join(env.backups, "x.zip"),
+			})
+		}
+	}
+
+	removed, _, err := env.mgr.PruneAllGames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 6 { // 3 branches * 2 snapshots
+		t.Errorf("cleanup removed %d, want 6 (the abandoned conflict-branch snapshots)", removed)
+	}
+	// The active branch (main) and its snapshot must survive.
+	remaining, _ := env.store.ListBranches("game1")
+	for _, b := range remaining {
+		if strings.HasPrefix(b, "conflict-") {
+			t.Errorf("abandoned conflict branch %q was not swept", b)
+		}
+	}
+	if snaps, _ := env.store.ListSnapshots("game1", "main"); len(snaps) != 1 {
+		t.Errorf("main branch lost its snapshot: %d remain", len(snaps))
 	}
 }

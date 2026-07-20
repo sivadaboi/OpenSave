@@ -65,7 +65,13 @@ func (a *App) CheckForUpdate() map[string]any {
 	// without one the UI falls back to opening the release page. The asset
 	// is OS-specific: the portable app binary on Windows, the Linux tarball
 	// on Linux. Never the CLI/relay/installer sub-artifacts.
-	assetURL := selectUpdateAsset(rel.Assets)
+	//
+	// Flatpak installs can't self-swap (/app is read-only) — leave assetUrl
+	// empty so the banner opens the release page, where the .flatpak lives.
+	assetURL := ""
+	if !runningInFlatpak() {
+		assetURL = selectUpdateAsset(rel.Assets)
+	}
 
 	notes := rel.Body
 	if len(notes) > 4000 {
@@ -78,6 +84,7 @@ func (a *App) CheckForUpdate() map[string]any {
 		"url":       url,
 		"assetUrl":  assetURL,
 		"notes":     notes,
+		"flatpak":   runningInFlatpak(),
 	}
 }
 

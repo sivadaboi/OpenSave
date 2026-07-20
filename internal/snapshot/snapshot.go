@@ -7,6 +7,7 @@
 package snapshot
 
 import (
+	"archive/zip"
 	"errors"
 	"fmt"
 	"io"
@@ -137,6 +138,20 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 
 	m.pruneRetention(game)
 
+	// A snapshot with no files inside is almost always a wrong tracked
+	// path (native location tracked while the game plays through
+	// Proton, dir emptied by an uninstall, ...). Keep it locally — it's
+	// honest history — but say so loudly and never mirror it to the
+	// cloud, where an "empty backup" destroys trust silently.
+	if fileCount, cErr := zipFileCount(zipPath); cErr == nil && fileCount == 0 {
+		if m.Log != nil {
+			m.Log("warn", fmt.Sprintf(
+				"snapshot of %q contains no files — check that the tracked save location (%s) is where the game actually saves; cloud mirror skipped",
+				game.Name, game.SavePath))
+		}
+		return snap, nil
+	}
+
 	if m.OnUpload != nil {
 		remoteName := fmt.Sprintf("%s__%s__%s.zip", gameID, game.ActiveBranch, snapshotID)
 		go m.OnUpload(zipPath, remoteName)
@@ -145,23 +160,142 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 	return snap, nil
 }
 
+// zipFileCount returns the number of regular-file entries in a zip.
+func zipFileCount(zipPath string) (int, error) {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return 0, err
+	}
+	defer r.Close()
+	n := 0
+	for _, f := range r.File {
+		if !f.FileInfo().IsDir() {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // pruneRetention deletes the oldest snapshots (metadata + zip file,
 // best-effort on the file) beyond the game's maxSnapshots limit. A limit
 // of 0 or below disables pruning, matching the JS `maxSnapshots > 0` guard.
+//
+// Retention applies to EVERY branch, not just the active one: conflict
+// resolutions and manual branching create side branches whose snapshots
+// would otherwise accumulate forever (a real disk-filler once a game has
+// picked up a few conflict-* branches).
 func (m *Manager) pruneRetention(game store.Game) {
+	m.pruneGameAllBranches(game)
+}
+
+// pruneGameAllBranches deletes snapshots beyond the limit on every branch
+// of a game and returns how many were removed and the bytes freed.
+func (m *Manager) pruneGameAllBranches(game store.Game) (removed int, freed int64) {
 	if game.MaxSnapshots <= 0 {
-		return
+		return 0, 0
 	}
-	beyond, err := m.Store.SnapshotsBeyondRetention(game.ID, game.ActiveBranch, game.MaxSnapshots)
+	branches, err := m.Store.ListBranches(game.ID)
 	if err != nil {
-		return
+		return 0, 0
 	}
-	for _, snap := range beyond {
+	for _, branch := range branches {
+		beyond, err := m.Store.SnapshotsBeyondRetention(game.ID, branch, game.MaxSnapshots)
+		if err != nil {
+			continue
+		}
+		for _, snap := range beyond {
+			if err := m.Store.DeleteSnapshot(snap.ID); err != nil {
+				continue
+			}
+			if info, statErr := os.Stat(snap.ZipPath); statErr == nil {
+				freed += info.Size()
+			}
+			os.Remove(snap.ZipPath) // best-effort, same as the JS app
+			removed++
+		}
+	}
+	return removed, freed
+}
+
+// PruneAllGames applies each game's retention limit across all its
+// branches immediately — the "clean up old snapshots now" action. It also
+// sweeps abandoned conflict-* branches (non-active leftovers, chiefly from
+// resolved "keep both" conflicts), whose snapshots the per-branch limit
+// never touches because each branch stays under it. Returns the total
+// snapshots removed and bytes freed.
+func (m *Manager) PruneAllGames() (removed int, freed int64, err error) {
+	games, err := m.Store.ListGames()
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, game := range games {
+		r, f := m.pruneGameAllBranches(game)
+		removed += r
+		freed += f
+
+		branches, bErr := m.Store.ListBranches(game.ID)
+		if bErr != nil {
+			continue
+		}
+		for _, branch := range branches {
+			if branch == game.ActiveBranch || !strings.HasPrefix(branch, "conflict-") {
+				continue
+			}
+			r, f := m.DeleteBranch(game.ID, branch)
+			removed += r
+			freed += f
+		}
+	}
+	return removed, freed, nil
+}
+
+// DeleteSnapshot removes one snapshot (metadata row + its zip file) for a
+// game. Returns the bytes freed.
+func (m *Manager) DeleteSnapshot(gameID, snapshotID string) (freed int64, err error) {
+	snap, err := m.Store.GetSnapshot(snapshotID)
+	if err != nil {
+		return 0, err
+	}
+	if snap.GameID != gameID {
+		return 0, fmt.Errorf("snapshot %q does not belong to game %q", snapshotID, gameID)
+	}
+	if info, statErr := os.Stat(snap.ZipPath); statErr == nil {
+		freed = info.Size()
+	}
+	if err := m.Store.DeleteSnapshot(snapshotID); err != nil {
+		return 0, err
+	}
+	os.Remove(snap.ZipPath) // best-effort
+	return freed, nil
+}
+
+// DeleteBranch removes a branch entirely — every snapshot (metadata + zip)
+// and the branch row. Refuses the game's active branch. Returns snapshots
+// removed and bytes freed.
+func (m *Manager) DeleteBranch(gameID, branch string) (removed int, freed int64) {
+	game, err := m.Store.GetGame(gameID)
+	if err != nil {
+		return 0, 0
+	}
+	if branch == game.ActiveBranch {
+		return 0, 0 // never delete the branch currently in play
+	}
+	snaps, err := m.Store.ListSnapshots(gameID, branch)
+	if err != nil {
+		return 0, 0
+	}
+	for _, snap := range snaps {
 		if err := m.Store.DeleteSnapshot(snap.ID); err != nil {
 			continue
 		}
-		os.Remove(snap.ZipPath) // best-effort, same as the JS app
+		if info, statErr := os.Stat(snap.ZipPath); statErr == nil {
+			freed += info.Size()
+		}
+		os.Remove(snap.ZipPath)
+		removed++
 	}
+	_ = m.Store.DeleteBranchRow(gameID, branch)
+	return removed, freed
 }
 
 // Restore extracts the given snapshot over the game's save path, taking a

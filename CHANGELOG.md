@@ -3,10 +3,54 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.1.1] — 2026-07-20
 
 ### Fixed
 
+- **Conflict resolutions now stick.** Resolving a save conflict (Keep
+  both / Keep mine / Keep theirs) records the agreed state so the same
+  conflict can't re-appear on the next sync — fixing an endless
+  re-prompting loop. "Keep mine" now also propagates your version to the
+  peer instead of leaving the two devices permanently diverged.
+- **Adding a game now shows up on your other devices immediately.**
+  Tracking a game syncs it to paired peers right away (they auto-track
+  it) instead of waiting for the periodic reconcile.
+- **Untrack is now two-way and recoverable.** Untracking a game removes
+  it on paired devices too and doesn't bounce back; re-tracking it on any
+  device restores it on all of them.
+- A peer that isn't tracking a game no longer produces an endless "Game
+  not found" retry loop in the log.
+- **Empty snapshots are caught, not silently backed up.** A snapshot
+  with no files (almost always a mis-tracked save path) is flagged in
+  Activity and never mirrored to the cloud. WebDAV uploads are verified
+  after the fact, so a truncated/empty upload fails loudly.
+- The in-app logo (title bar, About, boot screen) now shows the new icon.
+- **Auto-scan no longer offers a game's whole install folder as its
+  "save".** Games that keep their save file directly in the install
+  directory (over 1,100 manifest entries — e.g. Sonic & Sega All-Stars
+  Racing's `ssr_save.bin`) previously widened to the entire multi-GB
+  install dir, which then got snapshotted and mirrored to cloud. The
+  scanner now tracks the save file itself; single-file saves are fully
+  supported by watch, snapshot, and sync.
+- Save files sitting directly in broad folders like Documents are now
+  offered as single-file saves instead of being skipped entirely.
+- **Relay: large save transfers no longer kill the connection.** The
+  relay's WebSocket message limit (32 KB by default) was far below a
+  sync block (~2.7 MB), so every real transfer dropped the link and
+  looped on reconnect-retry. The public relay is already fixed; this
+  release carries the fix into the bundled `opensave-relay` and the
+  in-app "host a relay" feature.
+- **Handheld launch crashes fixed** (ROG Ally-class devices): WebKit's
+  DMA-BUF renderer is disabled by default on Linux (it crashes on a
+  range of GPU drivers; an explicitly set WEBKIT_DISABLE_DMABUF_RENDERER
+  is respected), and the Flatpak moved to the GNOME 49 runtime, whose
+  Mesa supports current handheld APUs. The tray icon now also works
+  inside the Flatpak sandbox.
+- Auto-scan no longer floods results with identical tiles from a busy
+  Proton prefix (the "38× Persona 3 Reload" report): the precise
+  manifest pass runs first, the coarse prefix listing defers to it,
+  vendor/middleware folders are excluded, and entries keep their
+  "(subfolder)" qualifier when renamed.
 - **Content-based conflict detection.** Sync now records the manifest
   hash both devices verifiably held at each convergence (a merge-base,
   like git) and flags a conflict only when BOTH sides changed relative to
@@ -27,6 +71,39 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **Snapshot & branch management.** Delete individual snapshots or whole
+  branches from a game's tabs, and a one-click "Clean up now" in Settings
+  that prunes every game to its limit across all branches (and sweeps
+  abandoned `conflict-*` branches left by resolved conflicts).
+- **Snapshot retention controls.** A global default limit — now **20
+  snapshots per game** — set in Settings, plus a per-game override in
+  each game's Configuration tab. Retention now applies to every branch,
+  not just the active one.
+- **Yuzu-family Switch emulators.** Auto-scan now detects Suyu, Sudachi,
+  Citron, and Eden alongside Yuzu and Ryujinx.
+- **Choose-what-to-export save backups.** "Export saves…" now opens a
+  picker listing every save on the machine — tracked games plus
+  auto-detected ones — with select-all / tracked-only shortcuts. The
+  .sscb file carries each game's current save AND where it belongs
+  (paths stored in a machine-portable form, so a different PC or user
+  account restores to the right place).
+- **Two import modes.** "Add to snapshots" (the default) imports the
+  saves into snapshot history without touching a single live file;
+  "Overwrite current saves" restores everything onto disk — tracked
+  games get a safety snapshot first, untracked targets get a safety zip
+  in the backups folder before anything is replaced. The Activity tab
+  records every game: what was restored, to which path, tracked or not.
+- **Steam Deck: official Flatpak.** Every release now ships an
+  `OpenSave.flatpak` that runs on stock SteamOS — no system packages, no
+  lost install after SteamOS updates (the GNOME runtime provides the
+  WebKit the app needs). SD-card saves (`/run/media`) are visible to the
+  sandbox, and the in-app updater is Flatpak-aware (points at the new
+  bundle instead of trying to self-swap the read-only install).
+- **EmuDeck detection.** Auto-scan finds the `Emulation/saves` tree
+  EmuDeck routes every emulator into — internal storage and SD card —
+  offering each emulator as its own entry ("EmuDeck (retroarch)").
+- **New app icon** — the pixel-art OS logo, across the app, installer,
+  tray, and website.
 - **System tray on Linux** (StatusNotifier/D-Bus): close-to-tray with
   Open / Sync all / Quit, matching Windows. On desktops without a tray
   host (stock GNOME without an extension), closing the window quits

@@ -77,9 +77,44 @@ OpenSave gives **every** game the Steam Cloud experience:
 |---|---|---|
 | **Windows** | `OpenSave.Setup.exe` (installer) or portable `OpenSave.exe` | Double-click |
 | **Linux** | `opensave-linux-amd64.tar.gz` | extract, then `./opensave` |
-| **Steam Deck** | Linux build + Decky plugin | see [`opensave-decky-plugin/`](opensave-decky-plugin/) for Game Mode |
+| **Steam Deck / SteamOS** | `OpenSave.flatpak` | see [Steam Deck install](#steam-deck-install) |
 
 Grab the latest from the [**Releases**](https://github.com/sivadaboi/OpenSave/releases) page.
+
+### Steam Deck install
+
+The Flatpak is the build that works on a stock Deck — SteamOS ships no
+WebKitGTK and wipes manually-installed system packages on OS updates; the
+Flatpak bundles everything and survives updates.
+
+1. Switch to **Desktop Mode** (Steam button → Power → Switch to Desktop).
+2. Download `OpenSave.flatpak` from the [Releases](https://github.com/sivadaboi/OpenSave/releases) page.
+3. Double-click it to install via Discover, or run
+   `flatpak install --user OpenSave.flatpak` in Konsole.
+4. Launch OpenSave from the application menu. Optional: add it to Steam
+   (right-click → *Add to Steam*) to open it from Game Mode.
+
+Saves on the SD card are found automatically (`/run/media` is visible to
+the app), and Proton game saves are detected inside their `compatdata`
+prefixes. The plain Linux tarball also works on the Deck if you install
+`webkit2gtk-4.1` yourself, but SteamOS updates can remove it — the
+Flatpak is the supported path. A Decky plugin for Game Mode lives in
+[`opensave-decky-plugin/`](opensave-decky-plugin/).
+
+**Other handhelds / Arch-based distros (CachyOS, Bazzite-likes):** if
+your distro is *not* immutable (CachyOS isn't), the plain Linux tarball
+with your distro's `webkit2gtk-4.1` package is the best install — it
+survives updates and uses your native graphics stack. The Flatpak is
+for immutable systems like stock SteamOS.
+
+**Troubleshooting:**
+- *"runtime org.gnome.Platform … not found"* during install — your
+  flatpak user installation doesn't have Flathub configured yet:
+  `flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo`
+  then install the bundle again.
+- The app must be launched in **Desktop Mode** (or added to Steam to run
+  from Game Mode) — running it from a bare terminal session shows no
+  window.
 
 > **Upgrading from the original (JS) OpenSave?** Your data migrates automatically on first launch — tracked games, snapshots, pairings, and cloud settings are imported from `~/.opensave/opensave-db.json` (kept as a backup, never deleted). Go and JS devices can pair and sync with each other during the transition.
 

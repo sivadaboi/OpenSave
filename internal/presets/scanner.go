@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -85,9 +86,16 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 					if wrapperSystemDirs[toLowerASCII(sub)] {
 						continue
 					}
+					// Repack wrappers hold one AppID folder per game;
+					// emulator wrappers (EmuDeck) hold one folder per
+					// emulator — name them accordingly.
+					name := fmt.Sprintf("%s - Game ID: %s", p.Name, sub)
+					if p.Type == "emulator" {
+						name = fmt.Sprintf("%s (%s)", p.Name, sub)
+					}
 					d := DiscoveredSave{
 						ID:       p.ID + "-" + sub,
-						Name:     fmt.Sprintf("%s - Game ID: %s", p.Name, sub),
+						Name:     name,
 						Type:     p.Type,
 						SavePath: filepath.Join(resolved, sub),
 					}
@@ -119,11 +127,6 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 
 	// 3a. Steam userdata folders (Windows + Linux/SteamOS/Flatpak).
 	discovered = append(discovered, sc.scanSteamUserdata(dedupSet(discovered), appNames)...)
-
-	// 3a-linux. Proton/Wine prefixes: Windows games run through Proton write
-	// their saves inside <library>/steamapps/compatdata/<appid>/pfx. This is
-	// where most Steam Deck game saves live.
-	discovered = append(discovered, sc.scanProtonCompat(libraries, dedupSet(discovered), appNames)...)
 
 	// 3b. Saves kept inside install folders (the UE <Project>/Saved/
 	// SaveGames convention): installed Steam games first, then any game
@@ -219,8 +222,17 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 
 	// 7. Ludusavi manifest: community-maintained save paths for tens of
 	// thousands of games — store-agnostic, so repack/cracked installs
-	// writing to the standard locations are found too.
+	// writing to the standard locations are found too. On Linux this also
+	// expands Windows-style paths inside every Proton prefix.
 	discovered = append(discovered, sc.scanLudusavi(dedupSet(discovered))...)
+
+	// 8. Proton/Wine prefixes, coarse pass: list plausible save folders in
+	// <library>/steamapps/compatdata/<appid>/pfx for games the manifest
+	// did NOT pinpoint. Runs after Ludusavi on purpose — precise hits win,
+	// and this pass skips anything containing one (a busy prefix's vendor
+	// folders would otherwise flood the results; see the 38x "Persona 3
+	// Reload" report).
+	discovered = append(discovered, sc.scanProtonCompat(libraries, dedupSet(discovered), appNames)...)
 
 	// Infer AppIDs from names for entries that lack one.
 	nameIndex := nameToAppIDIndex()
@@ -377,7 +389,7 @@ func (sc *Scanner) resolveNames(discovered []DiscoveredSave) {
 		appID := discovered[i].AppID
 
 		if name, ok := popularSteamGames[appID]; ok {
-			discovered[i].Name = name
+			discovered[i].Name = renameKeepingSuffix(discovered[i].Name, name)
 			continue
 		}
 
@@ -385,7 +397,7 @@ func (sc *Scanner) resolveNames(discovered []DiscoveredSave) {
 		cachedName := cache[appID]
 		mu.Unlock()
 		if cachedName != "" {
-			discovered[i].Name = cachedName
+			discovered[i].Name = renameKeepingSuffix(discovered[i].Name, cachedName)
 			continue
 		}
 
@@ -403,7 +415,7 @@ func (sc *Scanner) resolveNames(discovered []DiscoveredSave) {
 			cache[appID] = name
 			cacheDirty = true
 			mu.Unlock()
-			discovered[i].Name = name
+			discovered[i].Name = renameKeepingSuffix(discovered[i].Name, name)
 		}(i, appID)
 	}
 	wg.Wait()
@@ -421,6 +433,34 @@ func dedupSet(items []DiscoveredSave) map[string]bool {
 		}
 	}
 	return seen
+}
+
+// renameKeepingSuffix swaps a discovery's base title for the resolved one
+// while keeping a trailing "(qualifier)". Proton-prefix entries are named
+// "Title (SubDir)" — dropping the qualifier collapses a prefix's many
+// candidates into identical, indistinguishable tiles.
+func renameKeepingSuffix(oldName, newBase string) string {
+	if i := strings.LastIndex(oldName, " ("); i >= 0 && strings.HasSuffix(oldName, ")") {
+		suffix := oldName[i:]
+		if !strings.HasSuffix(newBase, suffix) {
+			return newBase + suffix
+		}
+	}
+	return newBase
+}
+
+// seenInside reports whether an already-discovered save lives inside dir.
+// Used by the coarse Proton listing: when the manifest already pinpointed
+// a game's save folder within a prefix, offering the broad parent as well
+// would only add noise.
+func seenInside(seen map[string]bool, dir string) bool {
+	prefix := toLowerASCII(dir) + string(filepath.Separator)
+	for p := range seen {
+		if strings.HasPrefix(toLowerASCII(p), prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func toLowerASCII(s string) string {

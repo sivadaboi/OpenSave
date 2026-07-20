@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.sivadaboi.OpenSave</id>
+  <name>OpenSave</name>
+  <summary>Peer-to-peer game save sync</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.sivadaboi">
+    <name>Siva Prakash &amp; OpenSave contributors</name>
+  </developer>
+  <description>
+    <p>
+      OpenSave keeps your game saves in sync across every device you play on
+      — PC, laptop, Steam Deck — with no accounts and no server required.
+      It watches your save folders, snapshots them the moment a game writes,
+      and syncs devices directly over LAN or through a relay.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Auto-detects save locations for over 20,000 games, emulators, and repacks</li>
+      <li>Per-game snapshots with one-click restore and branching</li>
+      <li>Direct device-to-device sync with content-based conflict detection</li>
+      <li>Optional cloud mirroring to Google Drive, Dropbox, or OneDrive</li>
+      <li>Steam Deck aware: finds saves inside Proton prefixes and on SD cards</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.sivadaboi.OpenSave.desktop</launchable>
+  <url type="homepage">https://open-save.vercel.app/</url>
+  <url type="bugtracker">https://github.com/sivadaboi/OpenSave/issues</url>
+  <url type="vcs-browser">https://github.com/sivadaboi/OpenSave</url>
+  <categories>
+    <category>Game</category>
+    <category>Utility</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <!-- __VERSION__/__DATE__ are stamped by the flatpak CI job from the tag. -->
+  <releases>
+    <release version="__VERSION__" date="__DATE__"/>
+  </releases>
+</component>

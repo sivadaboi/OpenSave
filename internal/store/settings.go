@@ -40,6 +40,7 @@ type Settings struct {
 	StartOnBoot       bool              `db:"start_on_boot" json:"startOnBoot"`
 	SpeedLimitKbps    int               `db:"speed_limit_kbps" json:"speedLimit"`
 	UIMode            string            `db:"ui_mode" json:"uiMode"`
+	DefaultMaxSnapshots int             `db:"default_max_snapshots" json:"defaultMaxSnapshots"`
 
 	CustomScanPathsJSON  string `db:"custom_scan_paths" json:"-"`
 	PathTranslationsJSON string `db:"path_translations" json:"-"`
@@ -198,6 +199,7 @@ func (s *Store) UpdateSettings(settings Settings) error {
 			start_on_boot = :start_on_boot,
 			speed_limit_kbps = :speed_limit_kbps,
 			ui_mode = :ui_mode,
+			default_max_snapshots = :default_max_snapshots,
 			updated_at = datetime('now')
 		WHERE id = 1`, settings)
 	if err != nil {

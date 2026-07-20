@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -174,5 +176,64 @@ func TestWanLargeFileSync(t *testing.T) {
 	}) {
 		got := len(b.ReadSave("bigdata.bin"))
 		t.Fatalf("3MB file never arrived intact over the relay (got %d of %d bytes)", got, len(big))
+	}
+}
+
+// TestWanAutoTrackFromPeer is the direct regression for "the other device
+// added a game but it doesn't show up on mine" over the relay. A tracks a
+// game B has never seen; when A syncs, B must AUTO-TRACK it (via the
+// manifest request) and receive the save — the same behavior LAN already
+// has, but exercised through the WAN relay tunnel.
+func TestWanAutoTrackFromPeer(t *testing.T) {
+	relayURL := startRelay(t)
+	a := testutil.NewTestDaemon(t, "Wan-AT-A")
+	b := testutil.NewTestDaemon(t, "Wan-AT-B")
+
+	joinRoom(a, relayURL, "autotrack-room")
+	joinRoom(b, relayURL, "autotrack-room")
+	if !testutil.WaitFor(15*time.Second, func() bool {
+		return len(a.Daemon.P2P.Wan.DiscoveredWanPeers()) >= 1 &&
+			len(b.Daemon.P2P.Wan.DiscoveredWanPeers()) >= 1
+	}) {
+		t.Fatal("discovery failed")
+	}
+	a.API(http.MethodPost, "/api/peers/pair", map[string]any{"peerId": b.NodeID(), "address": "relay"}, nil)
+	if !testutil.WaitFor(10*time.Second, func() bool {
+		return len(b.Daemon.P2P.Pairing.PendingRequests()) > 0
+	}) {
+		t.Fatal("handshake failed")
+	}
+	b.API(http.MethodPost, "/api/peers/approve", map[string]any{"peerId": a.NodeID()}, nil)
+	if !testutil.WaitFor(10*time.Second, func() bool {
+		_, errA := a.Daemon.Store.GetPeer(b.NodeID())
+		_, errB := b.Daemon.Store.GetPeer(a.NodeID())
+		return errA == nil && errB == nil
+	}) {
+		t.Fatal("pairing failed")
+	}
+
+	// A tracks a game B has NEVER tracked. Only A adds it.
+	a.WriteSave("save.dat", "content from A")
+	gameID := a.TrackGame("AutoTrack Game")
+	if _, err := b.Daemon.Store.GetGame(gameID); err == nil {
+		t.Fatal("precondition: B should not have the game yet")
+	}
+
+	// A syncs → B must auto-track and receive the save over the relay.
+	// (Single-machine test: path translation is identity, so B's
+	// auto-tracked save path equals A's — read the file from B's actual
+	// tracked path rather than assuming b.SaveDir.)
+	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		g, err := b.Daemon.Store.GetGame(gameID)
+		if err != nil {
+			return false
+		}
+		data, _ := os.ReadFile(filepath.Join(g.SavePath, "save.dat"))
+		return string(data) == "content from A"
+	}) {
+		g, _ := b.Daemon.Store.GetGame(gameID)
+		data, _ := os.ReadFile(filepath.Join(g.SavePath, "save.dat"))
+		t.Fatalf("B auto-tracked but never received A's save over WAN (B path=%q, content=%q)", g.SavePath, string(data))
 	}
 }

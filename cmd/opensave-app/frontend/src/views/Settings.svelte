@@ -5,6 +5,27 @@
   let tab = 'general';
   let draft = null;
   let busy = false;
+  let pruning = false;
+
+  async function cleanUpSnapshots() {
+    pruning = true;
+    try {
+      // Save the limit first so the cleanup uses it, then prune everything.
+      await api.post('/api/settings', draft);
+      const res = await api.post('/api/snapshots/prune', { applyDefaultToAll: true });
+      const mb = (res.freedBytes / 1048576).toFixed(1);
+      toast(
+        res.removed > 0
+          ? `Removed ${res.removed} old snapshot${res.removed === 1 ? '' : 's'}, freed ${mb} MB`
+          : 'Nothing to clean up — all games are within their limit',
+        'success'
+      );
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      pruning = false;
+    }
+  }
 
   $: if ($settings && !draft) {
     draft = structuredClone($settings);
@@ -252,6 +273,29 @@
           </select>
         </div>
       {/if}
+    </div>
+
+    <div class="card" style="margin-top: 14px;">
+      <h3 class="section-title">📸 Snapshot history</h3>
+      <div class="field">
+        <label for="s-max-snaps">Snapshots to keep per game</label>
+        <input id="s-max-snaps" type="number" min="0" style="max-width: 120px;" bind:value={draft.defaultMaxSnapshots} />
+        <span class="hint">
+          Default limit for newly tracked games (0 = keep everything). The oldest are pruned first,
+          per branch. Change a single game's limit in its Configuration tab.
+        </span>
+      </div>
+      <div class="field" style="margin-bottom: 0;">
+        <div>
+          <button class="btn small" disabled={pruning} on:click={cleanUpSnapshots}>
+            {pruning ? 'Cleaning up…' : '🧹 Clean up now'}
+          </button>
+        </div>
+        <span class="hint">
+          Applies the limit to every existing game and deletes snapshots beyond it across all
+          branches — frees disk space immediately.
+        </span>
+      </div>
     </div>
 
     <div class="card" style="margin-top: 14px;">

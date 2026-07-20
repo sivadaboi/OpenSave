@@ -3,6 +3,7 @@ package presets
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -129,5 +130,181 @@ func TestScan_ProtonCompatdata(t *testing.T) {
 	}
 	if microsoftLeak {
 		t.Error("Microsoft vendor folder should be skipped, not offered as a save")
+	}
+}
+
+// TestProtonCoarseScanDefersToManifestHits guards the "38 identical
+// tiles" bug: a busy prefix's AppData/Documents vendor folders each
+// became a discovery named after the prefix's game, and resolveNames
+// then erased the "(subfolder)" qualifiers that told them apart.
+func TestProtonCoarseScanDefersToManifestHits(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+	lib := filepath.Join(home, ".local", "share", "Steam")
+	steamuser := filepath.Join(lib, "steamapps", "compatdata", "2161700", "pfx", "drive_c", "users", "steamuser")
+
+	// The real save (manifest will pinpoint it) plus prefix junk.
+	realSave := filepath.Join(steamuser, "AppData", "Roaming", "SEGA", "P3R", "Steam")
+	junk := [][]string{
+		{"AppData", "Roaming", "CRIWARE"},          // vendor-skip list
+		{"AppData", "Local", "Temp"},               // vendor-skip list
+		{"Documents", "SomeUnknownVendor"},         // legit coarse candidate
+	}
+	for _, dir := range append([][]string{{"AppData", "Roaming", "SEGA", "P3R", "Steam"}}, junk...) {
+		p := filepath.Join(append([]string{steamuser}, dir...)...)
+		if err := os.MkdirAll(p, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p, "data.bin"), []byte("x"), 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = realSave
+
+	sc := manifestScanner(t, `
+Persona 3 Reload:
+  files:
+    <winAppData>/SEGA/P3R/Steam:
+      tags: [save]
+      when:
+        - os: windows
+  steam:
+    id: 2161700
+`)
+	sc.GOOS = "linux"
+	sc.HomeDir = home
+	sc.SteamRoots = []string{lib}
+
+	// Mirror Scan()'s order: precise manifest pass first…
+	seen := map[string]bool{}
+	manifestHits := sc.scanLudusavi(seen)
+	if len(manifestHits) != 1 {
+		t.Fatalf("expected 1 manifest hit, got %d: %+v", len(manifestHits), manifestHits)
+	}
+	for _, d := range manifestHits {
+		seen[d.SavePath] = true
+	}
+
+	// …then the coarse prefix listing, which must not re-offer the
+	// SEGA parent (a precise hit lives inside it) nor the vendor junk.
+	coarse := sc.scanProtonCompat(sc.steamLibraryPaths(), seen, map[string]string{"2161700": "Persona 3 Reload"})
+	if len(coarse) != 1 {
+		t.Fatalf("expected only the unknown-vendor coarse hit, got %d: %+v", len(coarse), coarse)
+	}
+	if got := coarse[0].Name; got != "Persona 3 Reload (SomeUnknownVendor)" {
+		t.Errorf("coarse name = %q, want the qualified form", got)
+	}
+}
+
+// TestRenameKeepingSuffix guards resolveNames against collapsing
+// qualified names into identical tiles.
+func TestRenameKeepingSuffix(t *testing.T) {
+	cases := []struct{ old, base, want string }{
+		{"2161700 (SEGA)", "Persona 3 Reload", "Persona 3 Reload (SEGA)"},
+		{"Persona 3 Reload (CRIWARE)", "Persona 3 Reload", "Persona 3 Reload (CRIWARE)"},
+		{"plain-name", "Resolved Title", "Resolved Title"},
+		{"Dir (Epic/Unreal Save)", "Real Game", "Real Game (Epic/Unreal Save)"},
+	}
+	for _, c := range cases {
+		if got := renameKeepingSuffix(c.old, c.base); got != c.want {
+			t.Errorf("renameKeepingSuffix(%q, %q) = %q, want %q", c.old, c.base, got, c.want)
+		}
+	}
+}
+
+// TestEmuDeckDetection: EmuDeck routes every emulator's saves into one
+// Emulation/saves tree (internal or SD card) — each emulator subfolder
+// must surface as its own tracked candidate. Reported missing by both a
+// Steam Deck tester and a Reddit user.
+func TestEmuDeckDetection(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+	for _, emu := range []string{"retroarch", "dolphin"} {
+		p := filepath.Join(home, "Emulation", "saves", emu)
+		if err := os.MkdirAll(p, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(p, "save.srm"), []byte("x"), 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sc := &Scanner{CacheFile: filepath.Join(t.TempDir(), "cache.json"), GOOS: "linux", HomeDir: home}
+	found := sc.Scan(nil)
+
+	got := map[string]string{}
+	for _, d := range found {
+		if strings.HasPrefix(d.ID, "emudeck-") {
+			got[d.ID] = d.Name
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 EmuDeck discoveries, got %d: %v", len(got), got)
+	}
+	if got["emudeck-retroarch"] != "EmuDeck (retroarch)" {
+		t.Errorf("retroarch entry = %q", got["emudeck-retroarch"])
+	}
+	if got["emudeck-dolphin"] != "EmuDeck (dolphin)" {
+		t.Errorf("dolphin entry = %q", got["emudeck-dolphin"])
+	}
+}
+
+// TestPresetGlobPaths: SD-card style wildcard locations resolve through
+// filepath.Glob.
+func TestPresetGlobPaths(t *testing.T) {
+	home := t.TempDir()
+	target := filepath.Join(home, "run-media", "mmcblk0p1", "Emulation", "saves")
+	if err := os.MkdirAll(target, 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	p := preset{ID: "glob-test", Name: "Glob", Type: "emulator", IsWrapper: true,
+		LinuxPath: []string{"~/run-media/*/Emulation/saves"}}
+	sc := &Scanner{GOOS: "linux", HomeDir: home}
+
+	paths := p.resolvedPaths(sc)
+	if len(paths) != 1 || paths[0] != target {
+		t.Fatalf("resolvedPaths = %v, want [%s]", paths, target)
+	}
+}
+
+// TestYuzuFamilyForks: the Yuzu-lineage Switch emulators (Suyu, Sudachi,
+// Citron, Eden) share Yuzu's nand/user/save layout under a fork-specific
+// config dir. All must be detected, not just Yuzu.
+func TestYuzuFamilyForks(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+
+	forks := map[string]string{
+		"yuzu": "Yuzu Switch Emulator", "suyu": "Suyu Switch Emulator",
+		"sudachi": "Sudachi Switch Emulator", "citron": "Citron Switch Emulator",
+		"eden": "Eden Switch Emulator",
+	}
+	for dir := range forks {
+		save := filepath.Join(home, ".local", "share", dir, "nand", "user", "save", "0000")
+		if err := os.MkdirAll(save, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(save, "save.bin"), []byte("x"), 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sc := &Scanner{CacheFile: filepath.Join(t.TempDir(), "cache.json"), GOOS: "linux", HomeDir: home}
+	found := sc.Scan(nil)
+
+	got := map[string]bool{}
+	for _, d := range found {
+		if name, ok := forks[d.ID]; ok && d.Name == name {
+			got[d.ID] = true
+		}
+	}
+	for id, name := range forks {
+		if !got[id] {
+			t.Errorf("%s (%q) not detected", id, name)
+		}
 	}
 }
