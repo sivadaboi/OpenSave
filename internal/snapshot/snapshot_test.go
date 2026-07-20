@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -318,12 +320,17 @@ func TestUploadHookFires(t *testing.T) {
 func TestEmptySnapshotNeverMirrorsToCloud(t *testing.T) {
 	env := setup(t)
 
-	uploads := 0
-	env.mgr.OnUpload = func(zipPath, remoteName string) { uploads++ }
+	// OnUpload fires on a background goroutine, so the counter it writes
+	// must be synchronized against the test's reads (atomic).
+	var uploads atomic.Int32
+	env.mgr.OnUpload = func(zipPath, remoteName string) { uploads.Add(1) }
+	var mu sync.Mutex
 	var warned string
 	env.mgr.Log = func(level, msg string) {
 		if level == "warn" {
+			mu.Lock()
 			warned = msg
+			mu.Unlock()
 		}
 	}
 
@@ -335,11 +342,14 @@ func TestEmptySnapshotNeverMirrorsToCloud(t *testing.T) {
 	if _, err := os.Stat(snap.ZipPath); err != nil {
 		t.Fatalf("empty snapshot should still exist locally: %v", err)
 	}
-	if uploads != 0 {
-		t.Errorf("empty snapshot was mirrored to cloud (%d uploads)", uploads)
+	if uploads.Load() != 0 {
+		t.Errorf("empty snapshot was mirrored to cloud (%d uploads)", uploads.Load())
 	}
-	if warned == "" || !strings.Contains(warned, "no files") {
-		t.Errorf("expected a loud warning about the empty snapshot, got %q", warned)
+	mu.Lock()
+	gotWarn := warned
+	mu.Unlock()
+	if gotWarn == "" || !strings.Contains(gotWarn, "no files") {
+		t.Errorf("expected a loud warning about the empty snapshot, got %q", gotWarn)
 	}
 
 	// With real content the mirror fires again.
@@ -348,11 +358,11 @@ func TestEmptySnapshotNeverMirrorsToCloud(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for uploads == 0 && time.Now().Before(deadline) {
+	for uploads.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	if uploads != 1 {
-		t.Errorf("non-empty snapshot should mirror exactly once, got %d", uploads)
+	if uploads.Load() != 1 {
+		t.Errorf("non-empty snapshot should mirror exactly once, got %d", uploads.Load())
 	}
 }
 
