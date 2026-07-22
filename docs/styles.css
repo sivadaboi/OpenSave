@@ -466,7 +466,9 @@ code {
     transition: opacity 0.2s ease, transform 0.2s ease;
   }
   .nav-links > a { padding: 12px; }
-  .donate-link, .github-link, .nav-cta { margin: 4px 0 0 !important; justify-content: center; }
+  /* justify-content only centers the flex links (donate/github);
+     .nav-cta is a plain anchor, so it needs text-align too. */
+  .donate-link, .github-link, .nav-cta { margin: 4px 0 0 !important; justify-content: center; text-align: center; }
   .nav-toggle { display: flex; }
   .section { padding: 72px 20px; }
   .hero { padding: 116px 20px 24px; }
