@@ -476,4 +476,25 @@ code {
   .hero-ctas { flex-direction: column; }
   .hero-ctas .btn-primary, .hero-ctas .btn-secondary { width: 100%; }
   .footer-container { flex-direction: column; align-items: flex-start; }
+
+  /* How-it-works: stack vertically. The arrow is rotated 90deg (from the
+     940px breakpoint); without forcing a column + align-self:center it
+     stays a flex item that STRETCHES to the step's full height, and the
+     rotation turns that height into width — a ~224px-wide box that pushed
+     the whole page wider than the viewport and caused the side-scroll. */
+  .how-steps { flex-direction: column; align-items: stretch; gap: 6px; }
+  .how-step { min-width: 0; width: 100%; }
+  .how-arrow { align-self: center; }
+
+  /* Showcase screenshots are wide desktop captures. object-fit:cover cropped
+     them to fill the card (the "cropped halfway" look). On phones show them
+     whole at natural aspect, scaled to the card width. */
+  .shot-card img,
+  .shot-card.wide img,
+  .shot-card:not(.wide) img {
+    object-fit: contain;
+    height: auto;
+    max-height: none;
+    aspect-ratio: auto;
+  }
 }
