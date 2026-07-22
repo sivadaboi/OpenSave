@@ -370,6 +370,19 @@ code {
 .dl-upgrade { text-align: center; margin-top: 34px; font-size: 14.5px; color: var(--text-secondary); max-width: 720px; margin-inline: auto; }
 .dl-upgrade strong { color: var(--text); }
 
+/* ---------- comparison page ---------- */
+.compare-hero { padding-bottom: 12px; }
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.compare-table { width: 100%; border-collapse: collapse; min-width: 720px; background: var(--card); }
+.compare-table th, .compare-table td { padding: 14px 18px; text-align: left; font-size: 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.compare-table thead th { font-family: var(--font-display); font-weight: 600; color: var(--text); background: var(--bg-raised); }
+.compare-table tbody td:first-child { color: var(--text); font-weight: 500; white-space: normal; min-width: 260px; }
+.compare-table tbody tr:last-child td { border-bottom: none; }
+.compare-table .col-us { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.compare-table thead th.col-us { color: var(--accent-hover); }
+.compare-table .no { color: var(--text-dim); }
+.table-note { margin-top: 16px; font-size: 13px; color: var(--text-dim); text-align: center; }
+
 /* ---------- faq ---------- */
 .faq-list { display: flex; flex-direction: column; gap: 12px; }
 .faq-item { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }

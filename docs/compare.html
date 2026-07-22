@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenSave vs Steam Cloud, Ludusavi &amp; GameSave Manager — which one is right for you?</title>
+  <meta name="description" content="A fair, feature-by-feature comparison of OpenSave against Steam Cloud, Ludusavi, and GameSave Manager — what each tool is actually best at, and why OpenSave is the only one that live-syncs saves peer-to-peer.">
+  <meta property="og:title" content="OpenSave vs Steam Cloud, Ludusavi & GameSave Manager">
+  <meta property="og:description" content="What each game-save tool is actually best at, compared honestly.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://open-save.vercel.app/compare.html">
+  <meta property="og:image" content="https://open-save.vercel.app/screenshots/home-library.png">
+  <meta name="theme-color" content="#0c0c0d">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="icon.png?v=2">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="ambient-glow glow-1" aria-hidden="true"></div>
+  <div class="ambient-glow glow-2" aria-hidden="true"></div>
+
+  <header class="navbar">
+    <div class="nav-container">
+      <a class="logo" href="index.html" aria-label="OpenSave home">
+        <img src="icon.png?v=2" alt="" class="logo-img">
+        <span class="logo-text">Open<span>Save</span></span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="index.html#showcase">Screenshots</a>
+        <a href="index.html#features">Features</a>
+        <a href="index.html#how">How it works</a>
+        <a href="index.html#faq">FAQ</a>
+        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="donate-link">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-10.2-9.6C.4 8.5 1.7 5 5.1 4.2c2-.5 4 .3 5.1 2 .9-1.7 3-2.5 5-2 3.4.8 4.7 4.3 3.3 7.2C19.5 16.4 12 21 12 21z"/></svg>
+          Donate
+        </a>
+        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener" class="github-link">
+          <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+          GitHub
+        </a>
+        <a href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener" class="nav-cta">Download</a>
+      </nav>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <section class="hero compare-hero" id="top">
+    <div class="hero-container">
+      <div class="hero-eyebrow"><span class="badge-dot"></span> Comparison</div>
+      <h1 class="hero-title">OpenSave vs <span>everything else</span>.</h1>
+      <p class="hero-subtitle">
+        Steam Cloud, Ludusavi, and GameSave Manager are all good at what they do — none of them do what OpenSave does.
+        Here's an honest breakdown, no marketing spin.
+      </p>
+    </div>
+  </section>
+
+  <section class="section" id="table">
+    <div class="section-container">
+      <div class="table-scroll">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th class="col-us">OpenSave</th>
+              <th>Steam Cloud</th>
+              <th>Ludusavi</th>
+              <th>GameSave Manager</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Works with any store, emulator, or repack</td>
+              <td class="col-us">✓</td>
+              <td class="no">✕ Steam-only, opt-in</td>
+              <td>✓</td>
+              <td>✓</td>
+            </tr>
+            <tr>
+              <td>Live sync the moment a save changes</td>
+              <td class="col-us">✓</td>
+              <td>✓ (Steam titles only)</td>
+              <td class="no">✕ manual backup/restore</td>
+              <td class="no">✕ manual backup/restore</td>
+            </tr>
+            <tr>
+              <td>Direct LAN sync, no internet needed</td>
+              <td class="col-us">✓</td>
+              <td class="no">✕</td>
+              <td class="no">✕</td>
+              <td class="no">✕</td>
+            </tr>
+            <tr>
+              <td>Sync across the internet, no port forwarding</td>
+              <td class="col-us">✓ room code + relay</td>
+              <td>✓ (via Steam)</td>
+              <td class="no">✕</td>
+              <td class="no">✕</td>
+            </tr>
+            <tr>
+              <td>Versioned snapshot history / rollback</td>
+              <td class="col-us">✓</td>
+              <td class="no">✕ latest state only</td>
+              <td>✓ timestamped backups</td>
+              <td>✓ timestamped backups</td>
+            </tr>
+            <tr>
+              <td>Detects &amp; resolves save conflicts</td>
+              <td class="col-us">✓ content-based, asks you</td>
+              <td>~ picks by timestamp</td>
+              <td class="no">✕ not applicable</td>
+              <td class="no">✕ not applicable</td>
+            </tr>
+            <tr>
+              <td>Optional cloud backup (Drive/Dropbox/etc.)</td>
+              <td class="col-us">✓ off by default</td>
+              <td class="no">✕ Steam's cloud only</td>
+              <td>~ manual, via a synced folder</td>
+              <td>~ manual, via a synced folder</td>
+            </tr>
+            <tr>
+              <td>Price</td>
+              <td class="col-us">Free</td>
+              <td>Free</td>
+              <td>Free</td>
+              <td>Free (donationware)</td>
+            </tr>
+            <tr>
+              <td>Open source</td>
+              <td class="col-us">✓ MIT</td>
+              <td class="no">✕</td>
+              <td>✓</td>
+              <td class="no">✕</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-note">
+        "~" means it's technically possible but not what the tool is built for. This table describes each
+        project's primary purpose, not every edge case — corrections welcome via a
+        <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener">GitHub issue</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="section section-tinted" id="breakdown">
+    <div class="section-container narrow">
+      <div class="section-heading">
+        <span class="section-eyebrow">The honest version</span>
+        <h2>What each tool is actually for.</h2>
+      </div>
+      <div class="faq-list">
+        <details class="faq-item" open>
+          <summary>Steam Cloud</summary>
+          <p>Excellent when it works — zero setup, built into Steam. The catch: it only covers games bought on Steam, and only the ones whose developer opted in. Everything else (emulators, GOG, Epic, itch, that one indie gem) gets nothing.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Ludusavi</summary>
+          <p>A genuinely excellent backup/restore tool with the best save-location database around — <strong>OpenSave's auto-scan is built directly on Ludusavi's community-maintained manifest</strong>, so credit where it's due. What it doesn't do is live sync: you run a backup, then manually move or restore it. If you just want reliable local backups across a huge library, Ludusavi is great at exactly that.</p>
+        </details>
+        <details class="faq-item">
+          <summary>GameSave Manager</summary>
+          <p>A mature Windows tool for organizing and versioning save backups across a big game library, with its own broad detection database. Like Ludusavi, it's a backup/restore manager, not a live sync daemon — there's no automatic peer-to-peer propagation the moment a save changes.</p>
+        </details>
+        <details class="faq-item">
+          <summary>OpenSave</summary>
+          <p>The only one of the four built specifically for <em>live, automatic, peer-to-peer sync</em> between your own devices — watch → snapshot → sync, the instant a save changes, with no cloud account required. Think less "backup tool," more "Steam Cloud, but for every game you own and every device you own."</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="section footer-cta">
+    <div class="section-container center">
+      <h2>Try the one that actually syncs.</h2>
+      <p class="section-sub">Free, open source, and it takes about two minutes to pair your first device.</p>
+      <div class="hero-ctas center">
+        <a href="https://github.com/Liquid-co/OpenSave/releases/latest" class="btn-primary" data-dl="windows" target="_blank" rel="noopener">Download OpenSave</a>
+        <a href="index.html" class="btn-secondary">Back to home</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <img src="icon.png?v=2" alt="" class="logo-img">
+        <span class="logo-text">Open<span>Save</span></span>
+      </div>
+      <nav class="footer-links">
+        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="footer-donate">Donate</a>
+        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener">Report a bug</a>
+      </nav>
+      <p class="footer-note">MIT licensed. No accounts. No telemetry. Made for people who love their saves.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
