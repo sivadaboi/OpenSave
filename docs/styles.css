@@ -326,7 +326,13 @@ code {
 .how-arrow { display: flex; align-items: center; color: var(--accent); font-size: 22px; font-weight: 700; }
 
 .arch-panel { display: grid; grid-template-columns: 1.15fr 1fr; gap: 32px; align-items: center; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; }
-.arch-diagram svg { width: 100%; height: auto; display: block; }
+/* overflow-x + a min-width on the SVG itself (not just width:100%) stops
+   the diagram's text shrinking below legible size on narrow screens —
+   viewBox scaling shrinks EVERYTHING proportionally, so a full-bleed SVG
+   at ~300px wide renders its labels at a few px tall. Same contained-
+   scroll pattern as the comparison table. */
+.arch-diagram { overflow-x: auto; }
+.arch-diagram svg { width: 100%; min-width: 560px; height: auto; display: block; }
 .arch-diagram .d-box { fill: var(--bg); stroke: var(--border-strong); stroke-width: 1.5; }
 .arch-diagram .r-box { fill: var(--accent-soft); stroke: var(--accent-line); stroke-width: 1.5; }
 .arch-diagram .d-title { fill: var(--text); font-family: var(--font-display); font-size: 16px; font-weight: 600; }
@@ -435,9 +441,22 @@ code {
     flex-direction: column; align-items: stretch; gap: 4px;
     background: var(--bg-sidebar); border-bottom: 1px solid var(--border);
     padding: 14px 20px 20px;
-    transform: translateY(-140%); transition: var(--ease); z-index: 99;
+    z-index: 99;
+    /* Fixed-pixel offset + opacity/visibility, not a percentage transform:
+       percentage translateY() resolves against the element's own computed
+       height, which some engines fail to resolve for a fixed-position
+       element sized by content — that left this menu rendered open at its
+       natural position instead of off-screen. visibility (not just
+       opacity) also keeps its links out of tab order while closed. */
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transform: translateY(-10px);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
   }
-  .nav-links.open { transform: translateY(0); }
+  .nav-links.open {
+    opacity: 1; visibility: visible; pointer-events: auto;
+    transform: translateY(0);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
   .nav-links > a { padding: 12px; }
   .donate-link, .github-link, .nav-cta { margin: 4px 0 0 !important; justify-content: center; }
   .nav-toggle { display: flex; }
