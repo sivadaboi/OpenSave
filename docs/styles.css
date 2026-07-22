@@ -81,7 +81,15 @@ code {
 }
 
 /* ---------- ambient glows (subtle — the app is neutral) ---------- */
-.ambient-glow { position: fixed; border-radius: 50%; pointer-events: none; z-index: 0; filter: blur(10px); }
+/* The glows sit at negative offsets (partly off-screen by design). They live
+   inside a fixed, overflow-hidden layer rather than being position:fixed
+   themselves: a fixed element hanging past the right edge is NOT clipped by
+   body{overflow-x:hidden} (fixed elements resolve against the viewport, not
+   the body), so on mobile it widened the layout viewport and zoomed the whole
+   page out. Clipping them in this wrapper fixes that on every engine while
+   keeping them pinned to the viewport during scroll. */
+.ambient-layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.ambient-glow { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(10px); }
 .glow-1 { width: 820px; height: 820px; background: radial-gradient(circle, rgba(138,99,244,0.16) 0%, transparent 60%); top: -340px; right: -220px; }
 .glow-2 { width: 700px; height: 700px; background: radial-gradient(circle, rgba(115,70,230,0.10) 0%, transparent 62%); top: 44%; left: -320px; }
 
