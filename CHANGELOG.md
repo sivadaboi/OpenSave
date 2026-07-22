@@ -3,10 +3,28 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.1.1] — 2026-07-20
 
 ### Fixed
 
+- **Conflict resolutions now stick.** Resolving a save conflict (Keep
+  both / Keep mine / Keep theirs) records the agreed state so the same
+  conflict can't re-appear on the next sync — fixing an endless
+  re-prompting loop. "Keep mine" now also propagates your version to the
+  peer instead of leaving the two devices permanently diverged.
+- **Adding a game now shows up on your other devices immediately.**
+  Tracking a game syncs it to paired peers right away (they auto-track
+  it) instead of waiting for the periodic reconcile.
+- **Untrack is now two-way and recoverable.** Untracking a game removes
+  it on paired devices too and doesn't bounce back; re-tracking it on any
+  device restores it on all of them.
+- A peer that isn't tracking a game no longer produces an endless "Game
+  not found" retry loop in the log.
+- **Empty snapshots are caught, not silently backed up.** A snapshot
+  with no files (almost always a mis-tracked save path) is flagged in
+  Activity and never mirrored to the cloud. WebDAV uploads are verified
+  after the fact, so a truncated/empty upload fails loudly.
+- The in-app logo (title bar, About, boot screen) now shows the new icon.
 - **Auto-scan no longer offers a game's whole install folder as its
   "save".** Games that keep their save file directly in the install
   directory (over 1,100 manifest entries — e.g. Sonic & Sega All-Stars
@@ -53,6 +71,16 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **Snapshot & branch management.** Delete individual snapshots or whole
+  branches from a game's tabs, and a one-click "Clean up now" in Settings
+  that prunes every game to its limit across all branches (and sweeps
+  abandoned `conflict-*` branches left by resolved conflicts).
+- **Snapshot retention controls.** A global default limit — now **20
+  snapshots per game** — set in Settings, plus a per-game override in
+  each game's Configuration tab. Retention now applies to every branch,
+  not just the active one.
+- **Yuzu-family Switch emulators.** Auto-scan now detects Suyu, Sudachi,
+  Citron, and Eden alongside Yuzu and Ryujinx.
 - **Choose-what-to-export save backups.** "Export saves…" now opens a
   picker listing every save on the machine — tracked games plus
   auto-detected ones — with select-all / tracked-only shortcuts. The

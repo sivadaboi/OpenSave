@@ -319,3 +319,60 @@ func TestUnpairNotifiesPeer(t *testing.T) {
 		t.Fatal("B never learned about A's unpair — ghost pairing persists")
 	}
 }
+
+// TestUntrackPropagatesAndRecovers covers the full track/untrack lifecycle
+// across two devices: untracking on one removes it on both (propagation),
+// it does NOT bounce back, and re-tracking on one restores it on both
+// (retrack clears tombstones + sync-on-track re-populates).
+func TestUntrackPropagatesAndRecovers(t *testing.T) {
+	a := testutil.NewTestDaemon(t, "Untrack-A")
+	b := testutil.NewTestDaemon(t, "Untrack-B")
+	a.PairWith(b)
+
+	a.WriteSave("slot1.sav", "shared save")
+	gameID := a.TrackGame("Untrack Game")
+	b.API(http.MethodPost, "/api/games", map[string]string{"name": "Untrack Game", "savePath": b.SaveDir}, nil)
+	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+	if !testutil.WaitFor(30*time.Second, func() bool { return b.ReadSave("slot1.sav") == "shared save" }) {
+		t.Fatal("initial sync failed")
+	}
+
+	// A untracks → propagates → B loses it too.
+	a.API(http.MethodDelete, "/api/games/"+gameID, nil, nil)
+	if _, err := a.Daemon.Store.GetGame(gameID); err == nil {
+		t.Fatal("game still tracked on A right after untrack")
+	}
+	if !testutil.WaitFor(10*time.Second, func() bool {
+		_, err := b.Daemon.Store.GetGame(gameID)
+		return err != nil
+	}) {
+		t.Error("untrack did not propagate — B still tracks the game")
+	}
+
+	// No bounce-back: it stays gone on A across several sync ticks.
+	for i := 0; i < 3; i++ {
+		a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+		time.Sleep(300 * time.Millisecond)
+	}
+	if _, err := a.Daemon.Store.GetGame(gameID); err == nil {
+		t.Fatal("game bounced back on A after untrack")
+	}
+
+	// Re-tracking on A restores it on BOTH (retrack clears B's tombstone,
+	// sync-on-track re-populates B).
+	a.WriteSave("slot1.sav", "re-tracked save")
+	newID := a.TrackGame("Untrack Game")
+	if _, err := a.Daemon.Store.GetGame(newID); err != nil {
+		t.Fatalf("re-tracking after untrack failed: %v", err)
+	}
+	if !testutil.WaitFor(20*time.Second, func() bool {
+		g, err := b.Daemon.Store.GetGame(newID)
+		if err != nil {
+			return false
+		}
+		data, _ := os.ReadFile(filepath.Join(g.SavePath, "slot1.sav"))
+		return string(data) == "re-tracked save"
+	}) {
+		t.Error("re-tracked game did not come back on B — recovery broken")
+	}
+}

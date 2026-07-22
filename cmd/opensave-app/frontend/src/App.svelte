@@ -3,7 +3,7 @@
   import { initApi, connectWS, native } from './lib/api.js';
   import { applyMessage, wsConnected, view, appUpdate, toast, showAbout, aboutChangelogOpen } from './lib/stores.js';
 
-  import logoUrl from './assets/logo.svg';
+  import logoUrl from './assets/logo.png';
   import TitleBar from './components/TitleBar.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import StatusBar from './components/StatusBar.svelte';

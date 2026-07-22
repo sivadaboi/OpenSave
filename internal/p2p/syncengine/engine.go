@@ -107,6 +107,17 @@ func (e *Engine) ActiveConflicts() map[string]Conflict {
 // existed, so dropping the request silently loses that change until the
 // periodic reconcile. Instead, the request is queued and one follow-up
 // pass runs when the active sync finishes.
+// isGameNotFound reports whether a manifest-fetch error means the peer
+// isn't tracking this game (as opposed to a network/transport failure).
+// The serving side answers "Game not found." for both an unknown game and
+// one it has tombstoned after untracking.
+func isGameNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
 func (e *Engine) SyncGame(ctx context.Context, gameID string, onlinePeers []Peer) (map[string]Result, error) {
 	e.mu.Lock()
 	if e.activeSyncs[gameID] {
@@ -176,6 +187,13 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 		AppID: game.AppID, CoverURL: game.CoverURL,
 	})
 	if err != nil {
+		// The peer simply isn't tracking this game (they untracked it, or
+		// never had it). That's a stable state, not a transient network
+		// interruption — surface it as "peer_missing" so the resync loop
+		// stops hammering it every tick instead of retrying forever.
+		if isGameNotFound(err) {
+			return Result{Status: "peer_missing", PeerID: peer.ID, PeerName: peer.Name}, nil
+		}
 		return Result{}, fmt.Errorf("fetch remote manifest: %w", err)
 	}
 

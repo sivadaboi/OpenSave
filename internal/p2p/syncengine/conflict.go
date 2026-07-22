@@ -32,12 +32,19 @@ func (e *Engine) ResolveConflict(ctx context.Context, gameID, peerID, resolution
 
 	switch resolution {
 	case "keep-local":
-		// Purely local: keep our version, clear our conflict. We deliberately
-		// do NOT force the peer to adopt our save — that would change their
-		// files without their consent. If they want ours, their own engine
-		// detects the same conflict and their user chooses "keep theirs".
-		e.Log("info", fmt.Sprintf("conflict on %q resolved: keep LOCAL (peer's save left untouched)", gameID))
+		// Keep our version as the resolved state. We record it as the agreed
+		// merge-base (so this exact divergence never re-prompts) and ask the
+		// peer to pull our version — its own engine applies it with a safety
+		// snapshot, or re-raises the conflict if the peer has NEW unsynced
+		// work of its own. Without recording the base, the next sync would
+		// see both sides still differing from the stale base and re-conflict
+		// immediately — the "keep looping" bug.
+		e.Log("info", fmt.Sprintf("conflict on %q resolved: keep LOCAL — our version becomes the shared state", gameID))
+		if err := e.markResolvedLocal(gameID, peer); err != nil {
+			return "", err
+		}
 		e.clearConflict(gameID)
+		e.Transport.TriggerPeerPull(peer, gameID)
 		return "", nil
 
 	case "keep-remote":
@@ -52,6 +59,7 @@ func (e *Engine) ResolveConflict(ctx context.Context, gameID, peerID, resolution
 		if err := e.overwriteLocalWithRemote(ctx, gameID, peer, "Resolved conflict: Overwrite with remote"); err != nil {
 			return "", err
 		}
+		e.markResolvedConverged(gameID, peer)
 		e.clearConflict(gameID)
 		return "", nil
 
@@ -70,12 +78,96 @@ func (e *Engine) ResolveConflict(ctx context.Context, gameID, peerID, resolution
 		if err := e.overwriteLocalWithRemote(ctx, gameID, peer, "Diverged save state from peer: "+peer.Name); err != nil {
 			return "", err
 		}
+		e.markResolvedConverged(gameID, peer)
 		e.clearConflict(gameID)
 		return branchName, nil
 
 	default:
 		return "", fmt.Errorf("invalid conflict resolution %q", resolution)
 	}
+}
+
+// markResolvedConverged records the post-resolution convergence for the
+// keep-remote / keep-both paths, where the local save was just overwritten
+// to match the peer. It captures the CURRENT local manifest as the agreed
+// merge-base and lineage, and tells the peer we are now in sync at that
+// hash — the peer, already holding that exact state, re-confirms identity
+// on its own clock (ConfirmInSync) and records the same base. Both sides
+// end at one merge-base, so the resolved divergence can never re-trigger.
+//
+// Capturing the manifest AFTER the overwrite (rather than assuming it
+// equals the remote) means even a partially-applied overwrite is safe: the
+// base matches our real files, so the next sync finishes converging via a
+// normal pull instead of re-raising a conflict.
+func (e *Engine) markResolvedConverged(gameID string, peer Peer) {
+	game, err := e.Store.GetGame(gameID)
+	if err != nil {
+		return
+	}
+	local, err := delta.BuildManifest(game.SavePath)
+	if err != nil {
+		e.Log("warn", fmt.Sprintf("record resolution: build manifest failed: %v", err))
+		return
+	}
+	e.persistLineage(gameID, peer.ID, local, local)
+	_ = e.Store.SetAgreedHash(gameID, peer.ID, local.ManifestHash())
+	_ = e.Store.UpdatePeerLastSynced(peer.ID, time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
+	_ = e.Store.SetLastManifestHash(gameID, local.ManifestHash())
+	e.Transport.ReportSyncEvent(peer, gameID, "in-sync", map[string]any{
+		"peerName":     e.deviceName(),
+		"manifestHash": local.ManifestHash(),
+	})
+}
+
+// markResolvedLocal records our local version as the agreed merge-base for
+// the keep-local path (we did NOT overwrite anything) and makes it
+// authoritative so it propagates to the peer instead of being pulled back.
+//
+// Subtlety: recording the merge-base alone is not enough. On the next
+// sync the file still differs on both sides, so Compute falls to its
+// mtime tiebreak — and if the peer's copy happens to carry a newer mtime,
+// OUR version would be pulled away, silently undoing the user's "keep
+// mine" choice. So we refresh our save files' mtimes to now: the content
+// (and thus the merge-base hash) is unchanged, but our side is now
+// unambiguously the newest, so the sync direction is a push. The peer
+// then receives our version (its own engine snapshots first, or re-raises
+// its own conflict if it has newer unsynced work of its own).
+func (e *Engine) markResolvedLocal(gameID string, peer Peer) error {
+	game, err := e.Store.GetGame(gameID)
+	if err != nil {
+		return err
+	}
+	touchSaveMtimes(game.SavePath)
+	local, err := delta.BuildManifest(game.SavePath)
+	if err != nil {
+		return err
+	}
+	e.persistLineage(gameID, peer.ID, local, local)
+	_ = e.Store.SetAgreedHash(gameID, peer.ID, local.ManifestHash())
+	_ = e.Store.SetLastManifestHash(gameID, local.ManifestHash())
+	_ = e.Store.UpdatePeerLastSynced(peer.ID, time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
+	return nil
+}
+
+// touchSaveMtimes bumps every file's mtime under root to now without
+// changing its content, marking this side as the most recent version.
+func touchSaveMtimes(root string) {
+	now := time.Now()
+	info, err := os.Stat(root)
+	if err != nil {
+		return
+	}
+	if !info.IsDir() {
+		_ = os.Chtimes(root, now, now)
+		return
+	}
+	_ = filepath.Walk(root, func(path string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil || fi.IsDir() {
+			return nil
+		}
+		_ = os.Chtimes(path, now, now)
+		return nil
+	})
 }
 
 func (e *Engine) clearConflict(gameID string) {

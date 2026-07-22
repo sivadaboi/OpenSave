@@ -382,3 +382,54 @@ func TestPresetScanEndpoint(t *testing.T) {
 		t.Fatalf("scan response should be a JSON array: %v", err)
 	}
 }
+
+// TestDeleteSnapshotAndBranch covers the per-snapshot and per-branch
+// delete endpoints: a deleted snapshot's row and zip are gone; a deleted
+// branch takes all its snapshots; active/main are protected.
+func TestDeleteSnapshotAndBranch(t *testing.T) {
+	ts := startTestServer(t)
+	if err := os.WriteFile(filepath.Join(ts.saveDir, "s.sav"), []byte("x"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	ts.do(t, http.MethodPost, "/api/games", map[string]string{"name": "Del Game", "savePath": ts.saveDir})
+	waitInitialSnapshot(t, ts, "del-game")
+
+	// A manual second snapshot so we have one to delete.
+	ts.do(t, http.MethodPost, "/api/games/del-game/snapshot", map[string]string{"comment": "manual"})
+	snaps, _ := ts.daemon.Store.ListSnapshots("del-game", "main")
+	if len(snaps) < 2 {
+		t.Fatalf("want >=2 snapshots, got %d", len(snaps))
+	}
+	victim := snaps[0]
+
+	// Delete one snapshot.
+	resp, _ := ts.do(t, http.MethodDelete, "/api/games/del-game/snapshot/"+victim.ID, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete snapshot status = %d", resp.StatusCode)
+	}
+	if _, err := ts.daemon.Store.GetSnapshot(victim.ID); err == nil {
+		t.Error("snapshot row still present after delete")
+	}
+	if _, err := os.Stat(victim.ZipPath); !os.IsNotExist(err) {
+		t.Error("snapshot zip not removed")
+	}
+
+	// A side branch, then delete it.
+	ts.do(t, http.MethodPost, "/api/games/del-game/branch", map[string]string{"name": "side"})
+	resp, _ = ts.do(t, http.MethodDelete, "/api/games/del-game/branch/side", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete branch status = %d", resp.StatusCode)
+	}
+	branches, _ := ts.daemon.Store.ListBranches("del-game")
+	for _, b := range branches {
+		if b == "side" {
+			t.Error("branch 'side' still present after delete")
+		}
+	}
+
+	// main is protected.
+	resp, _ = ts.do(t, http.MethodDelete, "/api/games/del-game/branch/main", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("deleting main should be rejected, got %d", resp.StatusCode)
+	}
+}

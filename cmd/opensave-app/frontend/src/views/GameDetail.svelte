@@ -80,6 +80,14 @@
     });
   const switchBranch = (name) =>
     run(`Switched to "${name}"`, () => api.post(`/api/games/${game.id}/branch/switch`, { name }));
+  async function deleteBranch(name) {
+    if (!(await askConfirm(`Delete branch "${name}" and all its snapshots? Your current save and other branches aren't affected.`, { title: 'Delete branch?', confirmText: 'Delete', danger: true }))) return;
+    run(`Deleted branch "${name}"`, () => api.del(`/api/games/${game.id}/branch/${encodeURIComponent(name)}`));
+  }
+  async function deleteSnapshot(snap) {
+    if (!(await askConfirm(`Delete snapshot ${snap.id}? This can't be undone; your current save isn't affected.`, { title: 'Delete snapshot?', confirmText: 'Delete', danger: true }))) return;
+    run('Snapshot deleted', () => api.del(`/api/games/${game.id}/snapshot/${snap.id}`));
+  }
 
   async function browseSnapshot(snap) {
     try {
@@ -278,6 +286,7 @@
             <div class="snap-actions">
               <button class="btn small" on:click={() => browseSnapshot(snap)}>Browse files</button>
               <button class="btn small primary" disabled={busy} on:click={() => rollback(snap)}>Restore</button>
+              <button class="btn small danger" disabled={busy} on:click={() => deleteSnapshot(snap)}>Delete</button>
             </div>
           </div>
         {/each}
@@ -299,9 +308,16 @@
             <div class="snap-meta">{branch.snapshots?.length ?? 0} snapshot(s)</div>
           </div>
           {#if branch.name !== game.activeBranch}
-            <button class="btn small primary" disabled={busy} on:click={() => switchBranch(branch.name)}>
-              Switch to
-            </button>
+            <div class="branch-actions">
+              <button class="btn small primary" disabled={busy} on:click={() => switchBranch(branch.name)}>
+                Switch to
+              </button>
+              {#if branch.name !== 'main'}
+                <button class="btn small danger" disabled={busy} on:click={() => deleteBranch(branch.name)}>
+                  Delete
+                </button>
+              {/if}
+            </div>
           {/if}
         </div>
       {/each}
@@ -551,6 +567,10 @@
   .file-size {
     color: var(--text-faint);
     font-size: 0.78rem;
+  }
+  .branch-actions {
+    display: flex;
+    gap: 6px;
   }
   .branch-hint {
     margin-top: 12px;

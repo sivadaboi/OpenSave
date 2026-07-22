@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -29,13 +30,17 @@ func (s *Server) routes(r chi.Router) {
 	r.Post("/api/games/{gameId}/rollback", s.handleRollback)
 	r.Get("/api/games/{gameId}/snapshot/{snapshotId}/files", s.handleSnapshotFiles)
 	r.Post("/api/games/{gameId}/snapshot/{snapshotId}/restore-file", s.handleRestoreFile)
+	r.Delete("/api/games/{gameId}/snapshot/{snapshotId}", s.handleDeleteSnapshot)
 
 	r.Post("/api/games/{gameId}/branch", s.handleCreateBranch)
 	r.Post("/api/games/{gameId}/branch/switch", s.handleSwitchBranch)
+	r.Delete("/api/games/{gameId}/branch/{branch}", s.handleDeleteBranch)
 	r.Post("/api/games/{gameId}/launch", s.handleLaunchGame)
 
 	r.Post("/api/backup/export", s.handleBackupExport)
 	r.Post("/api/backup/restore", s.handleBackupRestore)
+
+	r.Post("/api/snapshots/prune", s.handlePruneSnapshots)
 
 	r.Get("/api/presets/scan", s.handlePresetScan)
 
@@ -191,6 +196,46 @@ func (s *Server) applyCloudPatch(patch *cloudSyncPatch) error {
 
 func (s *Server) handleListGames(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.gamesPayload())
+}
+
+// handlePruneSnapshots cleans up old snapshots across all games and every
+// branch. With applyDefaultToAll, it first sets every game's retention
+// limit to the global default (so the cleanup uses the new limit). Returns
+// how many snapshots were removed and the disk space freed.
+func (s *Server) handlePruneSnapshots(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ApplyDefaultToAll bool `json:"applyDefaultToAll"`
+	}
+	_ = readJSON(r, &body)
+
+	if body.ApplyDefaultToAll {
+		settings, err := s.Daemon.Store.GetSettings()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		limit := settings.DefaultMaxSnapshots
+		games, err := s.Daemon.Store.ListGames()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, g := range games {
+			if g.MaxSnapshots != limit {
+				g.MaxSnapshots = limit
+				_ = s.Daemon.Store.UpdateGame(g)
+			}
+		}
+	}
+
+	removed, freed, err := s.Daemon.Snapshots.PruneAllGames()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.Daemon.Log.Log("success", fmt.Sprintf("snapshot cleanup: removed %d snapshot(s), freed %.1f MB", removed, float64(freed)/(1<<20)))
+	s.BroadcastGamesUpdate()
+	writeJSON(w, http.StatusOK, map[string]any{"removed": removed, "freedBytes": freed})
 }
 
 func (s *Server) handleTrackGame(w http.ResponseWriter, r *http.Request) {
@@ -350,6 +395,44 @@ func (s *Server) handleSwitchBranch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.BroadcastGamesUpdate()
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+// handleDeleteSnapshot removes a single snapshot (metadata + zip).
+func (s *Server) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request) {
+	gameID := chi.URLParam(r, "gameId")
+	snapshotID := chi.URLParam(r, "snapshotId")
+	freed, err := s.Daemon.Snapshots.DeleteSnapshot(gameID, snapshotID)
+	if err != nil {
+		writeError(w, notFoundToStatus(err), err.Error())
+		return
+	}
+	s.Daemon.Log.Log("info", fmt.Sprintf("deleted snapshot %s (%.1f MB)", snapshotID, float64(freed)/(1<<20)))
+	s.BroadcastGamesUpdate()
+	writeJSON(w, http.StatusOK, map[string]any{"freedBytes": freed})
+}
+
+// handleDeleteBranch removes a branch and all its snapshots. The active
+// branch and "main" can't be deleted.
+func (s *Server) handleDeleteBranch(w http.ResponseWriter, r *http.Request) {
+	gameID := chi.URLParam(r, "gameId")
+	branch := chi.URLParam(r, "branch")
+	if branch == "main" {
+		writeError(w, http.StatusBadRequest, "the main branch can't be deleted")
+		return
+	}
+	game, err := s.Daemon.Store.GetGame(gameID)
+	if err != nil {
+		writeError(w, notFoundToStatus(err), err.Error())
+		return
+	}
+	if branch == game.ActiveBranch {
+		writeError(w, http.StatusBadRequest, "switch to another branch before deleting this one")
+		return
+	}
+	removed, freed := s.Daemon.Snapshots.DeleteBranch(gameID, branch)
+	s.Daemon.Log.Log("info", fmt.Sprintf("deleted branch %q of %q (%d snapshot(s), %.1f MB)", branch, game.Name, removed, float64(freed)/(1<<20)))
+	s.BroadcastGamesUpdate()
+	writeJSON(w, http.StatusOK, map[string]any{"removed": removed, "freedBytes": freed})
 }
 
 func (s *Server) handlePresetScan(w http.ResponseWriter, r *http.Request) {
