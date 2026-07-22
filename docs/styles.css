@@ -126,6 +126,16 @@ code {
   margin-left: 4px;
 }
 .github-link:hover { border-color: var(--accent-line); background: var(--accent-soft) !important; }
+.donate-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid rgba(233, 79, 133, 0.35);
+  border-radius: 999px !important;
+  padding: 7px 14px !important;
+  color: #f0a3c2 !important;
+  background: rgba(233, 79, 133, 0.1);
+  margin-left: 4px;
+}
+.donate-link:hover { border-color: rgba(233, 79, 133, 0.6); background: rgba(233, 79, 133, 0.18) !important; color: #f6b9d3 !important; }
 .nav-cta {
   background: var(--grad);
   color: #fff !important;
@@ -383,6 +393,8 @@ code {
 .footer-links { display: flex; flex-wrap: wrap; gap: 20px; }
 .footer-links a { color: var(--text-secondary); font-size: 14px; }
 .footer-links a:hover { color: var(--accent-hover); }
+.footer-donate { color: #e94f85 !important; font-weight: 600; }
+.footer-donate:hover { color: #f0a3c2 !important; }
 .footer-note { width: 100%; font-size: 13px; color: var(--text-dim); border-top: 1px solid var(--border); padding-top: 20px; }
 
 /* ---------- lightbox ---------- */
@@ -414,7 +426,7 @@ code {
   }
   .nav-links.open { transform: translateY(0); }
   .nav-links > a { padding: 12px; }
-  .github-link, .nav-cta { margin: 4px 0 0 !important; justify-content: center; }
+  .donate-link, .github-link, .nav-cta { margin: 4px 0 0 !important; justify-content: center; }
   .nav-toggle { display: flex; }
   .section { padding: 72px 20px; }
   .hero { padding: 116px 20px 24px; }
