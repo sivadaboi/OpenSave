@@ -51,11 +51,6 @@
       <div><span>Built with</span> {info?.tech ?? 'Go + Wails'}</div>
     </div>
 
-    <button class="donate-btn" on:click={() => native.openExternal('https://opensave.gumroad.com/l/usygu')}>
-      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-10.2-9.6C.4 8.5 1.7 5 5.1 4.2c2-.5 4 .3 5.1 2 .9-1.7 3-2.5 5-2 3.4.8 4.7 4.3 3.3 7.2C19.5 16.4 12 21 12 21z"/></svg>
-      Support OpenSave
-    </button>
-
     {#if changelog}
       <button class="changelog-toggle" on:click={() => (showChangelog = !showChangelog)}>
         {showChangelog ? '▾ Hide' : '▸ What’s new'}
@@ -148,25 +143,6 @@
     color: var(--text-faint);
     font-weight: 400;
     font-size: 0.78rem;
-  }
-  .donate-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    border: 1px solid rgba(233, 79, 133, 0.35);
-    background: rgba(233, 79, 133, 0.1);
-    color: #f0a3c2;
-    font-size: 0.82rem;
-    font-weight: 600;
-    padding: 7px 16px;
-    border-radius: 999px;
-    cursor: pointer;
-    margin-bottom: 14px;
-  }
-  .donate-btn:hover {
-    border-color: rgba(233, 79, 133, 0.6);
-    background: rgba(233, 79, 133, 0.18);
-    color: #f6b9d3;
   }
   .changelog-toggle {
     border: none;
