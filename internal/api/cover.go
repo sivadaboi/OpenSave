@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,7 +15,8 @@ var coverClient = &http.Client{Timeout: 15 * time.Second}
 
 // coverFailOnce logs the first cover-fetch failure (with its error) so a
 // systemic problem — a stale CDN host, or the daemon having no route to
-// Steam's CDN — is diagnosable from the Activity Log without flooding it.
+// Steam's CDN (e.g. a campus/ISP firewall) — is diagnosable from the
+// Activity Log without flooding it.
 var coverFailOnce sync.Once
 
 // steamCDNHosts are the CDN URL templates tried in order (host + path style
@@ -29,9 +31,8 @@ var steamCDNHosts = []string{
 
 // handleCover proxies (and disk-caches) Steam CDN cover art through the local
 // daemon. The embedded webview can't reliably hotlink an external CDN, but it
-// can always reach the local API — and the daemon has proven outbound
-// connectivity (it talks to the relay). So covers load from localhost and
-// keep working offline once cached.
+// can always reach the local API. So covers load from localhost and keep
+// working offline once cached.
 //
 // GET /api/cover?appId=<numeric>[&portrait=1]
 func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
@@ -42,18 +43,36 @@ func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
 	}
 	portrait := r.URL.Query().Get("portrait") == "1"
 
-	data, err := s.cachedCover(appID, portrait)
+	// Serve straight from the disk cache without touching the network.
+	if data, err := os.ReadFile(s.coverCachePath(appID, portrait)); err == nil && len(data) > 0 {
+		writeCover(w, data)
+		return
+	}
+
+	data, err := s.fetchCover(appID, portrait)
 	if err != nil {
 		coverFailOnce.Do(func() {
 			s.Daemon.Log.Log("warn", "cover art unavailable (first failure): "+err.Error()+
-				" — if all covers are blank the daemon may not be able to reach Steam's CDN")
+				" — if all covers are blank, neither Steam's CDN nor the image-proxy fallback is reachable from this network")
 		})
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	writeCover(w, data)
+}
+
+func writeCover(w http.ResponseWriter, data []byte) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "public, max-age=604800")
 	_, _ = w.Write(data)
+}
+
+func (s *Server) coverCachePath(appID string, portrait bool) string {
+	name := appID + ".jpg"
+	if portrait {
+		name = appID + "_p.jpg"
+	}
+	return filepath.Join(s.Daemon.Paths.HomeDir, "covers", name)
 }
 
 // isNumericID guards against SSRF: only all-digit App IDs ever reach the CDN
@@ -70,21 +89,13 @@ func isNumericID(s string) bool {
 	return true
 }
 
-// cachedCover returns cover bytes for an App ID, fetching from the Steam CDN
-// on a cache miss. Portrait requests fall back to the landscape header when a
-// title has no library art, so more games show something.
-func (s *Server) cachedCover(appID string, portrait bool) ([]byte, error) {
-	name := appID + ".jpg"
-	if portrait {
-		name = appID + "_p.jpg"
-	}
-	dir := filepath.Join(s.Daemon.Paths.HomeDir, "covers")
-	path := filepath.Join(dir, name)
-
-	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
-		return data, nil
-	}
-
+// fetchCover fetches cover bytes for an App ID, caching on success. It tries
+// the Steam CDN hosts directly first; if every one fails (e.g. a campus/ISP
+// firewall that blocks Steam), it automatically retries through a public
+// image proxy, which fetches the image server-side and hands back a copy.
+// Portrait requests fall back to the landscape header when a title has no
+// library art.
+func (s *Server) fetchCover(appID string, portrait bool) ([]byte, error) {
 	var files []string
 	if portrait {
 		files = []string{"library_600x900.jpg", "header.jpg"}
@@ -93,30 +104,48 @@ func (s *Server) cachedCover(appID string, portrait bool) ([]byte, error) {
 	}
 
 	var lastErr error
+	try := func(rawURL string) ([]byte, bool) {
+		data, err := fetchImage(rawURL)
+		if err != nil {
+			lastErr = err
+			return nil, false
+		}
+		_ = os.MkdirAll(filepath.Dir(s.coverCachePath(appID, portrait)), 0o777)
+		_ = os.WriteFile(s.coverCachePath(appID, portrait), data, 0o666)
+		return data, true
+	}
+
 	for _, f := range files {
 		for _, tmpl := range steamCDNHosts {
-			url := fmt.Sprintf(tmpl, appID, f)
-			data, err := fetchImage(url)
-			if err != nil {
-				lastErr = err
-				continue
+			if data, ok := try(fmt.Sprintf(tmpl, appID, f)); ok {
+				return data, nil
 			}
-			_ = os.MkdirAll(dir, 0o777)
-			_ = os.WriteFile(path, data, 0o666)
+		}
+	}
+	// Every direct host failed — automatically fall back to the image proxy.
+	for _, f := range files {
+		if data, ok := try(imageProxyURL(fmt.Sprintf(steamCDNHosts[0], appID, f))); ok {
 			return data, nil
 		}
 	}
 	return nil, lastErr
 }
 
-func fetchImage(url string) ([]byte, error) {
-	resp, err := coverClient.Get(url)
+// imageProxyURL wraps a source image URL in the weserv.nl image proxy, which
+// fetches it server-side and serves a copy — so covers work on networks that
+// block Steam directly.
+func imageProxyURL(src string) string {
+	return "https://images.weserv.nl/?url=" + url.QueryEscape(src)
+}
+
+func fetchImage(rawURL string) ([]byte, error) {
+	resp, err := coverClient.Get(rawURL)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("cover fetch %s: %s", url, resp.Status)
+		return nil, fmt.Errorf("cover fetch %s: %s", rawURL, resp.Status)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // 8 MB cap
 }
