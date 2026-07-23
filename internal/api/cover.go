@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,14 @@ import (
 	"sync"
 	"time"
 )
+
+// httpStatusError distinguishes a "the CDN answered, but not 200" failure
+// (e.g. a 404 because the game has no cover art) from a connectivity failure
+// (the network reset/blocked the connection). Only the latter is worth a
+// systemic warning.
+type httpStatusError struct{ status string }
+
+func (e *httpStatusError) Error() string { return "cover fetch: " + e.status }
 
 var coverClient = &http.Client{Timeout: 15 * time.Second}
 
@@ -51,10 +60,16 @@ func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
 
 	data, err := s.fetchCover(appID, portrait)
 	if err != nil {
-		coverFailOnce.Do(func() {
-			s.Daemon.Log.Log("warn", "cover art unavailable (first failure): "+err.Error()+
-				" — if all covers are blank, neither Steam's CDN nor the image-proxy fallback is reachable from this network")
-		})
+		// A non-200 (e.g. 404) just means this game has no cover art — normal.
+		// Only warn when the network itself couldn't be reached, since that's
+		// what makes *every* cover blank.
+		var statusErr *httpStatusError
+		if !errors.As(err, &statusErr) {
+			coverFailOnce.Do(func() {
+				s.Daemon.Log.Log("warn", "cover art unavailable (first failure): "+err.Error()+
+					" — neither Steam's CDN nor the image-proxy fallback is reachable from this network")
+			})
+		}
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -145,7 +160,7 @@ func fetchImage(rawURL string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("cover fetch %s: %s", rawURL, resp.Status)
+		return nil, &httpStatusError{status: resp.Status}
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 8<<20)) // 8 MB cap
 }
