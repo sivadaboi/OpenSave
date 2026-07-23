@@ -6,10 +6,26 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
 var coverClient = &http.Client{Timeout: 15 * time.Second}
+
+// coverFailOnce logs the first cover-fetch failure (with its error) so a
+// systemic problem — a stale CDN host, or the daemon having no route to
+// Steam's CDN — is diagnosable from the Activity Log without flooding it.
+var coverFailOnce sync.Once
+
+// steamCDNHosts are the CDN URL templates tried in order (host + path style
+// have both shifted over Steam's lifetime); the first that returns 200 wins,
+// so covers keep working regardless of which is currently live.
+var steamCDNHosts = []string{
+	"https://cdn.cloudflare.steamstatic.com/steam/apps/%s/%s",
+	"https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/%s/%s",
+	"https://cdn.akamai.steamstatic.com/steam/apps/%s/%s",
+	"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/%s/%s",
+}
 
 // handleCover proxies (and disk-caches) Steam CDN cover art through the local
 // daemon. The embedded webview can't reliably hotlink an external CDN, but it
@@ -28,6 +44,10 @@ func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
 
 	data, err := s.cachedCover(appID, portrait)
 	if err != nil {
+		coverFailOnce.Do(func() {
+			s.Daemon.Log.Log("warn", "cover art unavailable (first failure): "+err.Error()+
+				" — if all covers are blank the daemon may not be able to reach Steam's CDN")
+		})
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -74,15 +94,17 @@ func (s *Server) cachedCover(appID string, portrait bool) ([]byte, error) {
 
 	var lastErr error
 	for _, f := range files {
-		url := "https://cdn.cloudflare.steamstatic.com/steam/apps/" + appID + "/" + f
-		data, err := fetchImage(url)
-		if err != nil {
-			lastErr = err
-			continue
+		for _, tmpl := range steamCDNHosts {
+			url := fmt.Sprintf(tmpl, appID, f)
+			data, err := fetchImage(url)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			_ = os.MkdirAll(dir, 0o777)
+			_ = os.WriteFile(path, data, 0o666)
+			return data, nil
 		}
-		_ = os.MkdirAll(dir, 0o777)
-		_ = os.WriteFile(path, data, 0o666)
-		return data, nil
 	}
 	return nil, lastErr
 }
