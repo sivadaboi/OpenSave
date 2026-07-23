@@ -433,3 +433,64 @@ func TestDeleteSnapshotAndBranch(t *testing.T) {
 		t.Errorf("deleting main should be rejected, got %d", resp.StatusCode)
 	}
 }
+
+// TestBulkUntrackEndpoint covers both shapes of POST /api/games/untrack-bulk:
+// untracking an explicit id list, and the {"all": true} full reset. This is
+// the "remove all the saves and re-add them" escape hatch from the Reddit
+// report, so it must untrack cleanly and leave nothing tracked afterward.
+func TestBulkUntrackEndpoint(t *testing.T) {
+	ts := startTestServer(t)
+
+	var ids []string
+	for _, name := range []string{"Alpha Game", "Beta Game", "Gamma Game"} {
+		dir := filepath.Join(t.TempDir(), name)
+		if err := os.MkdirAll(dir, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		resp, body := ts.do(t, http.MethodPost, "/api/games", map[string]string{"name": name, "savePath": dir})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("track %q status = %d (%v)", name, resp.StatusCode, body)
+		}
+		var id string
+		if err := json.Unmarshal(body["id"], &id); err != nil {
+			t.Fatalf("decode id: %v", err)
+		}
+		ids = append(ids, id)
+	}
+
+	// Untrack the first two by id.
+	resp, body := ts.do(t, http.MethodPost, "/api/games/untrack-bulk", map[string]any{"ids": ids[:2]})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bulk untrack status = %d (%v)", resp.StatusCode, body)
+	}
+	var n int
+	json.Unmarshal(body["untracked"], &n)
+	if n != 2 {
+		t.Errorf("untracked = %d, want 2", n)
+	}
+
+	resp, list := ts.do(t, http.MethodGet, "/api/games", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatal("list games failed")
+	}
+	if len(list) != 1 {
+		t.Fatalf("remaining games = %d, want 1 (%v)", len(list), keysOf(list))
+	}
+	if _, ok := list[ids[2]]; !ok {
+		t.Errorf("expected %q to remain, keys = %v", ids[2], keysOf(list))
+	}
+
+	// Full reset: untrack everything that's left.
+	resp, body = ts.do(t, http.MethodPost, "/api/games/untrack-bulk", map[string]any{"all": true})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reset status = %d (%v)", resp.StatusCode, body)
+	}
+	json.Unmarshal(body["untracked"], &n)
+	if n != 1 {
+		t.Errorf("reset untracked = %d, want 1", n)
+	}
+	resp, list = ts.do(t, http.MethodGet, "/api/games", nil)
+	if len(list) != 0 {
+		t.Errorf("after reset, games = %d, want 0 (%v)", len(list), keysOf(list))
+	}
+}

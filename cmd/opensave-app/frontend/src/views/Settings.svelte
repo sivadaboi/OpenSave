@@ -1,5 +1,5 @@
 <script>
-  import { settings, toast } from '../lib/stores.js';
+  import { settings, toast, askConfirm, gameList } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
 
   let tab = 'general';
@@ -73,6 +73,30 @@
   }
   function removeExcludePath(i) {
     draft.excludePaths = draft.excludePaths.filter((_, idx) => idx !== i);
+  }
+
+  // Reset tracking — untrack every game so the user can re-add them from the
+  // right locations (e.g. after moving games between launchers or drives).
+  // Non-destructive: this only clears the tracked list; snapshot backups on
+  // disk are kept.
+  let resetting = false;
+  async function resetTracking() {
+    const n = $gameList.length;
+    if (n === 0) return;
+    const ok = await askConfirm(
+      `Untrack all ${n} game${n === 1 ? '' : 's'}? They'll be removed from your library so you can re-add them from the correct locations. Your save snapshots on disk are kept — nothing is deleted.`,
+      { title: 'Reset tracking?', confirmText: `Untrack ${n}`, danger: true }
+    );
+    if (!ok) return;
+    resetting = true;
+    try {
+      const res = await api.post('/api/games/untrack-bulk', { all: true });
+      toast(`Untracked ${res.untracked} game${res.untracked === 1 ? '' : 's'} — snapshots kept`, 'success');
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      resetting = false;
+    }
   }
 
   async function pickBackupsDir() {
@@ -331,6 +355,21 @@
           </div>
         {/each}
         <button id="s-exclude-paths" class="btn small" on:click={addExcludePath}>+ Exclude folder</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 14px;">
+      <h3 class="section-title">🧹 Reset tracking</h3>
+      <div class="field" style="margin-bottom: 0;">
+        <span class="hint">Untrack every game at once, then re-run Auto-scan to add them back from the correct locations — useful after moving games between launchers or drives. This only clears the tracking list; your save snapshots on disk are kept.</span>
+        <button
+          class="btn small danger"
+          style="margin-top: 10px;"
+          on:click={resetTracking}
+          disabled={resetting || $gameList.length === 0}
+        >
+          {#if resetting}Untracking…{:else if $gameList.length === 0}No games tracked{:else}Untrack all {$gameList.length} game{$gameList.length === 1 ? '' : 's'}{/if}
+        </button>
       </div>
     </div>
   {:else}

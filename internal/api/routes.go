@@ -23,6 +23,7 @@ func (s *Server) routes(r chi.Router) {
 
 	r.Get("/api/games", s.handleListGames)
 	r.Post("/api/games", s.handleTrackGame)
+	r.Post("/api/games/untrack-bulk", s.handleBulkUntrack)
 	r.Patch("/api/games/{gameId}", s.handleUpdateGame)
 	r.Delete("/api/games/{gameId}", s.handleUntrackGame)
 
@@ -323,6 +324,47 @@ func (s *Server) handleUntrackGame(w http.ResponseWriter, r *http.Request) {
 	}
 	s.BroadcastGamesUpdate()
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+// handleBulkUntrack untracks several games in one request: the selection a
+// user makes to clear wrongly-tracked entries, or — with {"all": true} — a
+// full reset before re-adding from the correct locations. Like single
+// untrack, this is non-destructive to save data: it removes games from the
+// tracked list (and tombstones them so peers don't bounce them back) while
+// leaving every snapshot backup on disk. Missing/already-gone ids are
+// skipped, so the count reflects what was actually untracked.
+func (s *Server) handleBulkUntrack(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs []string `json:"ids"`
+		All bool     `json:"all"`
+	}
+	_ = readJSON(r, &body) // empty body untracks nothing
+
+	ids := body.IDs
+	if body.All {
+		games, err := s.Daemon.Store.ListGames()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		ids = make([]string, 0, len(games))
+		for _, g := range games {
+			ids = append(ids, g.ID)
+		}
+	}
+
+	untracked := 0
+	for _, id := range ids {
+		if err := s.Daemon.UntrackGame(id); err != nil {
+			s.Daemon.Log.Log("warn", fmt.Sprintf("bulk untrack %q failed: %v", id, err))
+			continue
+		}
+		untracked++
+	}
+	if untracked > 0 {
+		s.BroadcastGamesUpdate()
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"untracked": untracked})
 }
 
 func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
