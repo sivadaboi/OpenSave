@@ -1,6 +1,6 @@
 <script>
   import { games, navigate, toast, syncActivity, askConfirm } from '../lib/stores.js';
-  import { api, native } from '../lib/api.js';
+  import { api, native, coverURL, gameCover } from '../lib/api.js';
 
   export let params = {};
 
@@ -37,6 +37,10 @@
       maxSnapshots: game.maxSnapshots ?? 5
     };
   }
+  // Cover preview for the config editor: a custom URL wins, else the proxied
+  // Steam art for the App ID being edited.
+  $: cfgCover =
+    cfg?.coverUrl && !cfg.coverUrl.includes('steamstatic.com') ? cfg.coverUrl : coverURL(cfg?.appId);
 
   // Cloud explorer state.
   let cloudSnaps = null;
@@ -234,10 +238,10 @@
 {:else}
   <div class="head">
     <button class="btn icon back" on:click={() => navigate('home')} title="Back">←</button>
-    {#if game.coverUrl}
+    {#if gameCover(game)}
       <img
         class="head-cover"
-        src={game.coverUrl}
+        src={gameCover(game)}
         alt=""
         on:load={(e) => (e.currentTarget.style.display = '')}
         on:error={(e) => (e.currentTarget.style.display = 'none')}
@@ -406,8 +410,8 @@
     {#if cfg}
       <div class="card config-card">
         <div class="config-cover">
-          {#if cfg.coverUrl}
-            <img src={cfg.coverUrl} alt="" on:error={(e) => (e.currentTarget.style.display = 'none')} />
+          {#if cfgCover}
+            <img src={cfgCover} alt="" on:error={(e) => (e.currentTarget.style.display = 'none')} />
           {:else}
             <div class="config-cover-fallback">🎮</div>
           {/if}
@@ -479,7 +483,7 @@
       {/if}
     </div>
 
-    <div class="card">
+    <div class="card" style="margin-top: 16px;">
       <h3>Stop tracking</h3>
       <p class="danger-desc">
         Removes "{game.name}" from OpenSave. Your save files and existing snapshot archives on disk are
@@ -676,8 +680,9 @@
   }
   .link-row {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     align-items: center;
+    margin-top: 14px;
   }
   .link-row select {
     flex: 1;

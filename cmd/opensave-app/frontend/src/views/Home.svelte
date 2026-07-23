@@ -1,6 +1,6 @@
 <script>
   import { gameList, peers, navigate, toast, syncActivity, askConfirm } from '../lib/stores.js';
-  import { api, native } from '../lib/api.js';
+  import { api, native, coverURL, gameCover } from '../lib/api.js';
   import { backdropClose } from '../lib/backdrop.js';
 
   export let params = {};
@@ -186,6 +186,11 @@
     libSelected = new Set();
     libSelectedCount = 0;
   }
+  $: allSelected = $gameList.length > 0 && libSelectedCount === $gameList.length;
+  function toggleSelectAll() {
+    if (allSelected) clearLibSelection();
+    else selectAllGames();
+  }
   async function untrackSelectedGames() {
     const n = libSelectedCount;
     if (n === 0) return;
@@ -207,9 +212,6 @@
 
   $: onlinePeers = Object.values($peers).filter((p) => p.status === 'online');
   const typeLabels = { emulator: 'Emulator', repack: 'Repack', game: 'Game' };
-  // Vertical Steam library box-art (portrait) for the cover grid.
-  const portraitUrl = (appId) =>
-    `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`;
   const typeIcon = (t) => (t === 'emulator' ? '🕹️' : t === 'repack' ? '📦' : '🎮');
 </script>
 
@@ -222,9 +224,6 @@
       {scanning ? 'Scanning…' : '🔍 Auto-scan'}
     </button>
     <button class="btn" on:click={syncAll} disabled={$gameList.length === 0}>⟳ Sync all</button>
-    <button class="btn" on:click={toggleSelectMode} disabled={$gameList.length === 0}>
-      {selectMode ? '✕ Cancel' : '☑ Select'}
-    </button>
     <button class="btn primary" on:click={() => (showAdd = !showAdd)}>+ Track folder</button>
   </div>
 </div>
@@ -301,7 +300,7 @@
                 <div class="cover-art">
                   {#if item.appId}
                     <img
-                      src={portraitUrl(item.appId)}
+                      src={coverURL(item.appId, true)}
                       alt={item.name}
                       loading="lazy"
                       on:error={(e) => (e.currentTarget.style.display = 'none')}
@@ -385,14 +384,16 @@
     {#if selectMode}
       <div class="select-bar">
         <span class="select-count">{libSelectedCount} selected</span>
-        <button class="btn small" on:click={selectAllGames}>Select all ({$gameList.length})</button>
-        {#if libSelectedCount > 0}
-          <button class="btn small" on:click={clearLibSelection}>Clear</button>
-        {/if}
+        <button class="btn small" on:click={toggleSelectAll}>
+          {allSelected ? 'Unselect all' : `Select all (${$gameList.length})`}
+        </button>
         <button class="btn small danger" disabled={libSelectedCount === 0} on:click={untrackSelectedGames}>
           Untrack selected
         </button>
+        <button class="btn small" on:click={toggleSelectMode}>Cancel</button>
       </div>
+    {:else}
+      <button class="btn small" on:click={toggleSelectMode}>☑ Select</button>
     {/if}
   </div>
   <div class="grid">
@@ -407,9 +408,9 @@
           <div class="gc-check" class:on={libSelected.has(game.id)}>{libSelected.has(game.id) ? '✓' : ''}</div>
         {/if}
         <div class="gc-cover">
-          {#if game.coverUrl}
+          {#if gameCover(game)}
             <img
-              src={game.coverUrl}
+              src={gameCover(game)}
               alt=""
               loading="lazy"
               on:load={(e) => (e.currentTarget.style.display = '')}
@@ -710,10 +711,20 @@
   .scan-show-tracked {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 0.82rem;
+    gap: 7px;
+    padding: 7px 13px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    font-size: 0.85rem;
     color: var(--text-dim);
     white-space: nowrap;
+    cursor: pointer;
+  }
+  .scan-show-tracked:hover {
+    background: var(--bg-hover);
+  }
+  .scan-show-tracked input {
     cursor: pointer;
   }
   .cover-name {

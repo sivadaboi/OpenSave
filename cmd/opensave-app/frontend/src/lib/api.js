@@ -57,6 +57,24 @@ export const api = {
   del: (path) => request('DELETE', path)
 };
 
+/**
+ * Cover-art URL served through the local daemon proxy (which caches and has
+ * reliable internet), instead of hotlinking Steam's CDN from the webview.
+ * Returns '' when there's no App ID. `portrait` fetches the tall library art.
+ */
+export function coverURL(appId, portrait = false) {
+  if (!appId) return '';
+  return `${baseURL}/api/cover?appId=${encodeURIComponent(appId)}${portrait ? '&portrait=1' : ''}`;
+}
+
+/** Best cover for a tracked game: a user's custom URL wins; otherwise the
+ *  proxied Steam art for its App ID. */
+export function gameCover(game) {
+  const custom = game?.coverUrl;
+  if (custom && !custom.includes('steamstatic.com')) return custom;
+  return coverURL(game?.appId);
+}
+
 /** Open the live-update WebSocket; onMessage receives {type, data}. */
 export function connectWS(onMessage, onState) {
   let ws = null;

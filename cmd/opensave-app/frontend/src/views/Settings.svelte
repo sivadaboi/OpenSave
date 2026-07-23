@@ -175,11 +175,11 @@
         <input type="checkbox" bind:checked={draft.autoSyncOnTrack} />
         Sync a game immediately when it's first tracked
       </label>
-      <label class="check" style="margin-top: 12px;">
+      <label class="check" style="margin-top: 18px;">
         <input type="checkbox" bind:checked={draft.matchByAppId} />
         Match saves across PCs by Steam App ID
       </label>
-      <span class="hint">Links the same game across devices even when it was tracked under different names or drives (e.g. a Steam copy on one PC, a portable copy on another). Leave off if you keep a cracked <em>and</em> a legit copy of the same title separate — they'd otherwise merge. You can always link games by hand from a game's page.</span>
+      <span class="hint" style="margin-top: 6px;">Links the same game across devices even when it was tracked under different names or drives (e.g. a Steam copy on one PC, a standalone copy on another). Leave this off if you deliberately keep two separate copies of the same game that shouldn't merge. You can always link games by hand from a game's page.</span>
       <div class="field" style="margin-top: 14px;">
         <label for="s-limit">Internet bandwidth limit</label>
         <select id="s-limit" bind:value={draft.speedLimit}>
@@ -369,7 +369,7 @@
         <span class="hint">Untrack every game at once, then re-run Auto-scan to add them back from the correct locations — useful after moving games between launchers or drives. This only clears the tracking list; your save snapshots on disk are kept.</span>
         <button
           class="btn small danger"
-          style="margin-top: 10px;"
+          style="margin-top: 12px; width: fit-content; align-self: flex-start;"
           on:click={resetTracking}
           disabled={resetting || $gameList.length === 0}
         >
