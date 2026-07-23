@@ -22,10 +22,10 @@ func (e *httpStatusError) Error() string { return "cover fetch: " + e.status }
 
 var coverClient = &http.Client{Timeout: 15 * time.Second}
 
-// coverFailOnce logs the first cover-fetch failure (with its error) so a
-// systemic problem — a stale CDN host, or the daemon having no route to
-// Steam's CDN (e.g. a campus/ISP firewall) — is diagnosable from the
-// Activity Log without flooding it.
+// coverFailOnce logs the first cover-fetch *connectivity* failure (missing
+// covers 404 without warning) so a systemic problem — the daemon having no
+// route to Steam's CDN or the proxy (e.g. a campus/ISP firewall) — is
+// diagnosable from the Activity Log without flooding it.
 var coverFailOnce sync.Once
 
 // steamCDNHosts are the CDN URL templates tried in order (host + path style
@@ -66,8 +66,8 @@ func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
 		var statusErr *httpStatusError
 		if !errors.As(err, &statusErr) {
 			coverFailOnce.Do(func() {
-				s.Daemon.Log.Log("warn", "cover art unavailable (first failure): "+err.Error()+
-					" — neither Steam's CDN nor the image-proxy fallback is reachable from this network")
+				s.Daemon.Log.Log("warn", "cover art can't be loaded — this network can't reach "+
+					"Steam's CDN or the image-proxy fallback ("+err.Error()+")")
 			})
 		}
 		w.WriteHeader(http.StatusNotFound)
