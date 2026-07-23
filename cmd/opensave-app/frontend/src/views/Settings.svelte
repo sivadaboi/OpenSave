@@ -175,6 +175,11 @@
         <input type="checkbox" bind:checked={draft.autoSyncOnTrack} />
         Sync a game immediately when it's first tracked
       </label>
+      <label class="check" style="margin-top: 12px;">
+        <input type="checkbox" bind:checked={draft.matchByAppId} />
+        Match saves across PCs by Steam App ID
+      </label>
+      <span class="hint">Links the same game across devices even when it was tracked under different names or drives (e.g. a Steam copy on one PC, a portable copy on another). Leave off if you keep a cracked <em>and</em> a legit copy of the same title separate — they'd otherwise merge. You can always link games by hand from a game's page.</span>
       <div class="field" style="margin-top: 14px;">
         <label for="s-limit">Internet bandwidth limit</label>
         <select id="s-limit" bind:value={draft.speedLimit}>

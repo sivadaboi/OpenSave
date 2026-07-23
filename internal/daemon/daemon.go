@@ -490,6 +490,37 @@ func (d *Daemon) UntrackGame(gameID string) error {
 	return nil
 }
 
+// LinkGames records that aliasID is the same game as canonicalID on this
+// device, so peer syncs addressed to aliasID land on the canonical game
+// (and write into its save path). This is the manual counterpart to App ID
+// matching — for titles tracked under different names on two PCs. If aliasID
+// is itself a tracked game here, that entry is removed so the alias actually
+// takes effect (a direct id lookup would otherwise win); its save data on
+// disk is left untouched, exactly like a normal untrack.
+func (d *Daemon) LinkGames(canonicalID, aliasID string) error {
+	if canonicalID == "" || aliasID == "" || canonicalID == aliasID {
+		return fmt.Errorf("invalid link %q -> %q", aliasID, canonicalID)
+	}
+	if _, err := d.Store.GetGame(canonicalID); err != nil {
+		return fmt.Errorf("canonical game %q: %w", canonicalID, err)
+	}
+	if err := d.Store.AddGameAlias(aliasID, canonicalID); err != nil {
+		return err
+	}
+	if _, err := d.Store.GetGame(aliasID); err == nil {
+		d.Watcher.Unwatch(aliasID)
+		if err := d.Store.DeleteGame(aliasID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UnlinkGame removes a single alias link.
+func (d *Daemon) UnlinkGame(aliasID string) error {
+	return d.Store.RemoveGameAlias(aliasID)
+}
+
 // untrackFromPeer mirrors a peer's untrack: remove the game + tombstone it,
 // WITHOUT re-notifying (no loop).
 func (d *Daemon) untrackFromPeer(gameID string) {

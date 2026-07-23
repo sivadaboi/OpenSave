@@ -258,26 +258,54 @@ func manifestQueryFromURL(q interface{ Get(string) string }) manifestGameQuery {
 	}
 }
 
-// ensureManifestGame returns the tracked game for a peer's manifest
-// request — auto-tracking it (translated save path, carrying the peer's
-// cover art) when unknown, and backfilling missing cover art on known
-// games. Shared by the LAN route and the WAN relay handler so both paths
-// behave identically.
-func (e *Engine) ensureManifestGame(gameID string, q manifestGameQuery) (store.Game, error) {
-	game, err := e.Store.GetGame(gameID)
-	if err == nil {
-		// Already tracked here but with no cover (e.g. tracked manually
-		// without an App ID) — backfill it from what the peer sent.
-		if game.CoverURL == "" && q.CoverURL != "" {
-			game.CoverURL = q.CoverURL
-			if game.AppID == "" {
-				game.AppID = q.AppID
-			}
-			if err := e.Store.UpdateGame(game); err == nil {
-				e.notifyGamesUpdate()
-			}
+// backfillCover fills in cover art (and App ID) on a game already tracked
+// here from what the peer sent — e.g. a game tracked manually without an App
+// ID. Returns the (possibly updated) game.
+func (e *Engine) backfillCover(game store.Game, q manifestGameQuery) store.Game {
+	if game.CoverURL == "" && q.CoverURL != "" {
+		game.CoverURL = q.CoverURL
+		if game.AppID == "" {
+			game.AppID = q.AppID
 		}
-		return game, nil
+		if err := e.Store.UpdateGame(game); err == nil {
+			e.notifyGamesUpdate()
+		}
+	}
+	return game
+}
+
+// ensureManifestGame returns the tracked game for a peer's manifest
+// request — resolving it to an existing local game by alias or App ID,
+// auto-tracking it (translated save path, carrying the peer's cover art)
+// when still unknown, and backfilling missing cover art on known games.
+// Shared by the LAN route and the WAN relay handler so both paths behave
+// identically.
+func (e *Engine) ensureManifestGame(gameID string, q manifestGameQuery) (store.Game, error) {
+	if game, err := e.Store.GetGame(gameID); err == nil {
+		return e.backfillCover(game, q), nil
+	}
+
+	// Not tracked under this exact id. Before creating anything, try to
+	// resolve the peer's game to one already tracked here — this is what lets
+	// the same title sync across devices when it was tracked under different
+	// names (e.g. a Steam title vs. a portable/cracked folder name):
+	//   1. an explicit user link (alias), then
+	//   2. a shared Steam App ID, but only if the user enabled it (off by
+	//      default so a cracked and a legit copy never merge unexpectedly).
+	if canonical, ok := e.Store.ResolveGameAlias(gameID); ok {
+		if game, err := e.Store.GetGame(canonical); err == nil {
+			return e.backfillCover(game, q), nil
+		}
+	}
+
+	settings, sErr := e.Store.GetSettings()
+	if sErr != nil {
+		return store.Game{}, sErr
+	}
+	if settings.MatchByAppID && q.AppID != "" {
+		if game, err := e.Store.FindGameByAppID(q.AppID); err == nil {
+			return e.backfillCover(game, q), nil
+		}
 	}
 
 	if q.Name == "" || q.SavePath == "" {
@@ -288,10 +316,6 @@ func (e *Engine) ensureManifestGame(gameID string, q manifestGameQuery) (store.G
 	// Re-tracking it explicitly clears the tombstone.
 	if e.Store.IsUntracked(gameID) {
 		return store.Game{}, fmt.Errorf("Game not found.")
-	}
-	settings, sErr := e.Store.GetSettings()
-	if sErr != nil {
-		return store.Game{}, sErr
 	}
 	rules := make([]delta.TranslationRule, len(settings.PathTranslations))
 	for i, tr := range settings.PathTranslations {
@@ -306,7 +330,7 @@ func (e *Engine) ensureManifestGame(gameID string, q manifestGameQuery) (store.G
 		return store.Game{}, fmt.Errorf("cannot auto-track %q at %q: %s — set the game's save path on this device manually", q.Name, localPath, reason)
 	}
 
-	game = store.Game{
+	game := store.Game{
 		ID: gameID, Name: q.Name, SavePath: localPath, ActiveBranch: "main",
 		AutoSync: true, MaxSnapshots: 5,
 		// Carry the cover art from the requesting peer so the game

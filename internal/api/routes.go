@@ -27,6 +27,10 @@ func (s *Server) routes(r chi.Router) {
 	r.Patch("/api/games/{gameId}", s.handleUpdateGame)
 	r.Delete("/api/games/{gameId}", s.handleUntrackGame)
 
+	r.Get("/api/games/{gameId}/aliases", s.handleListAliases)
+	r.Post("/api/games/{gameId}/link", s.handleLinkGame)
+	r.Delete("/api/games/{gameId}/alias/{aliasId}", s.handleUnlinkGame)
+
 	r.Post("/api/games/{gameId}/snapshot", s.handleCreateSnapshot)
 	r.Post("/api/games/{gameId}/rollback", s.handleRollback)
 	r.Get("/api/games/{gameId}/snapshot/{snapshotId}/files", s.handleSnapshotFiles)
@@ -365,6 +369,57 @@ func (s *Server) handleBulkUntrack(w http.ResponseWriter, r *http.Request) {
 		s.BroadcastGamesUpdate()
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"untracked": untracked})
+}
+
+// handleLinkGame merges another tracked game into {gameId}: it records the
+// other game's id as an alias of this one and removes the other entry, so
+// peer syncs addressed to either id land on this game. The manual
+// counterpart to App ID matching, for the same title tracked under different
+// names on two PCs. Save data on disk is untouched.
+func (s *Server) handleLinkGame(w http.ResponseWriter, r *http.Request) {
+	gameID := chi.URLParam(r, "gameId")
+	var body struct {
+		Alias string `json:"alias"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if body.Alias == "" {
+		writeError(w, http.StatusBadRequest, "alias is required")
+		return
+	}
+	if err := s.Daemon.LinkGames(gameID, body.Alias); err != nil {
+		writeError(w, notFoundToStatus(err), err.Error())
+		return
+	}
+	s.BroadcastGamesUpdate()
+	writeJSON(w, http.StatusOK, map[string]string{"canonical": gameID, "alias": body.Alias})
+}
+
+// handleListAliases returns the ids linked to {gameId}.
+func (s *Server) handleListAliases(w http.ResponseWriter, r *http.Request) {
+	gameID := chi.URLParam(r, "gameId")
+	aliases, err := s.Daemon.Store.ListGameAliases(gameID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if aliases == nil {
+		aliases = []string{}
+	}
+	writeJSON(w, http.StatusOK, aliases)
+}
+
+// handleUnlinkGame removes a single alias link from {gameId}.
+func (s *Server) handleUnlinkGame(w http.ResponseWriter, r *http.Request) {
+	aliasID := chi.URLParam(r, "aliasId")
+	if err := s.Daemon.UnlinkGame(aliasID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.BroadcastGamesUpdate()
+	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
 }
 
 func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {

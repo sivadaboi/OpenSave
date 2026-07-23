@@ -31,6 +31,7 @@ type Settings struct {
 	AutoDeleteBackups bool              `db:"auto_delete_backups" json:"autoDeleteBackups"`
 	AutoDeleteDays    int               `db:"auto_delete_days" json:"autoDeleteDays"`
 	AutoSyncOnTrack   bool              `db:"auto_sync_on_track" json:"autoSyncOnTrack"`
+	MatchByAppID      bool              `db:"match_by_app_id" json:"matchByAppId"`
 	CustomScanPaths   []string          `db:"-" json:"customScanPaths"`
 	ExcludePaths      []string          `db:"-" json:"excludePaths"`
 	PathTranslations  []TranslationRule `db:"-" json:"pathTranslations"`
@@ -207,6 +208,7 @@ func (s *Store) UpdateSettings(settings Settings) error {
 			auto_delete_backups = :auto_delete_backups,
 			auto_delete_days = :auto_delete_days,
 			auto_sync_on_track = :auto_sync_on_track,
+			match_by_app_id = :match_by_app_id,
 			custom_scan_paths = :custom_scan_paths,
 			exclude_paths = :exclude_paths,
 			path_translations = :path_translations,

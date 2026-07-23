@@ -136,6 +136,40 @@
     }
   }
 
+  // Linked copies — cross-device "same game" links (the manual counterpart
+  // to App-ID matching). Loaded lazily when the Manage tab is opened.
+  let aliases = [];
+  let aliasesFor = null;
+  let linkTarget = '';
+  $: if (game && tab === 'danger' && aliasesFor !== game.id) loadAliases();
+  $: otherGames = Object.values($games).filter((g) => g.id !== params.gameId);
+
+  async function loadAliases() {
+    aliasesFor = game.id;
+    try {
+      aliases = await api.get(`/api/games/${game.id}/aliases`);
+    } catch {
+      aliases = [];
+    }
+  }
+  async function linkGame() {
+    if (!linkTarget) return;
+    const other = $games[linkTarget];
+    const ok = await askConfirm(
+      `Link "${other?.name ?? linkTarget}" into "${game.name}"? They'll be treated as the same game when syncing across devices. "${other?.name ?? linkTarget}" is removed from your library here — its save files and snapshots on disk are kept.`,
+      { title: 'Link games?', confirmText: 'Link' }
+    );
+    if (!ok) return;
+    const canonicalId = game.id;
+    await run('Games linked', () => api.post(`/api/games/${canonicalId}/link`, { alias: linkTarget }));
+    linkTarget = '';
+    await loadAliases();
+  }
+  async function unlink(aliasId) {
+    await run('Link removed', () => api.del(`/api/games/${game.id}/alias/${aliasId}`));
+    await loadAliases();
+  }
+
   // ── Configuration ────────────────────────────────────────────────
   const saveConfig = () =>
     run('Configuration saved', () =>
@@ -414,6 +448,38 @@
     {/if}
   {:else}
     <div class="card">
+      <h3>Linked copies</h3>
+      <p class="danger-desc">
+        If this game is tracked under a different name or drive on another PC (e.g. a Steam copy vs. a
+        portable copy), link the copies so their saves sync across devices. Linking merges another tracked
+        game here into this one — its save files and snapshots on disk are kept.
+      </p>
+      {#if aliases.length > 0}
+        <div class="alias-list">
+          {#each aliases as a}
+            <div class="alias-row">
+              <span class="alias-id" title={a}>🔗 {a}</span>
+              <button class="btn small" disabled={busy} on:click={() => unlink(a)}>Unlink</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if otherGames.length > 0}
+        <div class="link-row">
+          <select bind:value={linkTarget}>
+            <option value="">Choose a tracked game to merge in…</option>
+            {#each otherGames as g}
+              <option value={g.id}>{g.name}</option>
+            {/each}
+          </select>
+          <button class="btn small primary" disabled={busy || !linkTarget} on:click={linkGame}>Link</button>
+        </div>
+      {:else}
+        <p class="danger-desc">No other tracked games to link — track the other copy first, then come back here.</p>
+      {/if}
+    </div>
+
+    <div class="card">
       <h3>Stop tracking</h3>
       <p class="danger-desc">
         Removes "{game.name}" from OpenSave. Your save files and existing snapshot archives on disk are
@@ -581,6 +647,46 @@
     color: var(--text-dim);
     font-size: 0.88rem;
     margin: 8px 0 14px;
+  }
+
+  /* Linked copies */
+  .alias-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .alias-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .alias-id {
+    font-family: monospace;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .link-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .link-row select {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--text);
   }
 
   /* Cloud explorer */

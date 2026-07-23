@@ -494,3 +494,64 @@ func TestBulkUntrackEndpoint(t *testing.T) {
 		t.Errorf("after reset, games = %d, want 0 (%v)", len(list), keysOf(list))
 	}
 }
+
+// TestLinkGamesEndpoint covers the manual "these two are the same game" link:
+// merging one tracked game into another records an alias and removes the
+// merged entry, and the alias can be listed and removed.
+func TestLinkGamesEndpoint(t *testing.T) {
+	ts := startTestServer(t)
+
+	track := func(name string) string {
+		dir := filepath.Join(t.TempDir(), name)
+		if err := os.MkdirAll(dir, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		resp, body := ts.do(t, http.MethodPost, "/api/games", map[string]string{"name": name, "savePath": dir})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("track %q status = %d (%v)", name, resp.StatusCode, body)
+		}
+		var id string
+		json.Unmarshal(body["id"], &id)
+		return id
+	}
+
+	canonical := track("Steam Copy")
+	alias := track("Portable Copy")
+
+	// Merge the portable copy into the Steam copy.
+	resp, body := ts.do(t, http.MethodPost, "/api/games/"+canonical+"/link", map[string]string{"alias": alias})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("link status = %d (%v)", resp.StatusCode, body)
+	}
+
+	// The merged game is gone; the canonical one remains.
+	resp, list := ts.do(t, http.MethodGet, "/api/games", nil)
+	if _, ok := list[alias]; ok {
+		t.Errorf("aliased game %q should have been removed, keys = %v", alias, keysOf(list))
+	}
+	if _, ok := list[canonical]; !ok {
+		t.Errorf("canonical game %q should remain, keys = %v", canonical, keysOf(list))
+	}
+
+	// The link is listed under the canonical game (array response, so fetch
+	// it directly rather than through do()'s object decoder).
+	aliasResp, err := http.Get(ts.base + "/api/games/" + canonical + "/aliases")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var aliases []string
+	json.NewDecoder(aliasResp.Body).Decode(&aliases)
+	aliasResp.Body.Close()
+	if len(aliases) != 1 || aliases[0] != alias {
+		t.Errorf("GET aliases = %v, want [%s]", aliases, alias)
+	}
+
+	// Unlink.
+	resp, _ = ts.do(t, http.MethodDelete, "/api/games/"+canonical+"/alias/"+alias, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unlink status = %d", resp.StatusCode)
+	}
+	if remaining, _ := ts.daemon.Store.ListGameAliases(canonical); len(remaining) != 0 {
+		t.Errorf("aliases after unlink = %v, want empty", remaining)
+	}
+}
