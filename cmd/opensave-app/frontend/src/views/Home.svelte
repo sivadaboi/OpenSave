@@ -45,6 +45,7 @@
   let scanType = 'all';
   let selected = new Set();
   let selectedCount = 0; // reactive mirror of selected.size
+  let showTracked = false; // include saves already being tracked
 
   async function scan() {
     scanning = true;
@@ -53,11 +54,31 @@
     selected = new Set();
     selectedCount = 0;
     try {
-      scanResults = await api.get('/api/presets/scan');
+      const results = await api.get('/api/presets/scan');
+      fillMissingAppIds(results);
+      scanResults = results;
     } catch (e) {
       toast(e.message, 'error');
     } finally {
       scanning = false;
+    }
+  }
+
+  // The same game can turn up at several locations, but only some entries
+  // carry a Steam App ID (and therefore cover art). Share each App ID across
+  // every same-named entry so duplicates all show the same artwork instead
+  // of one having a cover and the other a blank tile.
+  function fillMissingAppIds(results) {
+    if (!results) return;
+    const byName = new Map();
+    for (const r of results) {
+      const key = (r.name ?? '').trim().toLowerCase();
+      if (r.appId && key && !byName.has(key)) byName.set(key, r.appId);
+    }
+    for (const r of results) {
+      if (r.appId) continue;
+      const key = (r.name ?? '').trim().toLowerCase();
+      if (byName.has(key)) r.appId = byName.get(key);
     }
   }
 
@@ -71,12 +92,16 @@
   }
 
   $: trackedPaths = new Set($gameList.map((g) => (g.savePath ?? '').toLowerCase()));
+  const isTracked = (r) => trackedPaths.has((r.savePath ?? '').toLowerCase());
+  // Note: reference trackedPaths directly (not via isTracked) so Svelte sees
+  // it as a dependency and refreshes the list when tracked-state changes.
   $: filteredResults = (scanResults ?? []).filter((r) => {
-    if (trackedPaths.has((r.savePath ?? '').toLowerCase())) return false;
+    if (!showTracked && trackedPaths.has((r.savePath ?? '').toLowerCase())) return false;
     if (scanType !== 'all' && r.type !== scanType) return false;
     if (scanFilter && !`${r.name} ${r.savePath}`.toLowerCase().includes(scanFilter.toLowerCase())) return false;
     return true;
   });
+  $: shownAvailable = filteredResults.filter((r) => !isTracked(r)).length;
   $: scanCounts = {
     all: (scanResults ?? []).length,
     emulator: (scanResults ?? []).filter((r) => r.type === 'emulator').length,
@@ -91,7 +116,7 @@
     selectedCount = selected.size;
   }
   function selectAllVisible() {
-    for (const r of filteredResults) selected.add(r.id);
+    for (const r of filteredResults) if (!isTracked(r)) selected.add(r.id);
     selected = selected;
     selectedCount = selected.size;
   }
@@ -236,7 +261,7 @@
         <div>
           <h2>🔍 Auto-scan results</h2>
           <p class="scan-modal-sub">
-            {#if scanning}Scanning your system…{:else}Found {scanCounts.all} save location{scanCounts.all === 1 ? '' : 's'} — {filteredResults.length} available to track{/if}
+            {#if scanning}Scanning your system…{:else}Found {scanCounts.all} save location{scanCounts.all === 1 ? '' : 's'} — {shownAvailable} available to track{/if}
           </p>
         </div>
         <button class="btn icon" on:click={closeScan} title="Close">✕</button>
@@ -254,6 +279,10 @@
               </button>
             {/each}
           </div>
+          <label class="scan-show-tracked" title="Also show saves you already track">
+            <input type="checkbox" bind:checked={showTracked} />
+            Show tracked
+          </label>
         </div>
 
         <div class="scan-modal-list">
@@ -262,8 +291,9 @@
               <div
                 class="cover-tile"
                 class:sel={selected.has(item.id)}
-                on:click={() => toggleSelect(item.id)}
-                on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleSelect(item.id))}
+                class:tracked={isTracked(item)}
+                on:click={() => !isTracked(item) && toggleSelect(item.id)}
+                on:keydown={(e) => !isTracked(item) && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleSelect(item.id))}
                 role="button"
                 tabindex="0"
                 title={item.savePath}
@@ -287,9 +317,13 @@
                   {/if}
                   <span class="cover-type">{typeLabels[item.type] ?? item.type}</span>
 
-                  <div class="cover-hover">
-                    <button class="btn small primary" on:click|stopPropagation={() => trackDetected(item)}>Track</button>
-                  </div>
+                  {#if isTracked(item)}
+                    <span class="cover-tracked">✓ Tracked</span>
+                  {:else}
+                    <div class="cover-hover">
+                      <button class="btn small primary" on:click|stopPropagation={() => trackDetected(item)}>Track</button>
+                    </div>
+                  {/if}
                 </div>
                 <div class="cover-name" title={item.name}>{item.name}</div>
               </div>
@@ -651,6 +685,36 @@
   }
   .cover-tile:hover .cover-hover {
     opacity: 1;
+  }
+  /* Already-tracked entries (shown when "Show tracked" is on): dimmed,
+     non-selectable, badged. */
+  .cover-tile.tracked {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .cover-tile.tracked:hover .cover-art {
+    transform: none;
+  }
+  .cover-tracked {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    z-index: 3;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    background: var(--accent);
+    color: #fff;
+  }
+  .scan-show-tracked {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    cursor: pointer;
   }
   .cover-name {
     margin-top: 7px;
