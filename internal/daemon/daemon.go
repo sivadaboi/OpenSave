@@ -241,18 +241,34 @@ func SteamCoverURL(appID string) string {
 // TrackGame adds a new game, takes its initial snapshot (when the save
 // location already has content), and starts watching it.
 func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
-	if game.ID == "" {
-		game.ID = store.SlugifyGameID(game.Name)
-	}
-	if game.ID == "" {
-		return store.Game{}, fmt.Errorf("game name %q produces an empty id", game.Name)
-	}
-
 	abs, err := d.validateSavePath(game.SavePath)
 	if err != nil {
 		return store.Game{}, err
 	}
 	game.SavePath = abs
+
+	// Fresh track from the UI (no id supplied): derive the id from the name,
+	// but disambiguate collisions so a second save location for a same-named
+	// game (e.g. two Balatro folders) can be tracked instead of failing on
+	// the games.id UNIQUE constraint. An attempt to track the exact same
+	// folder again is a clear duplicate, not a new location.
+	if game.ID == "" {
+		if existing, err := d.Store.FindGameBySavePath(abs); err == nil {
+			return store.Game{}, fmt.Errorf("this folder is already tracked (as %q)", existing.Name)
+		}
+		base := store.SlugifyGameID(game.Name)
+		if base == "" {
+			return store.Game{}, fmt.Errorf("game name %q produces an empty id", game.Name)
+		}
+		id := base
+		for n := 2; ; n++ {
+			if _, err := d.Store.GetGame(id); err != nil {
+				break // free
+			}
+			id = fmt.Sprintf("%s-%d", base, n)
+		}
+		game.ID = id
+	}
 
 	// Explicit (re)tracking overrides any earlier untrack: clear the local
 	// tombstone, and tell peers to clear theirs too so a peer that mirrored
@@ -507,7 +523,10 @@ func (d *Daemon) LinkGames(canonicalID, aliasID string) error {
 	if err := d.Store.AddGameAlias(aliasID, canonicalID); err != nil {
 		return err
 	}
-	if _, err := d.Store.GetGame(aliasID); err == nil {
+	// If the alias id is itself a tracked game, snapshot its identity (so
+	// unlink can restore it) and remove that entry so the alias takes effect.
+	if merged, err := d.Store.GetGame(aliasID); err == nil {
+		_ = d.Store.SetAliasSnapshot(aliasID, merged.Name, merged.SavePath, merged.AppID)
 		d.Watcher.Unwatch(aliasID)
 		if err := d.Store.DeleteGame(aliasID); err != nil {
 			return err
@@ -516,9 +535,43 @@ func (d *Daemon) LinkGames(canonicalID, aliasID string) error {
 	return nil
 }
 
-// UnlinkGame removes a single alias link.
+// UnlinkGame removes an alias link and, if that alias was a game merged in via
+// LinkGames, brings it back as its own tracked entry. Its save files on disk
+// were never touched; prior snapshot history isn't restored (a fresh initial
+// snapshot is taken).
 func (d *Daemon) UnlinkGame(aliasID string) error {
-	return d.Store.RemoveGameAlias(aliasID)
+	alias, ok := d.Store.GetGameAlias(aliasID)
+	if err := d.Store.RemoveGameAlias(aliasID); err != nil {
+		return err
+	}
+	if !ok || alias.SavePath == "" {
+		return nil // nothing to restore
+	}
+	if _, err := d.Store.GetGame(aliasID); err == nil {
+		return nil // already present; don't clobber
+	}
+	restored := store.Game{
+		ID: aliasID, Name: alias.Name, SavePath: alias.SavePath, AppID: alias.AppID,
+		ActiveBranch: "main", AutoSync: true, MaxSnapshots: 20,
+	}
+	if restored.Name == "" {
+		restored.Name = aliasID
+	}
+	if restored.CoverURL == "" {
+		restored.CoverURL = SteamCoverURL(restored.AppID)
+	}
+	if err := d.Store.CreateGame(restored); err != nil {
+		return err
+	}
+	go func() {
+		if _, err := d.Snapshots.Create(aliasID, "Restored after unlink", true); err != nil {
+			d.Log.Log("warn", fmt.Sprintf("restore snapshot for %q failed: %v", aliasID, err))
+		}
+		if err := d.Watcher.Watch(aliasID, restored.SavePath); err != nil {
+			d.Log.Log("warn", fmt.Sprintf("could not watch restored %q: %v", aliasID, err))
+		}
+	}()
+	return nil
 }
 
 // untrackFromPeer mirrors a peer's untrack: remove the game + tombstone it,

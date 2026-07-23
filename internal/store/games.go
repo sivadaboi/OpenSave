@@ -86,6 +86,23 @@ func (s *Store) GetGame(id string) (Game, error) {
 	return g, nil
 }
 
+// FindGameBySavePath returns a tracked game whose save path matches (case-
+// insensitively, matching the app's path handling elsewhere). Used to reject
+// tracking the exact same folder twice.
+func (s *Store) FindGameBySavePath(path string) (Game, error) {
+	games, err := s.ListGames()
+	if err != nil {
+		return Game{}, err
+	}
+	target := strings.ToLower(strings.TrimRight(path, `\/`))
+	for _, g := range games {
+		if strings.ToLower(strings.TrimRight(g.SavePath, `\/`)) == target {
+			return g, nil
+		}
+	}
+	return Game{}, ErrNotFound
+}
+
 // ListGames returns every tracked game, ordered by name.
 func (s *Store) ListGames() ([]Game, error) {
 	var games []Game

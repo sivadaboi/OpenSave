@@ -48,6 +48,7 @@ func (s *Server) routes(r chi.Router) {
 	r.Post("/api/snapshots/prune", s.handlePruneSnapshots)
 
 	r.Get("/api/presets/scan", s.handlePresetScan)
+	r.Get("/api/cover", s.handleCover)
 
 	s.peerRoutes(r)
 	s.cloudRoutes(r)

@@ -41,6 +41,40 @@ func (s *Store) AddGameAlias(aliasID, gameID string) error {
 	return nil
 }
 
+// GameAlias is a link row plus the snapshot of the merged game kept for
+// restore-on-unlink.
+type GameAlias struct {
+	AliasID  string `db:"alias_id"`
+	GameID   string `db:"game_id"`
+	Name     string `db:"alias_name"`
+	SavePath string `db:"alias_save_path"`
+	AppID    string `db:"alias_app_id"`
+}
+
+// GetGameAlias returns the full alias row (including the restore snapshot).
+func (s *Store) GetGameAlias(aliasID string) (GameAlias, bool) {
+	var a GameAlias
+	err := s.db.Get(&a,
+		`SELECT alias_id, game_id, alias_name, alias_save_path, alias_app_id
+		 FROM game_aliases WHERE alias_id = ?`, aliasID)
+	if err != nil {
+		return GameAlias{}, false
+	}
+	return a, true
+}
+
+// SetAliasSnapshot records the merged game's identity on its alias row so a
+// later unlink can restore it.
+func (s *Store) SetAliasSnapshot(aliasID, name, savePath, appID string) error {
+	_, err := s.db.Exec(
+		`UPDATE game_aliases SET alias_name = ?, alias_save_path = ?, alias_app_id = ? WHERE alias_id = ?`,
+		name, savePath, appID, aliasID)
+	if err != nil {
+		return fmt.Errorf("set alias snapshot %s: %w", aliasID, err)
+	}
+	return nil
+}
+
 // ResolveGameAlias maps a possibly-aliased id to the local canonical game id.
 // The second return is false when aliasID isn't linked to anything.
 func (s *Store) ResolveGameAlias(aliasID string) (string, bool) {

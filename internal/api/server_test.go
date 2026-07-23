@@ -546,12 +546,56 @@ func TestLinkGamesEndpoint(t *testing.T) {
 		t.Errorf("GET aliases = %v, want [%s]", aliases, alias)
 	}
 
-	// Unlink.
+	// Unlink — the merged game comes back as its own tracked entry, and the
+	// link is gone.
 	resp, _ = ts.do(t, http.MethodDelete, "/api/games/"+canonical+"/alias/"+alias, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unlink status = %d", resp.StatusCode)
 	}
 	if remaining, _ := ts.daemon.Store.ListGameAliases(canonical); len(remaining) != 0 {
 		t.Errorf("aliases after unlink = %v, want empty", remaining)
+	}
+	resp, list = ts.do(t, http.MethodGet, "/api/games", nil)
+	if _, ok := list[alias]; !ok {
+		t.Errorf("unlink should restore %q to the library, keys = %v", alias, keysOf(list))
+	}
+	if _, ok := list[canonical]; !ok {
+		t.Errorf("canonical game %q should still be present, keys = %v", canonical, keysOf(list))
+	}
+}
+
+// TestTrackSecondLocation covers the fix for the UNIQUE games.id error: a
+// second save location for a same-named game is tracked under a
+// disambiguated id, while re-tracking the exact same folder is rejected.
+func TestTrackSecondLocation(t *testing.T) {
+	ts := startTestServer(t)
+
+	dirA := filepath.Join(t.TempDir(), "balatro-a")
+	dirB := filepath.Join(t.TempDir(), "balatro-b")
+	for _, d := range []string{dirA, dirB} {
+		if err := os.MkdirAll(d, 0o777); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resp, a := ts.do(t, http.MethodPost, "/api/games", map[string]string{"name": "Balatro", "savePath": dirA})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("track A status = %d (%v)", resp.StatusCode, a)
+	}
+	resp, b := ts.do(t, http.MethodPost, "/api/games", map[string]string{"name": "Balatro", "savePath": dirB})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("track B (second location) status = %d (%v)", resp.StatusCode, b)
+	}
+	var idA, idB string
+	json.Unmarshal(a["id"], &idA)
+	json.Unmarshal(b["id"], &idB)
+	if idA == idB || idA == "" || idB == "" {
+		t.Errorf("second location should get a distinct id, got %q and %q", idA, idB)
+	}
+
+	// Re-tracking the exact same folder is a clear duplicate.
+	resp, dup := ts.do(t, http.MethodPost, "/api/games", map[string]string{"name": "Balatro", "savePath": dirA})
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("duplicate folder track status = %d, want 409 (%v)", resp.StatusCode, dup)
 	}
 }
