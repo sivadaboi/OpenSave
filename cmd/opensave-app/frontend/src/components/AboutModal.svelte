@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { native } from '../lib/api.js';
   import { aboutChangelogOpen } from '../lib/stores.js';
+  import { backdropClose } from '../lib/backdrop.js';
   import logoUrl from '../assets/logo.png';
 
   export let onClose = () => {};
@@ -36,7 +37,7 @@
 
 <svelte:window on:keydown={onKeydown} />
 
-<div class="backdrop" on:click|self={onClose} role="presentation">
+<div class="backdrop" use:backdropClose={onClose} role="presentation">
   <div class="modal" role="dialog" aria-modal="true" aria-label="About OpenSave">
     <button class="x" on:click={onClose} title="Close" aria-label="Close">✕</button>
     <img class="logo" src={logoUrl} alt="" />

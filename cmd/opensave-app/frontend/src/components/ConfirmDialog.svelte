@@ -1,5 +1,6 @@
 <script>
   import { confirmRequest, answerConfirm } from '../lib/stores.js';
+  import { backdropClose } from '../lib/backdrop.js';
 
   let confirmBtn;
 
@@ -17,7 +18,7 @@
 <svelte:window on:keydown={onKeydown} />
 
 {#if $confirmRequest}
-  <div class="backdrop" on:click|self={() => answerConfirm(false)} role="presentation">
+  <div class="backdrop" use:backdropClose={() => answerConfirm(false)} role="presentation">
     <div class="modal card" role="alertdialog" aria-modal="true" aria-label={$confirmRequest.title}>
       <h3>{$confirmRequest.title}</h3>
       <p class="message">{$confirmRequest.message}</p>

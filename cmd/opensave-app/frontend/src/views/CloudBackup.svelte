@@ -1,6 +1,7 @@
 <script>
   import { gameList, toast, cloudAuthEvent, cloudUploadEvent, backupProgressEvent, askConfirm } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
+  import { backdropClose } from '../lib/backdrop.js';
   import { onMount, onDestroy } from 'svelte';
 
   let config = null;
@@ -586,7 +587,7 @@
 {#if exportOpen}
   <div
     class="cloud-overlay"
-    on:click|self={() => (exportOpen = false)}
+    use:backdropClose={() => (exportOpen = false)}
     on:keydown={(e) => e.key === 'Escape' && (exportOpen = false)}
     role="presentation"
   >
@@ -688,7 +689,7 @@
 {#if importOpen}
   <div
     class="cloud-overlay"
-    on:click|self={() => !importing && (importOpen = false)}
+    use:backdropClose={() => !importing && (importOpen = false)}
     on:keydown={(e) => e.key === 'Escape' && !importing && (importOpen = false)}
     role="presentation"
   >
@@ -761,7 +762,7 @@
 {#if cloudOpen}
   <div
     class="cloud-overlay"
-    on:click|self={closeCloudBrowser}
+    use:backdropClose={closeCloudBrowser}
     on:keydown={(e) => e.key === 'Escape' && closeCloudBrowser()}
     role="presentation"
   >

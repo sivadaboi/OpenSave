@@ -1,6 +1,7 @@
 <script>
   import { gameList, peers, navigate, toast, syncActivity } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
+  import { backdropClose } from '../lib/backdrop.js';
 
   export let params = {};
 
@@ -63,19 +64,6 @@
   function closeScan() {
     scanOpen = false;
     scanResults = null;
-  }
-
-  // Backdrop-to-close, but only when the press *starts* on the backdrop.
-  // Using on:click|self alone dismisses the modal when a drag/text-selection
-  // begins inside it (e.g. clicking into the search box) and the mouse is
-  // released over the backdrop — the click then resolves to the overlay.
-  let scanPressOnBackdrop = false;
-  function onOverlayMousedown(e) {
-    scanPressOnBackdrop = e.target === e.currentTarget;
-  }
-  function onOverlayClick(e) {
-    if (scanPressOnBackdrop && e.target === e.currentTarget) closeScan();
-    scanPressOnBackdrop = false;
   }
 
   function onKeydown(e) {
@@ -194,7 +182,7 @@
 {/if}
 
 {#if scanOpen}
-  <div class="scan-overlay" on:mousedown={onOverlayMousedown} on:click={onOverlayClick} on:keydown={(e) => e.key === 'Escape' && closeScan()} role="presentation">
+  <div class="scan-overlay" use:backdropClose={closeScan} on:keydown={(e) => e.key === 'Escape' && closeScan()} role="presentation">
     <div class="scan-modal">
       <div class="scan-modal-head">
         <div>
