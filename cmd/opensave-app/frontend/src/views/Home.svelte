@@ -1,5 +1,5 @@
 <script>
-  import { gameList, peers, navigate, toast, syncActivity } from '../lib/stores.js';
+  import { gameList, peers, navigate, toast, syncActivity, askConfirm } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
   import { backdropClose } from '../lib/backdrop.js';
 
@@ -135,6 +135,51 @@
     toast('Sync triggered for all games');
   }
 
+  // ── Library multi-select ─────────────────────────────────────────
+  // Lets the user act on several games at once (e.g. clear a batch of
+  // wrongly-tracked entries) without navigating in and out of each one.
+  let selectMode = false;
+  let libSelected = new Set();
+  let libSelectedCount = 0;
+
+  function toggleSelectMode() {
+    selectMode = !selectMode;
+    if (!selectMode) clearLibSelection();
+  }
+  function toggleLibSelect(id) {
+    if (libSelected.has(id)) libSelected.delete(id);
+    else libSelected.add(id);
+    libSelected = libSelected;
+    libSelectedCount = libSelected.size;
+  }
+  function selectAllGames() {
+    for (const g of $gameList) libSelected.add(g.id);
+    libSelected = libSelected;
+    libSelectedCount = libSelected.size;
+  }
+  function clearLibSelection() {
+    libSelected = new Set();
+    libSelectedCount = 0;
+  }
+  async function untrackSelectedGames() {
+    const n = libSelectedCount;
+    if (n === 0) return;
+    const ok = await askConfirm(
+      `Untrack ${n} selected game${n === 1 ? '' : 's'}? They'll be removed from your library. Your save snapshots on disk are kept — nothing is deleted.`,
+      { title: 'Untrack selected?', confirmText: `Untrack ${n}`, danger: true }
+    );
+    if (!ok) return;
+    try {
+      const res = await api.post('/api/games/untrack-bulk', { ids: [...libSelected] });
+      toast(`Untracked ${res.untracked} game${res.untracked === 1 ? '' : 's'} — snapshots kept`, 'success');
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      selectMode = false;
+      clearLibSelection();
+    }
+  }
+
   $: onlinePeers = Object.values($peers).filter((p) => p.status === 'online');
   const typeLabels = { emulator: 'Emulator', repack: 'Repack', game: 'Game' };
   // Vertical Steam library box-art (portrait) for the cover grid.
@@ -152,6 +197,9 @@
       {scanning ? 'Scanning…' : '🔍 Auto-scan'}
     </button>
     <button class="btn" on:click={syncAll} disabled={$gameList.length === 0}>⟳ Sync all</button>
+    <button class="btn" on:click={toggleSelectMode} disabled={$gameList.length === 0}>
+      {selectMode ? '✕ Cancel' : '☑ Select'}
+    </button>
     <button class="btn primary" on:click={() => (showAdd = !showAdd)}>+ Track folder</button>
   </div>
 </div>
@@ -298,10 +346,32 @@
     <p class="welcome-hint">Then open <strong>Devices</strong> to pair another PC or Steam Deck, or <strong>Cloud Backup</strong> to mirror snapshots online.</p>
   </div>
 {:else}
-  <h3 class="section">Library</h3>
+  <div class="section-row">
+    <h3 class="section">Library</h3>
+    {#if selectMode}
+      <div class="select-bar">
+        <span class="select-count">{libSelectedCount} selected</span>
+        <button class="btn small" on:click={selectAllGames}>Select all ({$gameList.length})</button>
+        {#if libSelectedCount > 0}
+          <button class="btn small" on:click={clearLibSelection}>Clear</button>
+        {/if}
+        <button class="btn small danger" disabled={libSelectedCount === 0} on:click={untrackSelectedGames}>
+          Untrack selected
+        </button>
+      </div>
+    {/if}
+  </div>
   <div class="grid">
     {#each $gameList as game (game.id)}
-      <button class="card game-card" on:click={() => navigate('game', { gameId: game.id })}>
+      <button
+        class="card game-card"
+        class:selecting={selectMode}
+        class:selected={selectMode && libSelected.has(game.id)}
+        on:click={() => (selectMode ? toggleLibSelect(game.id) : navigate('game', { gameId: game.id }))}
+      >
+        {#if selectMode}
+          <div class="gc-check" class:on={libSelected.has(game.id)}>{libSelected.has(game.id) ? '✓' : ''}</div>
+        {/if}
         <div class="gc-cover">
           {#if game.coverUrl}
             <img
@@ -677,6 +747,7 @@
     gap: 12px;
   }
   .game-card {
+    position: relative;
     text-align: left;
     cursor: pointer;
     color: var(--text);
@@ -687,6 +758,53 @@
   .game-card:hover {
     border-color: var(--border-strong);
     transform: translateY(-1px);
+  }
+  .game-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .gc-check {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 3;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    border: 2px solid #fff;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  .gc-check.on {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .section-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .section-row .section {
+    margin-bottom: 0;
+  }
+  .select-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .select-count {
+    color: var(--text-dim);
+    font-size: 0.85rem;
   }
   .gc-cover {
     position: relative;
