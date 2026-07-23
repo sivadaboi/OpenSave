@@ -65,6 +65,36 @@ var presetDefs = []preset{
 	{ID: "retroarch-saves", Name: "RetroArch Save Files", Type: "emulator", Path: "%APPDATA%/RetroArch/saves",
 		LinuxPath: []string{"~/.config/retroarch/saves", "~/.var/app/org.libretro.RetroArch/config/retroarch/saves"}},
 
+	// PS1 — DuckStation keeps memory cards in <userdir>/memcards (userdir is
+	// %LOCALAPPDATA% on Windows, XDG data on Linux).
+	{ID: "duckstation", Name: "DuckStation PS1 Emulator", Type: "emulator", Path: "%LOCALAPPDATA%/DuckStation/memcards",
+		LinuxPath: []string{"~/.local/share/duckstation/memcards", "~/.var/app/org.duckstation.DuckStation/data/duckstation/memcards"}},
+	// 3DS — Azahar and Lime3DS are the active Citra successor forks (Citra
+	// is discontinued); identical sdmc/Nintendo 3DS layout, different homes.
+	{ID: "azahar", Name: "Azahar 3DS Emulator", Type: "emulator", Path: "%APPDATA%/Azahar/sdmc/Nintendo 3DS",
+		LinuxPath: []string{"~/.local/share/azahar-emu/sdmc/Nintendo 3DS", "~/.var/app/org.azahar_emu.Azahar/data/azahar-emu/sdmc/Nintendo 3DS"}},
+	{ID: "lime3ds", Name: "Lime3DS 3DS Emulator", Type: "emulator", Path: "%APPDATA%/Lime3DS/sdmc/Nintendo 3DS",
+		LinuxPath: []string{"~/.local/share/lime3ds-emu/sdmc/Nintendo 3DS", "~/.var/app/io.github.lime3ds.Lime3DS/data/lime3ds-emu/sdmc/Nintendo 3DS"}},
+	// Switch — Ryubing is the active Ryujinx successor fork (Ryujinx is
+	// discontinued); same bis/user/save layout as Ryujinx.
+	{ID: "ryubing", Name: "Ryubing Switch Emulator", Type: "emulator", Path: "%APPDATA%/Ryubing/bis/user/save",
+		LinuxPath: []string{"~/.config/Ryubing/bis/user/save", "~/.var/app/io.github.ryubing.Ryujinx/config/Ryujinx/bis/user/save"}},
+	// PS Vita
+	{ID: "vita3k", Name: "Vita3K PS Vita Emulator", Type: "emulator", Path: "%APPDATA%/Vita3K/Vita3K/ux0/user/00/savedata",
+		LinuxPath: []string{"~/.local/share/Vita3K/Vita3K/ux0/user/00/savedata"}},
+	// PS4 — shadPS4 stores saves under user/savedata (AppData or portable).
+	{ID: "shadps4", Name: "shadPS4 PS4 Emulator", Type: "emulator", Path: "%APPDATA%/shadPS4/user/savedata",
+		LinuxPath: []string{"~/.local/share/shadPS4/user/savedata", "~/.var/app/net.shadps4.shadPS4/data/shadps4/user/savedata"}},
+	// Dreamcast — Flycast keeps VMU saves (vmu_save_*.bin) in its data dir.
+	{ID: "flycast", Name: "Flycast Dreamcast Emulator", Type: "emulator", Path: "%LOCALAPPDATA%/Flycast",
+		LinuxPath: []string{"~/.local/share/flycast", "~/.var/app/org.flycast.Flycast/data/flycast"}},
+	// Original Xbox — saves live inside the HDD image + EEPROM in xemu's data dir.
+	{ID: "xemu", Name: "xemu Original Xbox Emulator", Type: "emulator", Path: "%LOCALAPPDATA%/xemu/xemu",
+		LinuxPath: []string{"~/.local/share/xemu/xemu", "~/.var/app/app.xemu.xemu/data/xemu/xemu"}},
+	// Adventure games (SCUMM & many others).
+	{ID: "scummvm", Name: "ScummVM", Type: "emulator", Path: "%APPDATA%/ScummVM/Saved games",
+		LinuxPath: []string{"~/.local/share/scummvm/saves", "~/.var/app/org.scummvm.ScummVM/data/scummvm/saves"}},
+
 	// EmuDeck (Steam Deck & co.) relocates every emulator's saves into one
 	// tree: Emulation/saves/<emulator>. Internal storage plus SD card
 	// (SteamOS mounts cards under /run/media/<dev> or /run/media/deck/<label>).

@@ -308,3 +308,46 @@ func TestYuzuFamilyForks(t *testing.T) {
 		}
 	}
 }
+
+// TestNewEmulatorPresets verifies the expanded emulator coverage (PS1,
+// PS4, Vita, Xbox, Dreamcast, 3DS/Switch successor forks, ScummVM) is
+// detected at each emulator's fixed Linux save directory.
+func TestNewEmulatorPresets(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	home := t.TempDir()
+
+	// id -> a save path (relative to home) the preset should detect.
+	cases := map[string]string{
+		"duckstation": ".local/share/duckstation/memcards",
+		"azahar":      ".local/share/azahar-emu/sdmc/Nintendo 3DS",
+		"lime3ds":     ".local/share/lime3ds-emu/sdmc/Nintendo 3DS",
+		"ryubing":     ".config/Ryubing/bis/user/save",
+		"vita3k":      ".local/share/Vita3K/Vita3K/ux0/user/00/savedata",
+		"shadps4":     ".local/share/shadPS4/user/savedata",
+		"flycast":     ".local/share/flycast",
+		"xemu":        ".local/share/xemu/xemu",
+		"scummvm":     ".local/share/scummvm/saves",
+	}
+	for _, rel := range cases {
+		dir := filepath.Join(home, filepath.FromSlash(rel))
+		if err := os.MkdirAll(dir, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "save.dat"), []byte("x"), 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sc := &Scanner{CacheFile: filepath.Join(t.TempDir(), "cache.json"), GOOS: "linux", HomeDir: home}
+	found := map[string]string{}
+	for _, d := range sc.Scan(nil) {
+		found[d.ID] = d.SavePath
+	}
+	for id, rel := range cases {
+		want := filepath.Join(home, filepath.FromSlash(rel))
+		if got := found[id]; got != want {
+			t.Errorf("%s: detected %q, want %q", id, got, want)
+		}
+	}
+}
