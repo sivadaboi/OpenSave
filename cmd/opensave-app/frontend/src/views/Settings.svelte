@@ -66,6 +66,15 @@
     draft.customScanPaths = draft.customScanPaths.filter((_, idx) => idx !== i);
   }
 
+  // Excluded folders — locations the auto-scan should skip entirely.
+  async function addExcludePath() {
+    const dir = await native.selectDirectory('Choose a folder to exclude from auto-scan');
+    if (dir) draft.excludePaths = [...(draft.excludePaths ?? []), dir];
+  }
+  function removeExcludePath(i) {
+    draft.excludePaths = draft.excludePaths.filter((_, idx) => idx !== i);
+  }
+
   async function pickBackupsDir() {
     const dir = await native.selectDirectory('Select snapshots storage folder');
     if (dir) draft.backupsDir = dir;
@@ -310,6 +319,18 @@
           </div>
         {/each}
         <button id="s-scan-paths" class="btn small" on:click={addScanPath}>+ Add folder</button>
+      </div>
+
+      <div class="field" style="margin: 18px 0 0;">
+        <label for="s-exclude-paths">Folders to exclude</label>
+        <span class="hint">Auto-scan skips these folders and everything inside them — handy for stale save locations (like an old GSE saves directory) you don't want offered again.</span>
+        {#each draft.excludePaths ?? [] as p, i}
+          <div class="rule-row">
+            <span class="rule-path" title={p}>{p}</span>
+            <button class="btn small danger" on:click={() => removeExcludePath(i)}>✕</button>
+          </div>
+        {/each}
+        <button id="s-exclude-paths" class="btn small" on:click={addExcludePath}>+ Exclude folder</button>
       </div>
     </div>
   {:else}

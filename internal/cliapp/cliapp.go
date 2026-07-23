@@ -15,6 +15,7 @@ import (
 
 	"github.com/opensave/opensave/internal/api"
 	"github.com/opensave/opensave/internal/daemon"
+	"github.com/opensave/opensave/internal/presets"
 	"github.com/opensave/opensave/internal/store"
 	"github.com/opensave/opensave/internal/sysintegration/upnp"
 )
@@ -176,6 +177,7 @@ func cmdScan(d *daemon.Daemon) int {
 		return 1
 	}
 	found := d.Scanner.Scan(settings.CustomScanPaths)
+	found = presets.FilterExcluded(found, settings.ExcludePaths)
 	if len(found) == 0 {
 		fmt.Println("No game saves auto-detected.")
 		return 0

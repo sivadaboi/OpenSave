@@ -60,6 +60,7 @@ func TestUpdateSettings_RoundTripsJSONColumns(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings.CustomScanPaths = []string{"/mnt/games", "/mnt/emu"}
+	settings.ExcludePaths = []string{"/mnt/old-gse-saves"}
 	settings.PathTranslations = []TranslationRule{{FromPattern: "C:\\Saves", ToPattern: "/saves"}}
 	settings.SpeedLimitKbps = 500
 
@@ -73,6 +74,9 @@ func TestUpdateSettings_RoundTripsJSONColumns(t *testing.T) {
 	}
 	if len(got.CustomScanPaths) != 2 || got.CustomScanPaths[1] != "/mnt/emu" {
 		t.Errorf("CustomScanPaths round-trip failed: %+v", got.CustomScanPaths)
+	}
+	if len(got.ExcludePaths) != 1 || got.ExcludePaths[0] != "/mnt/old-gse-saves" {
+		t.Errorf("ExcludePaths round-trip failed: %+v", got.ExcludePaths)
 	}
 	if len(got.PathTranslations) != 1 || got.PathTranslations[0].ToPattern != "/saves" {
 		t.Errorf("PathTranslations round-trip failed: %+v", got.PathTranslations)

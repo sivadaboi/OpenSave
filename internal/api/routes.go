@@ -442,6 +442,7 @@ func (s *Server) handlePresetScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	found := s.Daemon.Scanner.Scan(settings.CustomScanPaths)
+	found = presets.FilterExcluded(found, settings.ExcludePaths)
 	if found == nil {
 		found = []presets.DiscoveredSave{} // never null on the wire
 	}

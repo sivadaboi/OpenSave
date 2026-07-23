@@ -32,6 +32,7 @@ type Settings struct {
 	AutoDeleteDays    int               `db:"auto_delete_days" json:"autoDeleteDays"`
 	AutoSyncOnTrack   bool              `db:"auto_sync_on_track" json:"autoSyncOnTrack"`
 	CustomScanPaths   []string          `db:"-" json:"customScanPaths"`
+	ExcludePaths      []string          `db:"-" json:"excludePaths"`
 	PathTranslations  []TranslationRule `db:"-" json:"pathTranslations"`
 	RelayURL          string            `db:"relay_url" json:"relayUrl"`
 	SyncCode          string            `db:"sync_code" json:"syncCode"`
@@ -43,6 +44,7 @@ type Settings struct {
 	DefaultMaxSnapshots int             `db:"default_max_snapshots" json:"defaultMaxSnapshots"`
 
 	CustomScanPathsJSON  string `db:"custom_scan_paths" json:"-"`
+	ExcludePathsJSON     string `db:"exclude_paths" json:"-"`
 	PathTranslationsJSON string `db:"path_translations" json:"-"`
 	UpdatedAt            string `db:"updated_at" json:"-"`
 }
@@ -53,6 +55,11 @@ func (s *Settings) unmarshalJSONColumns() error {
 	if s.CustomScanPathsJSON != "" {
 		if err := json.Unmarshal([]byte(s.CustomScanPathsJSON), &s.CustomScanPaths); err != nil {
 			return fmt.Errorf("unmarshal customScanPaths: %w", err)
+		}
+	}
+	if s.ExcludePathsJSON != "" {
+		if err := json.Unmarshal([]byte(s.ExcludePathsJSON), &s.ExcludePaths); err != nil {
+			return fmt.Errorf("unmarshal excludePaths: %w", err)
 		}
 	}
 	if s.PathTranslationsJSON != "" {
@@ -73,6 +80,16 @@ func (s *Settings) marshalJSONColumns() error {
 		return err
 	}
 	s.CustomScanPathsJSON = string(b)
+
+	excludePaths := s.ExcludePaths
+	if excludePaths == nil {
+		excludePaths = []string{}
+	}
+	b, err = json.Marshal(excludePaths)
+	if err != nil {
+		return err
+	}
+	s.ExcludePathsJSON = string(b)
 
 	rules := s.PathTranslations
 	if rules == nil {
@@ -191,6 +208,7 @@ func (s *Store) UpdateSettings(settings Settings) error {
 			auto_delete_days = :auto_delete_days,
 			auto_sync_on_track = :auto_sync_on_track,
 			custom_scan_paths = :custom_scan_paths,
+			exclude_paths = :exclude_paths,
 			path_translations = :path_translations,
 			relay_url = :relay_url,
 			sync_code = :sync_code,
