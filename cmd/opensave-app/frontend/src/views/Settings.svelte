@@ -1,10 +1,27 @@
 <script>
   import { settings, toast, askConfirm, gameList } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
+  import qrcode from 'qrcode-generator';
 
   // Donation page, opened in the system browser (never in-app). Deliberately
   // a single constant so the destination is easy to audit and change.
   const DONATE_URL = 'https://opensave.gumroad.com/l/usygu';
+
+  // QR of the same URL, generated locally so paying from a phone (where
+  // Apple/Google Pay is a single tap) needs no typing. Built once — the URL
+  // is constant. Error-correction level M tolerates a bit of screen glare.
+  const qrSvg = (() => {
+    const qr = qrcode(0, 'M');
+    qr.addData(DONATE_URL);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+  })();
+
+  let donateOpened = false;
+  function openDonatePage() {
+    native.openExternal(DONATE_URL);
+    donateOpened = true;
+  }
 
   let tab = 'general';
   let draft = null;
@@ -422,14 +439,32 @@
         save folders around, you're welcome to chip in toward its development. Entirely
         optional, and nothing in the app changes either way.
       </p>
-      <div class="support-actions">
-        <button class="btn" on:click={() => native.openExternal(DONATE_URL)}>
-          Open donation page ↗
-        </button>
+      <div class="support-split">
+        <div class="support-left">
+          <div class="support-actions">
+            <button class="btn" on:click={openDonatePage}>
+              {donateOpened ? 'Open again ↗' : 'Open donation page ↗'}
+            </button>
+          </div>
+          {#if donateOpened}
+            <p class="support-opened">Opened in your browser — thank you for taking a look.</p>
+          {/if}
+          <p class="support-foot">
+            Prefer not to donate? Reporting a bug or suggesting a feature helps just as much.
+          </p>
+        </div>
+
+        <div class="support-qr">
+          <!-- Rendered locally from DONATE_URL; no network request, no external
+               image service. Kept on a light panel because phone cameras
+               struggle with inverted (light-on-dark) QR codes. -->
+          <div class="qr-plate">{@html qrSvg}</div>
+          <span class="qr-caption">Scan to pay from your phone</span>
+        </div>
       </div>
-      <p class="support-foot">
-        Opens in your browser. Prefer not to donate? Reporting a bug or suggesting a feature
-        helps just as much.
+
+      <p class="support-note">
+        Payment is handled entirely by Gumroad — OpenSave never sees your card details.
       </p>
     </div>
   {/if}
@@ -528,6 +563,52 @@
     font-size: 0.8rem;
     color: var(--text-faint);
     margin: 14px 0 0;
+  }
+  .support-split {
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .support-left {
+    flex: 1;
+    min-width: 260px;
+  }
+  .support-opened {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    margin: 10px 0 0;
+  }
+  .support-qr {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  /* Light plate: phone cameras are unreliable at reading inverted QR codes,
+     so the code stays dark-on-light even in the dark theme. */
+  .qr-plate {
+    background: #fff;
+    padding: 10px;
+    border-radius: 10px;
+    line-height: 0;
+  }
+  .qr-plate :global(svg) {
+    display: block;
+    width: 132px;
+    height: 132px;
+    shape-rendering: crispEdges;
+  }
+  .qr-caption {
+    font-size: 0.76rem;
+    color: var(--text-faint);
+  }
+  .support-note {
+    font-size: 0.78rem;
+    color: var(--text-faint);
+    margin: 18px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
   }
   .section-title {
     font-size: 0.95rem;
