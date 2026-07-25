@@ -2,6 +2,11 @@
   import { settings, toast, askConfirm, gameList } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
 
+  // Donation page, opened in the system browser (never in-app). Deliberately
+  // a single constant so the destination is easy to audit and change.
+  // TODO: placeholder — replace with the real Gumroad product URL before release.
+  const DONATE_URL = 'https://opensaveapp.gumroad.com/l/support';
+
   let tab = 'general';
   let draft = null;
   let busy = false;
@@ -167,6 +172,18 @@
       <p class="hint" style="margin-top: 6px;">
         Launches minimized to the system tray so syncing runs in the background.
       </p>
+    </div>
+
+    <div class="card support-card" style="margin-top: 14px;">
+      <h3 class="section-title">💛 Support OpenSave</h3>
+      <p class="hint" style="margin: 0 0 12px;">
+        OpenSave is free and open source — no accounts, no ads, no telemetry, and every
+        feature stays unlocked. If it's saved you some hassle, you can chip in toward its
+        development. Entirely optional.
+      </p>
+      <button class="btn small" on:click={() => native.openExternal(DONATE_URL)}>
+        Open donation page ↗
+      </button>
     </div>
   {:else if tab === 'sync'}
     <div class="card">
@@ -470,6 +487,19 @@
   }
   .arrow {
     color: var(--text-faint);
+  }
+  /* Deliberately understated: a quiet footnote at the end of the tab, not a
+     pitch. No accent colour, no emphasis — it should be findable, not loud. */
+  .support-card {
+    background: transparent;
+    border-style: dashed;
+  }
+  .support-card .section-title {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: var(--text-dim);
   }
   .section-title {
     font-size: 0.95rem;
