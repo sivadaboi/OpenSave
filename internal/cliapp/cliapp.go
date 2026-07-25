@@ -22,17 +22,39 @@ import (
 
 const usage = `OpenSave — P2P game save sync
 
-Usage:
+No account, no server, no quota. Devices sync directly with each other.
+
+Games:
   opensave scan                          Auto-detect game saves on this machine
   opensave add <name> <path>             Track a game save folder/file
+  opensave remove <gameId>               Stop tracking a game
   opensave status                        Show tracked games, branches, peers
+
+Sync:
+  opensave sync [<gameId>|--all]         Sync now (all games by default)
+  opensave peers                         List paired devices
+  opensave pair <host[:port]>            Ask a device on your LAN to pair
+  opensave pair requests|approve|reject  Handle incoming pairing requests
+  opensave unpair <peerId>               Drop a paired device
+  opensave relay status|join|leave       Internet sync between networks
+
+History:
   opensave snapshot <gameId> [comment]   Create a snapshot
+  opensave snapshots <gameId>            List snapshots
   opensave rollback <gameId> <snapId>    Restore a snapshot
   opensave branch <gameId> <name>        Create a branch
   opensave checkout <gameId> <name>      Switch branch
-  opensave remove <gameId>               Stop tracking a game
+  opensave export <gameId> <dir>         Copy the current save out to a folder
+
+Service:
   opensave daemon start [--port N]       Run the daemon (REST API + watcher)
+  opensave daemon status                 Is a daemon running, and where
+  opensave daemon stop                   Stop the running daemon
+  opensave service install|uninstall     Install a systemd --user service (Linux)
   opensave upnp <port> [--delete]        Forward (or remove) a router port via UPnP
+  opensave version                       Print the version
+
+Add --json to any command for machine-readable output.
 `
 
 // Run dispatches CLI arguments; returns a process exit code.
@@ -44,11 +66,31 @@ func Run(args []string) int {
 
 	cmd, rest := args[0], args[1:]
 
-	if cmd == "daemon" {
-		return runDaemon(rest)
-	}
-	if cmd == "upnp" {
+	// These talk to the running daemon (or manage it) rather than opening the
+	// database, so they must not construct a second daemon — doing so would
+	// contend for the same SQLite file and the same port.
+	switch cmd {
+	case "daemon":
+		return cmdDaemon(rest)
+	case "upnp":
 		return cmdUpnp(rest)
+	case "sync":
+		return cmdSync(rest)
+	case "peers":
+		return cmdPeers(rest)
+	case "pair":
+		return cmdPair(rest)
+	case "unpair":
+		return cmdUnpair(rest)
+	case "relay":
+		return cmdRelay(rest)
+	case "service":
+		return cmdService(rest)
+	case "version", "--version", "-v":
+		return cmdVersion(rest)
+	case "help", "--help", "-h":
+		fmt.Print(usage)
+		return 0
 	}
 
 	d, err := daemon.New(daemon.Options{})
@@ -75,9 +117,10 @@ func Run(args []string) int {
 		return cmdCheckout(d, rest)
 	case "remove":
 		return cmdRemove(d, rest)
-	case "help", "--help", "-h":
-		fmt.Print(usage)
-		return 0
+	case "snapshots":
+		return cmdSnapshots(d, rest)
+	case "export":
+		return cmdExport(d, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", cmd, usage)
 		return 1
@@ -122,6 +165,13 @@ func runDaemon(args []string) int {
 	}
 	defer server.Stop()
 
+	// Record the PID so `opensave daemon stop` can find *this* daemon. Only
+	// the CLI writes it: the desktop app serves the same API, and stopping it
+	// out from under its window would look like a crash.
+	pidPath := daemonPIDPath(d.Paths.HomeDir)
+	_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", os.Getpid())), 0o666)
+	defer os.Remove(pidPath)
+
 	fmt.Printf("OpenSave daemon listening on http://%s\n", addr)
 	fmt.Println("Press Ctrl+C to stop.")
 
@@ -130,6 +180,11 @@ func runDaemon(args []string) int {
 	<-sig
 	fmt.Println("\nshutting down...")
 	return 0
+}
+
+// daemonPIDPath is where a CLI-started daemon records its process id.
+func daemonPIDPath(homeDir string) string {
+	return filepath.Join(homeDir, "daemon.pid")
 }
 
 func cmdUpnp(args []string) int {
