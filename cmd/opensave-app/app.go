@@ -4,7 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	goruntime "runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	opensave "github.com/opensave/opensave"
@@ -237,6 +242,59 @@ func (a *App) SelectSaveFile(title, defaultName string) string {
 // OpenExternal opens a URL in the system browser (Steam pages, OAuth).
 func (a *App) OpenExternal(url string) {
 	runtime.BrowserOpenURL(a.ctx, url)
+}
+
+// OpenFolder reveals a save location in the system file manager (Explorer,
+// Finder, or whatever handles directories on Linux — Dolphin on a Steam Deck).
+// Returns an empty string on success, or a message to show the user.
+//
+// If the path is a file, its containing folder is opened instead, so callers
+// can pass a game's save path without caring which it is.
+func (a *App) OpenFolder(path string) string {
+	dir, problem := revealTargetDir(path)
+	if problem != "" {
+		return problem
+	}
+
+	// Arguments are passed as a slice (never through a shell), so paths
+	// containing spaces or shell metacharacters are safe.
+	var cmd *exec.Cmd
+	switch goruntime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer.exe", dir)
+	case "darwin":
+		cmd = exec.Command("open", dir)
+	default:
+		cmd = exec.Command("xdg-open", dir)
+	}
+	if err := cmd.Start(); err != nil {
+		return "Could not open the file manager: " + err.Error()
+	}
+	// Explorer exits non-zero even when it succeeded, so the result is
+	// deliberately not waited on or inspected.
+	go func() { _ = cmd.Wait() }()
+	return ""
+}
+
+// revealTargetDir works out which directory to show for a tracked save
+// location, or returns a message explaining why it can't. Split out from
+// OpenFolder so the decision is testable without launching a file manager.
+// A save tracked as a single file resolves to its containing folder.
+func revealTargetDir(path string) (dir, problem string) {
+	if strings.TrimSpace(path) == "" {
+		return "", "No save location set for this game."
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "That folder no longer exists on this device."
+		}
+		return "", "Could not open the folder: " + err.Error()
+	}
+	if info.IsDir() {
+		return filepath.Clean(path), ""
+	}
+	return filepath.Dir(filepath.Clean(path)), ""
 }
 
 // ShowWindow surfaces the window (un-hides from tray, un-minimises, and

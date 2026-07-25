@@ -227,6 +227,13 @@
 
   let editPath = false;
   let pathDraft = '';
+  // Reveal the save location in Explorer / Finder / the Linux file manager.
+  // The bridge returns a message when it can't (e.g. the folder was deleted).
+  async function openSaveFolder() {
+    const problem = await native.openFolder(game.savePath);
+    if (problem) toast(problem, 'error');
+  }
+
   async function savePath() {
     await run('Save path updated', () => api.patch(`/api/games/${game.id}`, { savePath: pathDraft }));
     editPath = false;
@@ -272,6 +279,9 @@
       <button class="btn small" on:click={() => (editPath = false)}>Cancel</button>
     {:else}
       <span class="path" title={game.savePath}>{game.savePath}</span>
+      <button class="btn small" on:click={openSaveFolder} title="Show this folder in your file manager">
+        📂 Open folder
+      </button>
       <button class="btn small" on:click={() => { pathDraft = game.savePath; editPath = true; }}>Edit</button>
     {/if}
   </div>

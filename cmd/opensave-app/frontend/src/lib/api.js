@@ -124,6 +124,9 @@ export const native = {
   installFromPeer: (peerId) => app()?.InstallUpdateFromPeer?.(peerId) ?? Promise.resolve('not available in browser preview'),
   installFromUrl: (url) => app()?.InstallUpdateFromURL?.(url) ?? Promise.resolve('not available in browser preview'),
   selectDirectory: (title) => app()?.SelectDirectory(title ?? '') ?? Promise.resolve(''),
+  // Reveals a folder in the system file manager. Resolves to '' on success,
+  // or a message explaining why it couldn't be opened.
+  openFolder: (path) => app()?.OpenFolder(path) ?? Promise.resolve(''),
   selectFile: (title) => app()?.SelectFile(title ?? '') ?? Promise.resolve(''),
   selectBackupFile: (title) => app()?.SelectBackupFile(title ?? '') ?? Promise.resolve(''),
   selectSaveFile: (title, name) => app()?.SelectSaveFile(title ?? '', name ?? '') ?? Promise.resolve(''),
