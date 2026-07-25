@@ -436,6 +436,31 @@ func TestDeleteSnapshotAndBranch(t *testing.T) {
 	}
 }
 
+// TestStatusExposesConflicts pins that active conflicts are reachable over
+// plain HTTP. They used to be announced only on the dashboard WebSocket, which
+// left the Steam Deck's Game Mode panel unable to see — let alone resolve — a
+// conflict, stranding that game until the user reached Desktop Mode.
+func TestStatusExposesConflicts(t *testing.T) {
+	ts := startTestServer(t)
+
+	resp, body := ts.do(t, http.MethodGet, "/api/status", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if _, ok := body["conflicts"]; !ok {
+		t.Errorf("/api/status has no conflicts field; keys = %v", keysOf(body))
+	}
+	if _, ok := body["conflictCount"]; !ok {
+		t.Errorf("/api/status has no conflictCount field; keys = %v", keysOf(body))
+	}
+	// With none active it must still be an object, never null — clients
+	// iterate it directly.
+	var conflicts map[string]json.RawMessage
+	if err := json.Unmarshal(body["conflicts"], &conflicts); err != nil {
+		t.Errorf("conflicts should decode as an object, got %s", body["conflicts"])
+	}
+}
+
 // TestDaemonAddrFile pins the contract out-of-process clients rely on to find
 // a running daemon — chiefly the Steam Deck's Decky plugin, which has no way
 // to ask the app which port it ended up on (the configured port may have been

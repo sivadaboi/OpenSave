@@ -100,6 +100,28 @@ class Plugin:
             decky.logger.error(f"snapshot_game({game_id}) failed: {e}")
             return {"success": False, "error": str(e)}
 
+    async def resolve_conflict(self, game_id: str, peer_id: str, resolution: str) -> dict:
+        """Settle a sync conflict from Game Mode.
+
+        Without this a conflict can only be cleared from Desktop Mode, which on
+        a handheld means the game stops syncing until you find a keyboard.
+        The daemon applies the resolution in the background — pulling a peer's
+        whole save can take minutes — so this returns as soon as it is accepted.
+        """
+        if resolution not in ("keep-local", "keep-remote", "merge-branch"):
+            return {"success": False, "error": f"unknown resolution {resolution}"}
+        try:
+            _request(
+                f"/api/games/{game_id}/resolve-conflict",
+                method="POST",
+                body={"peerId": peer_id, "resolution": resolution},
+                timeout=30,
+            )
+            return {"success": True}
+        except Exception as e:
+            decky.logger.error(f"resolve_conflict({game_id}, {resolution}) failed: {e}")
+            return {"success": False, "error": str(e)}
+
     async def find_game_by_appid(self, app_id: str) -> dict:
         """Map a Steam AppID to a tracked game, for the lifecycle hooks."""
         games = await self.get_games()

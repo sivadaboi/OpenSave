@@ -1,0 +1,43 @@
+[Unit]
+# Runs the OpenSave sync daemon as a background service, so saves sync
+# whether or not anyone has opened the desktop app or the Game Mode panel.
+#
+# This is the recommended setup on a Steam Deck: Game Mode never runs the
+# desktop app, so without a service the daemon only exists while the panel
+# has started it.
+#
+# Install (as the normal user, NOT root):
+#   mkdir -p ~/.config/systemd/user
+#   cp opensave-daemon.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now opensave-daemon
+#
+# Check on it:
+#   systemctl --user status opensave-daemon
+#   journalctl --user -u opensave-daemon -f
+#
+# On SteamOS, `sudo loginctl enable-linger $USER` keeps user services running
+# across Game Mode/Desktop Mode switches and logouts.
+Description=OpenSave save-sync daemon
+Documentation=https://github.com/sivadaboi/OpenSave
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Flatpak install (the supported route on a stock Steam Deck). For a native
+# install, replace this with the path to opensave-cli, e.g.:
+#   ExecStart=/usr/local/bin/opensave-cli daemon
+ExecStart=/usr/bin/flatpak run --command=opensave-cli io.github.sivadaboi.OpenSave daemon
+
+Restart=on-failure
+RestartSec=10
+
+# The daemon is a background sync service; keep it from competing with a
+# running game for CPU or disk.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+[Install]
+WantedBy=default.target

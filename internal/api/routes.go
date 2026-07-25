@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/opensave/opensave/internal/daemon"
+	"github.com/opensave/opensave/internal/p2p/syncengine"
 	"github.com/opensave/opensave/internal/presets"
 	"github.com/opensave/opensave/internal/store"
 	"github.com/opensave/opensave/internal/sysintegration"
@@ -64,10 +65,20 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	games, _ := s.Daemon.Store.ListGames()
 	peers, _ := s.Daemon.Store.ListPeers()
+	// Conflicts are otherwise only announced over the dashboard WebSocket,
+	// which leaves plain-HTTP clients — the Steam Deck's Game Mode panel —
+	// unable to see, let alone resolve, a conflict. Include them here so any
+	// client polling status can surface one.
+	conflicts := s.Daemon.P2P.Sync.ActiveConflicts()
+	if conflicts == nil {
+		conflicts = map[string]syncengine.Conflict{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"settings":  settings,
-		"gameCount": len(games),
-		"peerCount": len(peers),
+		"settings":      settings,
+		"gameCount":     len(games),
+		"peerCount":     len(peers),
+		"conflicts":     conflicts,
+		"conflictCount": len(conflicts),
 	})
 }
 

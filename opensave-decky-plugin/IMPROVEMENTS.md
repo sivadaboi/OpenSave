@@ -78,11 +78,12 @@ flatpak run --command=opensave-cli io.github.sivadaboi.OpenSave daemon
       detached, and returns whether it came up.
 - [x] Surface a **Start OpenSave** button in the panel whenever the daemon is
       unreachable, instead of a dead `OFFLINE` label.
-- [ ] Decide the lifetime model and document it:
-      - on-demand (plugin starts it when the panel opens), or
-      - persistent (a `systemd --user` unit, surviving Game Mode restarts).
-      A systemd unit is the better end state — saves should sync whether or not
-      anyone opened the panel.
+- [x] Decide the lifetime model and document it. Both are now supported:
+      **on-demand** (the panel's *Start sync service* button) for a zero-setup
+      path, and **persistent** via `packaging/systemd/opensave-daemon.service`
+      for users who want syncing without ever opening the panel. The unit file
+      carries its own install instructions, including `loginctl enable-linger`
+      so it survives Game Mode/Desktop Mode switches.
 - [x] Handle the "desktop app is already running" case so two daemons never
       contend for the same port.
 
@@ -111,9 +112,13 @@ is exactly the manual step OpenSave exists to remove.
       teardown.
 - [x] Map the Steam AppID from the event to a tracked game (the daemon already
       stores `appId`; the App-ID matching work is in `internal/store/aliases.go`).
-- [ ] On launch: trigger a sync and **block briefly** with a toast if a sync is
-      in flight, so the game doesn't start on a stale save. Needs a timeout —
-      never hang a game launch on a dead peer.
+- [~] On launch: **blocking is not achievable and was dropped.** The lifetime
+      notification fires once the game is *already running*, so there is no
+      point at which a plugin can hold the launch back. The launch-side sync is
+      therefore best-effort and fire-and-forget; the **exit** sync is the
+      reliable one, and it's the one that matters — it captures what you just
+      played. Users wanting a guaranteed-fresh save should sync from the panel
+      before launching.
 - [x] On exit: trigger a sync, toast the outcome.
 - [x] Make both behaviours toggleable in the panel; some users will want manual
       control.
@@ -125,7 +130,7 @@ is exactly the manual step OpenSave exists to remove.
 
 ---
 
-## P1-2 — Make the panel do more than report — 🟡 PARTIAL
+## P1-2 — Make the panel do more than report — ✅ MOSTLY DONE
 
 The panel currently offers exactly one action (*Sync All*) and is otherwise
 read-only. Notably, **a conflict cannot be resolved from Game Mode at all** —
@@ -134,11 +139,14 @@ serious dead end.
 
 ### Tasks
 - [x] Per-game **Sync now** (`POST /api/games/{id}/sync`).
-- [ ] Show sync progress — the daemon emits progress over its WebSocket.
-- [ ] Surface conflicts, with the same resolution choices the desktop app
-      offers (`internal/p2p/syncengine/conflict.go`).
-- [ ] Show last-synced time per game.
-- [ ] Optional: a snapshot button, so a user can checkpoint before a risky run.
+- [ ] Show live sync progress — the daemon emits progress over its WebSocket;
+      the panel currently only reports that a sync started.
+- [x] Surface conflicts, with the same three resolutions the desktop app offers.
+      `/api/status` now includes active conflicts (they were WebSocket-only, so
+      a plain-HTTP client couldn't see them), and the panel offers Keep both /
+      Keep this device's / Keep peer's.
+- [x] Show last-synced time per game (derived from the newest snapshot).
+- [x] A snapshot button, to checkpoint before a risky run.
 
 ---
 
@@ -148,9 +156,10 @@ serious dead end.
       changed the daemon port in Settings the plugin silently breaks. Read the
       port from the daemon's config file, or probe.
 - [ ] **Replace 5s polling with events.** `index.tsx` polls two endpoints every
-      5 seconds for as long as the panel is open. The daemon already exposes a
-      WebSocket; Decky supports `addEventListener` for push updates from the
-      Python backend. Less battery, fresher data.
+      5 seconds *while the panel is open* (Decky unmounts the content when it
+      closes, so this doesn't run in the background). Lower priority than first
+      assessed, but a WebSocket bridge plus `decky.emit` would still give live
+      progress and cost less battery.
 - [x] **Use `decky` module conventions in `main.py`** — now imports `decky` and
       uses `decky.logger` / `decky.DECKY_USER_HOME` instead of writing straight
       to `/tmp/opensave-decky.log`.

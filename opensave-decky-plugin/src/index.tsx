@@ -17,11 +17,30 @@ interface Game {
   activeBranch: string;
   appId?: string;
   savePath?: string;
+  branches?: Record<string, { snapshots?: Snapshot[] }>;
+}
+
+interface Snapshot {
+  id: string;
+  timestamp?: string;
+}
+
+interface Conflict {
+  peer: { id: string; name: string };
+  localStats?: { files: number; totalBytes: number; latestMtimeMs: number };
+  remoteStats?: { files: number; totalBytes: number; latestMtimeMs: number };
+  diffTotal?: number;
 }
 
 interface DaemonStatus {
   running: boolean;
-  data?: { settings?: { deviceName?: string }; gameCount?: number; peerCount?: number };
+  data?: {
+    settings?: { deviceName?: string };
+    gameCount?: number;
+    peerCount?: number;
+    conflicts?: Record<string, Conflict>;
+    conflictCount?: number;
+  };
   error?: string;
 }
 
@@ -33,6 +52,30 @@ const startDaemon =
   callable<[], { success: boolean; alreadyRunning?: boolean; error?: string }>("start_daemon");
 const findGameByAppId =
   callable<[app_id: string], { found: boolean; game?: Game }>("find_game_by_appid");
+const snapshotGame =
+  callable<[game_id: string, comment: string], { success: boolean; error?: string }>("snapshot_game");
+const resolveConflict = callable<
+  [game_id: string, peer_id: string, resolution: string],
+  { success: boolean; error?: string }
+>("resolve_conflict");
+
+/** Newest snapshot across a game's branches, as a human "x ago" string. */
+function lastSyncedLabel(game: Game): string {
+  let newest = 0;
+  for (const branch of Object.values(game.branches ?? {})) {
+    for (const snap of branch.snapshots ?? []) {
+      const t = Date.parse(snap.timestamp ?? "");
+      if (!isNaN(t) && t > newest) newest = t;
+    }
+  }
+  if (!newest) return "no snapshots yet";
+  const mins = Math.floor((Date.now() - newest) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
 // ── Auto-sync preferences ──────────────────────────────────────────────
 // Stored in localStorage rather than the daemon: these govern this device's
@@ -128,7 +171,36 @@ function Content() {
     );
   }
 
+  const onSnapshot = async (game: Game) => {
+    setBusy(true);
+    try {
+      const res = await snapshotGame(game.id, "Snapshot from Game Mode");
+      toaster.toast({
+        title: game.name,
+        body: res.success ? "Snapshot taken" : res.error ?? "Snapshot failed",
+      });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onResolve = async (gameId: string, peerId: string, resolution: string, label: string) => {
+    setBusy(true);
+    try {
+      const res = await resolveConflict(gameId, peerId, resolution);
+      toaster.toast({
+        title: "OpenSave",
+        body: res.success ? `Resolving: ${label}…` : res.error ?? "Could not resolve",
+      });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const list = Object.values(games);
+  const conflicts = Object.entries(status?.data?.conflicts ?? {});
 
   return (
     <PanelSection title="OpenSave">
@@ -151,6 +223,60 @@ function Content() {
         </ButtonItem>
       </PanelSectionRow>
 
+      {/* A conflict stops a game syncing until someone chooses a side. Without
+          this the only way out was Desktop Mode. */}
+      {conflicts.length > 0 && (
+        <PanelSection title={`Needs a decision (${conflicts.length})`}>
+          {conflicts.map(([gameId, c]) => {
+            const game = games[gameId];
+            const mine = c.localStats?.latestMtimeMs ?? 0;
+            const theirs = c.remoteStats?.latestMtimeMs ?? 0;
+            const newer = mine === theirs ? "same age" : mine > theirs ? "yours is newer" : "theirs is newer";
+            return (
+              <div key={gameId}>
+                <PanelSectionRow>
+                  <div style={{ fontSize: "0.85em" }}>
+                    <div style={{ fontWeight: "bold" }}>{game?.name ?? gameId}</div>
+                    <div style={{ opacity: 0.75 }}>
+                      Both this device and {c.peer?.name ?? "a peer"} changed this save
+                      {c.diffTotal ? ` (${c.diffTotal} file${c.diffTotal === 1 ? "" : "s"} differ)` : ""} — {newer}.
+                    </div>
+                  </div>
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <ButtonItem
+                    layout="below"
+                    disabled={busy}
+                    onClick={() => onResolve(gameId, c.peer.id, "merge-branch", "keeping both")}
+                    description="Safest: keeps both saves, theirs on a separate branch."
+                  >
+                    Keep both
+                  </ButtonItem>
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <ButtonItem
+                    layout="below"
+                    disabled={busy}
+                    onClick={() => onResolve(gameId, c.peer.id, "keep-local", "keeping this device's save")}
+                  >
+                    Keep this device's
+                  </ButtonItem>
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <ButtonItem
+                    layout="below"
+                    disabled={busy}
+                    onClick={() => onResolve(gameId, c.peer.id, "keep-remote", `keeping ${c.peer?.name ?? "the peer"}'s save`)}
+                  >
+                    Keep {c.peer?.name ?? "peer"}'s
+                  </ButtonItem>
+                </PanelSectionRow>
+              </div>
+            );
+          })}
+        </PanelSection>
+      )}
+
       <PanelSectionRow>
         <ToggleField
           label="Sync around gameplay"
@@ -172,16 +298,28 @@ function Content() {
           </PanelSectionRow>
         ) : (
           list.map((game) => (
-            <PanelSectionRow key={game.id}>
-              <ButtonItem
-                layout="below"
-                onClick={() => onSyncOne(game)}
-                disabled={busy}
-                description={`Branch ${game.activeBranch}`}
-              >
-                {game.name}
-              </ButtonItem>
-            </PanelSectionRow>
+            <div key={game.id}>
+              <PanelSectionRow>
+                <ButtonItem
+                  layout="below"
+                  onClick={() => onSyncOne(game)}
+                  disabled={busy}
+                  description={`Last snapshot ${lastSyncedLabel(game)} · branch ${game.activeBranch}`}
+                >
+                  {game.name}
+                </ButtonItem>
+              </PanelSectionRow>
+              <PanelSectionRow>
+                <ButtonItem
+                  layout="below"
+                  onClick={() => onSnapshot(game)}
+                  disabled={busy}
+                  description="Checkpoint the current save before a risky run."
+                >
+                  Snapshot
+                </ButtonItem>
+              </PanelSectionRow>
+            </div>
           ))
         )}
       </PanelSection>
