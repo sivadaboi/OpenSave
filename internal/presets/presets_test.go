@@ -1,9 +1,11 @@
 package presets
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -223,6 +225,56 @@ func TestResolveNames_UsesResolverAndCachesResult(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("resolver should not be called again after caching, total calls = %d", calls)
+	}
+}
+
+// TestResolveNames_GivesUpWhenLookupsKeepFailing pins the circuit breaker that
+// keeps a scan fast on a network where Steam is unreachable. Every failed
+// lookup costs a full HTTP timeout, so without a cutoff a large library pays
+// that hundreds of times (the "auto-scan got slower" report). After a short
+// run of failures the scan must stop calling out entirely and keep the
+// placeholder names.
+func TestResolveNames_GivesUpWhenLookupsKeepFailing(t *testing.T) {
+	isolateEnv(t)
+
+	userdata := filepath.Join(t.TempDir(), "userdata")
+	// Far more unknown AppIDs than the failure cutoff.
+	const total = 60
+	for i := 0; i < total; i++ {
+		id := fmt.Sprintf("9900%04d", i)
+		if err := os.MkdirAll(filepath.Join(userdata, "1", id), 0o777); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var mu sync.Mutex
+	calls := 0
+	sc := &Scanner{
+		CacheFile:          filepath.Join(t.TempDir(), "steam-app-cache.json"),
+		SteamUserdataPaths: []string{userdata},
+		ResolveAppName: func(appID string) string {
+			mu.Lock()
+			calls++
+			mu.Unlock()
+			return "" // simulate an unreachable/blocked API
+		},
+	}
+
+	sc.Scan(nil)
+
+	mu.Lock()
+	got := calls
+	mu.Unlock()
+
+	// Some in-flight overshoot past the cutoff is fine (up to the concurrency
+	// window); what matters is that it stops early instead of calling for all
+	// of them.
+	maxExpected := resolveFailCutoff + resolveConcurrency
+	if got > maxExpected {
+		t.Errorf("resolver called %d times for %d games; expected it to give up by ~%d", got, total, maxExpected)
+	}
+	if got == 0 {
+		t.Error("resolver was never called; the test isn't exercising the lookup path")
 	}
 }
 

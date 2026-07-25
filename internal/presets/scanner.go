@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Scanner performs the full auto-detection sweep. Zero value is not
@@ -67,6 +68,15 @@ func (sc *Scanner) goos() string {
 	}
 	return runtime.GOOS
 }
+
+const (
+	// resolveConcurrency caps simultaneous Steam store-API name lookups.
+	resolveConcurrency = 8
+	// resolveFailCutoff is how many consecutive failed lookups mean the API
+	// isn't reachable, so the rest of the scan skips it instead of paying a
+	// timeout per game.
+	resolveFailCutoff = 5
+)
 
 // Scan sweeps every known save convention and returns the discovered
 // locations with names resolved as well as possible (offline dictionary
@@ -382,6 +392,12 @@ func (sc *Scanner) resolveNames(discovered []DiscoveredSave) {
 	var wg sync.WaitGroup
 	cacheDirty := false
 
+	// Bound the fan-out: one goroutine per uncached AppID meant a scan could
+	// open hundreds of simultaneous connections to Steam's store API.
+	sem := make(chan struct{}, resolveConcurrency)
+	var consecutiveFails atomic.Int32
+	var resolveGaveUp atomic.Bool
+
 	for i := range discovered {
 		if discovered[i].AppID == "" {
 			continue
@@ -407,10 +423,31 @@ func (sc *Scanner) resolveNames(discovered []DiscoveredSave) {
 		wg.Add(1)
 		go func(i int, appID string) {
 			defer wg.Done()
-			name := sc.ResolveAppName(appID)
-			if name == "" {
+
+			// Give up on network lookups once it's clear they aren't working.
+			// Each miss costs a full HTTP timeout, so on a network that blocks
+			// Steam a big scan would otherwise pay that price hundreds of
+			// times over and take tens of seconds. Unresolved names simply
+			// keep their folder-derived placeholder, exactly as they do when
+			// an individual lookup fails.
+			if resolveGaveUp.Load() {
 				return
 			}
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if resolveGaveUp.Load() {
+				return
+			}
+
+			name := sc.ResolveAppName(appID)
+			if name == "" {
+				if consecutiveFails.Add(1) >= resolveFailCutoff {
+					resolveGaveUp.Store(true)
+				}
+				return
+			}
+			consecutiveFails.Store(0)
+
 			mu.Lock()
 			cache[appID] = name
 			cacheDirty = true
