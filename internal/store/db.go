@@ -37,6 +37,13 @@ func Open(path string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1) // modernc.org/sqlite + a single file: avoid concurrent-writer lock contention
 
+	// Tolerate columns the struct doesn't know about. Queries here use
+	// SELECT *, so without this a database written by a NEWER build hard-fails
+	// an older one ("missing destination name <col>") and the app won't start
+	// at all — a downgrade, or just testing a beta and going back, bricks it.
+	// Ignoring unmapped columns makes the schema forward-compatible instead.
+	db = db.Unsafe()
+
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()

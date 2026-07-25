@@ -18,6 +18,42 @@ func openTestStore(t *testing.T) *Store {
 	return s
 }
 
+// TestUnknownColumnsDontBreakReads guards the downgrade-bricks-the-app bug:
+// a database written by a NEWER build carries columns this build's structs
+// have never heard of. Because the queries use SELECT *, an intolerant handle
+// fails with "missing destination name <col>" and the app won't start at all
+// — which is what happened when a v2.1.1 binary opened a database an unreleased
+// build had already migrated. Reads must simply ignore unknown columns.
+func TestUnknownColumnsDontBreakReads(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.EnsureDefaultSettings("/data", "/backups"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateGame(Game{ID: "g1", Name: "Game One", SavePath: `C:\Saves\G1`}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a future release adding columns this build doesn't know about.
+	for _, stmt := range []string{
+		`ALTER TABLE settings ADD COLUMN some_future_setting TEXT NOT NULL DEFAULT 'x'`,
+		`ALTER TABLE games ADD COLUMN some_future_game_col TEXT NOT NULL DEFAULT 'y'`,
+	} {
+		if _, err := s.db.Exec(stmt); err != nil {
+			t.Fatalf("simulate future column: %v", err)
+		}
+	}
+
+	if _, err := s.GetSettings(); err != nil {
+		t.Errorf("GetSettings() with an unknown column = %v, want nil", err)
+	}
+	if _, err := s.GetGame("g1"); err != nil {
+		t.Errorf("GetGame() with an unknown column = %v, want nil", err)
+	}
+	if _, err := s.ListGames(); err != nil {
+		t.Errorf("ListGames() with an unknown column = %v, want nil", err)
+	}
+}
+
 func TestEnsureDefaultSettings_CreatesRowOnceWithStableNodeID(t *testing.T) {
 	s := openTestStore(t)
 
