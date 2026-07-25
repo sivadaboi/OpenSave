@@ -153,7 +153,7 @@
     <button class:active={tab === 'sync'} on:click={() => (tab = 'sync')}>Sync</button>
     <button class:active={tab === 'storage'} on:click={() => (tab = 'storage')}>Storage</button>
     <button class:active={tab === 'advanced'} on:click={() => (tab = 'advanced')}>Advanced</button>
-    <button class="support-tab" class:active={tab === 'support'} on:click={() => (tab = 'support')}>💛 Support</button>
+    <button class="support-tab" class:active={tab === 'support'} on:click={() => (tab = 'support')}>💜 Support</button>
   </div>
 
   {#if tab === 'general'}
@@ -428,27 +428,38 @@
       </div>
     </div>
   {:else if tab === 'support'}
-    <div class="card">
-      <h3 class="section-title">💛 Support OpenSave</h3>
-      <p class="support-lede">
-        OpenSave is free and open source, and it stays that way — no accounts, no ads, no
-        telemetry, and no feature locked behind a payment.
-      </p>
-      <p class="support-body">
-        It's built and maintained in spare time. If it's saved you the hassle of copying
-        save folders around, you're welcome to chip in toward its development. Entirely
-        optional, and nothing in the app changes either way.
-      </p>
+    <div class="card support-card">
+      <div class="support-hero">
+        <div class="support-badge">💜</div>
+        <div class="support-hero-text">
+          <h3 class="support-title">Support OpenSave</h3>
+          <p class="support-lede">
+            Free and open source, and it stays that way — no accounts, no ads, no telemetry,
+            and nothing locked behind a payment.
+          </p>
+        </div>
+      </div>
+
       <div class="support-split">
         <div class="support-left">
+          <p class="support-body">
+            It's built and maintained in spare time. If it's saved you the hassle of copying
+            save folders between machines, you're welcome to chip in.
+          </p>
+          <ul class="support-points">
+            <li><span class="pt-icon">🌐</span> Keeps the public relay online</li>
+            <li><span class="pt-icon">🎮</span> More games and emulators detected</li>
+            <li><span class="pt-icon">🛠️</span> Time for fixes and new features</li>
+          </ul>
+
           <div class="support-actions">
-            <button class="btn" on:click={openDonatePage}>
+            <button class="btn primary support-cta" on:click={openDonatePage}>
               {donateOpened ? 'Open again ↗' : 'Open donation page ↗'}
             </button>
+            {#if donateOpened}
+              <span class="support-opened">Opened in your browser — thank you.</span>
+            {/if}
           </div>
-          {#if donateOpened}
-            <p class="support-opened">Opened in your browser — thank you for taking a look.</p>
-          {/if}
           <p class="support-foot">
             Prefer not to donate? Reporting a bug or suggesting a feature helps just as much.
           </p>
@@ -456,10 +467,10 @@
 
         <div class="support-qr">
           <!-- Rendered locally from DONATE_URL; no network request, no external
-               image service. Kept on a light panel because phone cameras
+               image service. Kept on a light plate because phone cameras
                struggle with inverted (light-on-dark) QR codes. -->
           <div class="qr-plate">{@html qrSvg}</div>
-          <span class="qr-caption">Scan to pay from your phone</span>
+          <span class="qr-caption">Scan to pay<br />from your phone</span>
         </div>
       </div>
 
@@ -541,32 +552,96 @@
   .support-tab {
     margin-left: auto;
   }
+  /* This is the one tab that isn't a settings form, so it carries a little
+     accent identity instead of reading as another block of options. */
+  .support-hero {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 22px;
+    padding: 18px 20px;
+    border-radius: var(--radius-lg);
+    background:
+      radial-gradient(120% 160% at 0% 0%, var(--accent-soft), transparent 62%),
+      var(--bg);
+    border: 1px solid var(--border);
+  }
+  .support-badge {
+    flex: none;
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    font-size: 1.45rem;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    border: 1px solid rgba(138, 99, 244, 0.35);
+  }
+  .support-hero-text {
+    min-width: 0;
+  }
+  .support-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0 0 5px;
+  }
   .support-lede {
-    font-size: 0.92rem;
-    color: var(--text);
-    margin: 0 0 10px;
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    margin: 0;
     line-height: 1.5;
+    max-width: 68ch;
   }
   .support-body {
     font-size: 0.88rem;
     color: var(--text-dim);
     margin: 0 0 16px;
     line-height: 1.5;
-    max-width: 62ch;
+    max-width: 56ch;
+  }
+  .support-points {
+    list-style: none;
+    margin: 0 0 22px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .support-points li {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    font-size: 0.86rem;
+    color: var(--text);
+  }
+  .pt-icon {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
   }
   .support-actions {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     align-items: center;
+    flex-wrap: wrap;
+  }
+  .support-cta {
+    padding: 9px 18px;
   }
   .support-foot {
     font-size: 0.8rem;
     color: var(--text-faint);
-    margin: 14px 0 0;
+    margin: 16px 0 0;
   }
   .support-split {
     display: flex;
-    gap: 28px;
+    gap: 32px;
     align-items: flex-start;
     flex-wrap: wrap;
   }
@@ -577,13 +652,19 @@
   .support-opened {
     font-size: 0.82rem;
     color: var(--text-dim);
-    margin: 10px 0 0;
   }
+  /* Framed panel so the code reads as a deliberate element rather than an
+     image floating in empty space. */
   .support-qr {
+    flex: none;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    padding: 16px;
+    border-radius: var(--radius-lg);
+    background: var(--bg);
+    border: 1px solid var(--border);
   }
   /* Light plate: phone cameras are unreliable at reading inverted QR codes,
      so the code stays dark-on-light even in the dark theme. */
@@ -595,13 +676,15 @@
   }
   .qr-plate :global(svg) {
     display: block;
-    width: 132px;
-    height: 132px;
+    width: 124px;
+    height: 124px;
     shape-rendering: crispEdges;
   }
   .qr-caption {
     font-size: 0.76rem;
     color: var(--text-faint);
+    text-align: center;
+    line-height: 1.4;
   }
   .support-note {
     font-size: 0.78rem;
