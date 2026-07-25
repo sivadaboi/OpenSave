@@ -5,7 +5,7 @@ import {
   ToggleField,
   staticClasses,
 } from "@decky/ui";
-import { callable, definePlugin, toaster } from "@decky/api";
+import { addEventListener, callable, definePlugin, removeEventListener, toaster } from "@decky/api";
 import { useEffect, useState } from "react";
 import { FaSave } from "react-icons/fa";
 
@@ -59,6 +59,16 @@ const resolveConflict = callable<
   { success: boolean; error?: string }
 >("resolve_conflict");
 
+const daemonBaseUrl = callable<[], string>("get_daemon_base_url");
+
+/** Live sync state for one game, driven by the daemon's progress events. */
+interface SyncActivity {
+  state: "running" | "done" | "error";
+  percentage?: number;
+  peerName?: string;
+  error?: string;
+}
+
 /** Newest snapshot across a game's branches, as a human "x ago" string. */
 function lastSyncedLabel(game: Game): string {
   let newest = 0;
@@ -98,6 +108,8 @@ function Content() {
   const [busy, setBusy] = useState(false);
   const [starting, setStarting] = useState(false);
   const [autoSync, setAutoSync] = useState(autoSyncEnabled());
+  const [activity, setActivity] = useState<Record<string, SyncActivity>>({});
+  const [baseUrl, setBaseUrl] = useState<string>("");
 
   const refresh = async () => {
     const s = await getDaemonStatus();
@@ -107,8 +119,48 @@ function Content() {
 
   useEffect(() => {
     refresh();
-    const timer = setInterval(refresh, 5000);
+    daemonBaseUrl().then(setBaseUrl).catch(() => {});
+    // Still poll, but slowly: this is the fallback for state that has no
+    // event (games added elsewhere, peers going offline). Progress itself
+    // arrives over the event stream below.
+    const timer = setInterval(refresh, 15000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Live progress, forwarded from the daemon's WebSocket by the backend.
+  useEffect(() => {
+    const onSync = (type: string, data: { gameId?: string; data?: any }) => {
+      const gameId = data?.gameId;
+      if (!gameId) return;
+      const ev = data.data ?? {};
+      setActivity((prev) => {
+        const next = { ...prev };
+        if (type === "sync-complete") {
+          next[gameId] = { state: "done", peerName: ev.peerName };
+          // Clear the "done" badge shortly after, and pick up the new snapshot.
+          setTimeout(() => {
+            setActivity((p) => {
+              const c = { ...p };
+              delete c[gameId];
+              return c;
+            });
+            refresh();
+          }, 4000);
+        } else if (type === "sync-error") {
+          next[gameId] = { state: "error", error: ev.error, peerName: ev.peerName };
+        } else {
+          next[gameId] = {
+            state: "running",
+            percentage: ev.percentage,
+            peerName: ev.peerName,
+          };
+        }
+        return next;
+      });
+    };
+
+    addEventListener<[string, any]>("opensave_sync", onSync);
+    return () => removeEventListener<[string, any]>("opensave_sync", onSync);
   }, []);
 
   const onStartDaemon = async () => {
@@ -297,14 +349,37 @@ function Content() {
             </div>
           </PanelSectionRow>
         ) : (
-          list.map((game) => (
+          list.map((game) => {
+            const act = activity[game.id];
+            const subtitle =
+              act?.state === "running"
+                ? `Syncing${act.percentage ? ` ${act.percentage}%` : "…"}${act.peerName ? ` with ${act.peerName}` : ""}`
+                : act?.state === "done"
+                  ? "Synced just now"
+                  : act?.state === "error"
+                    ? `Sync failed: ${act.error ?? "unknown error"}`
+                    : `Last snapshot ${lastSyncedLabel(game)} · branch ${game.activeBranch}`;
+            const cover = game.appId && baseUrl ? `${baseUrl}/api/cover?appId=${game.appId}` : "";
+            return (
             <div key={game.id}>
+              {cover && (
+                <PanelSectionRow>
+                  <img
+                    src={cover}
+                    alt=""
+                    style={{ width: "100%", borderRadius: "4px", display: "block" }}
+                    // Not every game has art (unreleased or non-Steam titles);
+                    // drop the element rather than show a broken image.
+                    onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+                  />
+                </PanelSectionRow>
+              )}
               <PanelSectionRow>
                 <ButtonItem
                   layout="below"
                   onClick={() => onSyncOne(game)}
                   disabled={busy}
-                  description={`Last snapshot ${lastSyncedLabel(game)} · branch ${game.activeBranch}`}
+                  description={subtitle}
                 >
                   {game.name}
                 </ButtonItem>
@@ -320,7 +395,8 @@ function Content() {
                 </ButtonItem>
               </PanelSectionRow>
             </div>
-          ))
+            );
+          })
         )}
       </PanelSection>
     </PanelSection>

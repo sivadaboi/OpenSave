@@ -3,8 +3,11 @@
 Findings from an audit of `opensave-decky-plugin/` and the Flatpak packaging,
 written up as an actionable list.
 
-> **P0-1, P0-2 and P1-1 are now implemented** (see the checkboxes below), but
-> **none of it has run on a Steam Deck**. The plugin builds cleanly and the
+> **Every code item is now implemented.** What's left is the Decky store
+> submission (which needs the maintainer's account and their review process)
+> and a handful of on-device checks in the Flatpak section.
+>
+> **None of it has run on a Steam Deck.** The plugin builds cleanly and the
 > Python parses, which is as far as verification can go off-device. Treat the
 > whole thing as untested until someone loads it in Game Mode.
 
@@ -130,7 +133,7 @@ is exactly the manual step OpenSave exists to remove.
 
 ---
 
-## P1-2 — Make the panel do more than report — ✅ MOSTLY DONE
+## P1-2 — Make the panel do more than report — ✅ DONE
 
 The panel currently offers exactly one action (*Sync All*) and is otherwise
 read-only. Notably, **a conflict cannot be resolved from Game Mode at all** —
@@ -139,8 +142,9 @@ serious dead end.
 
 ### Tasks
 - [x] Per-game **Sync now** (`POST /api/games/{id}/sync`).
-- [ ] Show live sync progress — the daemon emits progress over its WebSocket;
-      the panel currently only reports that a sync started.
+- [x] Show live sync progress. The backend now bridges the daemon's dashboard
+      WebSocket to a Decky event, so rows show "Syncing 42% with <peer>",
+      "Synced just now", or the failure reason.
 - [x] Surface conflicts, with the same three resolutions the desktop app offers.
       `/api/status` now includes active conflicts (they were WebSocket-only, so
       a plain-HTTP client couldn't see them), and the panel offers Keep both /
@@ -150,20 +154,21 @@ serious dead end.
 
 ---
 
-## P2 — Smaller fixes
+## P2 — Smaller fixes — ✅ DONE except store submission
 
 - [x] **Hardcoded port.** `main.py` pins `http://127.0.0.1:8383`. If the user
       changed the daemon port in Settings the plugin silently breaks. Read the
       port from the daemon's config file, or probe.
-- [ ] **Replace 5s polling with events.** `index.tsx` polls two endpoints every
-      5 seconds *while the panel is open* (Decky unmounts the content when it
-      closes, so this doesn't run in the background). Lower priority than first
-      assessed, but a WebSocket bridge plus `decky.emit` would still give live
-      progress and cost less battery.
+- [x] **Replace 5s polling with events.** Progress now arrives over a
+      WebSocket bridge (`_pump_sync_events` → `decky.emit` → `addEventListener`).
+      The poll remains at a much slower 15s purely as a backstop for state that
+      has no event, such as games added on another device.
 - [x] **Use `decky` module conventions in `main.py`** — now imports `decky` and
       uses `decky.logger` / `decky.DECKY_USER_HOME` instead of writing straight
       to `/tmp/opensave-decky.log`.
-- [ ] **Cover art** in the panel; the daemon serves it at `/api/cover?appId=`.
+- [x] **Cover art** in the panel, served by the daemon at `/api/cover?appId=`
+      (which proxies and caches it, so it works on networks that block Steam).
+      Games with no art simply render without it.
 - [ ] **Plugin store submission** — if it's meant to be installable from
       Decky's store, it needs the store's metadata and review process.
 

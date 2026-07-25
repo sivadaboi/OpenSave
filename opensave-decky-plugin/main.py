@@ -15,6 +15,20 @@ import urllib.request
 
 import decky
 
+# aiohttp ships with Decky Loader itself, but don't hard-depend on it: if it
+# ever isn't importable the panel must still work, just without live progress.
+try:
+    import aiohttp
+
+    HAVE_AIOHTTP = True
+except Exception:  # pragma: no cover - environment dependent
+    HAVE_AIOHTTP = False
+
+# Sync events forwarded from the daemon's dashboard WebSocket to the panel.
+SYNC_EVENT_TYPES = ("sync-start", "sync-progress", "sync-complete", "sync-error")
+# The Decky event the frontend listens on.
+SYNC_EVENT = "opensave_sync"
+
 # Where the daemon publishes the address it actually bound. The configured
 # port can be taken, in which case the daemon falls back to an ephemeral one,
 # so this file — not the setting — is the source of truth.
@@ -60,6 +74,10 @@ class Plugin:
             return {"running": True, "data": _request("/api/status", timeout=3)}
         except Exception as e:
             return {"running": False, "error": str(e)}
+
+    async def get_daemon_base_url(self) -> str:
+        """Base URL of the daemon, so the panel can load cover art from it."""
+        return _daemon_url()
 
     async def get_games(self) -> dict:
         try:
@@ -181,15 +199,63 @@ class Plugin:
             return [flatpak, "run", "--command=opensave-cli", FLATPAK_APP_ID, "daemon"]
         return None
 
+    # ── Live sync progress ───────────────────────────────────────────────
+
+    async def _pump_sync_events(self):
+        """Forward the daemon's sync events to the panel.
+
+        The daemon already broadcasts byte counts and percentages on its
+        dashboard WebSocket; without this the panel can only say a sync
+        "started". Reconnects for as long as the plugin is loaded, because the
+        daemon may not be running yet (or may be restarted) while we watch.
+        """
+        if not HAVE_AIOHTTP:
+            decky.logger.warning("aiohttp unavailable — live sync progress disabled")
+            return
+
+        backoff = 2
+        while True:
+            url = _daemon_url().replace("http://", "ws://", 1) + "/ws"
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(url, heartbeat=30) as ws:
+                        decky.logger.info("watching daemon sync events")
+                        backoff = 2  # connected; reset the retry delay
+                        async for msg in ws:
+                            if msg.type != aiohttp.WSMsgType.TEXT:
+                                continue
+                            try:
+                                payload = json.loads(msg.data)
+                            except ValueError:
+                                continue
+                            if payload.get("type") in SYNC_EVENT_TYPES:
+                                await decky.emit(
+                                    SYNC_EVENT,
+                                    payload.get("type"),
+                                    payload.get("data") or {},
+                                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                decky.logger.debug(f"sync event stream disconnected: {e}")
+
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)  # daemon may simply not be running
+
     # ── Decky lifecycle ──────────────────────────────────────────────────
 
     async def _main(self):
         self.loop = asyncio.get_event_loop()
+        self._events_task = self.loop.create_task(self._pump_sync_events())
         decky.logger.info("OpenSave plugin loaded")
 
     async def _unload(self):
         # The daemon is deliberately left running: it is a background sync
-        # service, not something that should stop when the panel closes.
+        # service, not something that should stop when the panel closes. Only
+        # our own watcher is torn down.
+        task = getattr(self, "_events_task", None)
+        if task:
+            task.cancel()
         decky.logger.info("OpenSave plugin unloaded")
 
     async def _uninstall(self):
