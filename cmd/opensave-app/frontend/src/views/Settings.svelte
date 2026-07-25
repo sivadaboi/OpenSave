@@ -4,8 +4,7 @@
 
   // Donation page, opened in the system browser (never in-app). Deliberately
   // a single constant so the destination is easy to audit and change.
-  // TODO: placeholder — replace with the real Gumroad product URL before release.
-  const DONATE_URL = 'https://opensaveapp.gumroad.com/l/support';
+  const DONATE_URL = 'https://opensave.gumroad.com/l/usygu';
 
   let tab = 'general';
   let draft = null;
