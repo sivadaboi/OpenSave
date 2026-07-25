@@ -137,6 +137,7 @@
     <button class:active={tab === 'sync'} on:click={() => (tab = 'sync')}>Sync</button>
     <button class:active={tab === 'storage'} on:click={() => (tab = 'storage')}>Storage</button>
     <button class:active={tab === 'advanced'} on:click={() => (tab = 'advanced')}>Advanced</button>
+    <button class="support-tab" class:active={tab === 'support'} on:click={() => (tab = 'support')}>💛 Support</button>
   </div>
 
   {#if tab === 'general'}
@@ -174,17 +175,6 @@
       </p>
     </div>
 
-    <div class="card support-card" style="margin-top: 14px;">
-      <h3 class="section-title">💛 Support OpenSave</h3>
-      <p class="hint" style="margin: 0 0 12px;">
-        OpenSave is free and open source — no accounts, no ads, no telemetry, and every
-        feature stays unlocked. If it's saved you some hassle, you can chip in toward its
-        development. Entirely optional.
-      </p>
-      <button class="btn small" on:click={() => native.openExternal(DONATE_URL)}>
-        Open donation page ↗
-      </button>
-    </div>
   {:else if tab === 'sync'}
     <div class="card">
       <h3 class="section-title">🔄 Sync behavior</h3>
@@ -394,7 +384,7 @@
         </button>
       </div>
     </div>
-  {:else}
+  {:else if tab === 'advanced'}
     <div class="card">
       <h3 class="section-title">⚙️ Network</h3>
       <div class="field" style="margin-bottom: 0;">
@@ -421,11 +411,35 @@
         <button id="s-rules" class="btn small" on:click={addRule}>+ Add rule</button>
       </div>
     </div>
+  {:else if tab === 'support'}
+    <div class="card">
+      <h3 class="section-title">💛 Support OpenSave</h3>
+      <p class="support-lede">
+        OpenSave is free and open source, and it stays that way — no accounts, no ads, no
+        telemetry, and no feature locked behind a payment.
+      </p>
+      <p class="support-body">
+        It's built and maintained in spare time. If it's saved you the hassle of copying
+        save folders around, you're welcome to chip in toward its development. Entirely
+        optional, and nothing in the app changes either way.
+      </p>
+      <div class="support-actions">
+        <button class="btn" on:click={() => native.openExternal(DONATE_URL)}>
+          Open donation page ↗
+        </button>
+      </div>
+      <p class="support-foot">
+        Opens in your browser. Prefer not to donate? Reporting a bug or suggesting a feature
+        helps just as much.
+      </p>
+    </div>
   {/if}
 
-  <div class="save-bar">
-    <button class="btn primary" disabled={busy} on:click={save}>Save changes</button>
-  </div>
+  {#if tab !== 'support'}
+    <div class="save-bar">
+      <button class="btn primary" disabled={busy} on:click={save}>Save changes</button>
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -488,18 +502,33 @@
   .arrow {
     color: var(--text-faint);
   }
-  /* Deliberately understated: a quiet footnote at the end of the tab, not a
-     pitch. No accent colour, no emphasis — it should be findable, not loud. */
-  .support-card {
-    background: transparent;
-    border-style: dashed;
+  /* Support tab: set apart from the settings tabs (it configures nothing) but
+     never shouty — no accent fill, just a softer separated pill. */
+  .support-tab {
+    margin-left: auto;
   }
-  .support-card .section-title {
-    border-bottom: none;
-    padding-bottom: 0;
-    margin-bottom: 8px;
-    font-weight: 500;
+  .support-lede {
+    font-size: 0.92rem;
+    color: var(--text);
+    margin: 0 0 10px;
+    line-height: 1.5;
+  }
+  .support-body {
+    font-size: 0.88rem;
     color: var(--text-dim);
+    margin: 0 0 16px;
+    line-height: 1.5;
+    max-width: 62ch;
+  }
+  .support-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .support-foot {
+    font-size: 0.8rem;
+    color: var(--text-faint);
+    margin: 14px 0 0;
   }
   .section-title {
     font-size: 0.95rem;
