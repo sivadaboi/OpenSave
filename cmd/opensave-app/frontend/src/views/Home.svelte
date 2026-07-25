@@ -128,7 +128,10 @@
   async function trackDetected(item, keepOpen = false) {
     try {
       await api.post('/api/games', { name: item.name, savePath: item.savePath, appId: item.appId ?? '' });
-      if (scanResults) scanResults = scanResults.filter((r) => r.id !== item.id);
+      // With "Show tracked" on, keep the entry and let it re-render as a
+      // tracked tile — dropping it would make the thing you just tracked
+      // vanish from a list whose whole point is showing tracked saves.
+      if (scanResults && !showTracked) scanResults = scanResults.filter((r) => r.id !== item.id);
       selected.delete(item.id);
       selectedCount = selected.size;
       if (!keepOpen) toast(`Now tracking "${item.name}"`, 'success');
@@ -147,7 +150,9 @@
         ok++;
       } catch {}
     }
-    scanResults = (scanResults ?? []).filter((r) => !selected.has(r.id));
+    if (!showTracked) {
+      scanResults = (scanResults ?? []).filter((r) => !selected.has(r.id));
+    }
     clearSelection();
     toast(`Tracked ${ok} game${ok === 1 ? '' : 's'}`, 'success');
     if (filteredResults.length === 0) closeScan();

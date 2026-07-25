@@ -398,18 +398,25 @@ func (s *Server) handleLinkGame(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"canonical": gameID, "alias": body.Alias})
 }
 
-// handleListAliases returns the ids linked to {gameId}.
+// handleListAliases returns the games linked into {gameId}, carrying the
+// merged game's name and save path so the UI can show something meaningful
+// instead of a bare id.
 func (s *Server) handleListAliases(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
-	aliases, err := s.Daemon.Store.ListGameAliases(gameID)
+	rows, err := s.Daemon.Store.ListGameAliasDetails(gameID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if aliases == nil {
-		aliases = []string{}
+	out := make([]map[string]string, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, map[string]string{
+			"id":       a.AliasID,
+			"name":     a.Name,
+			"savePath": a.SavePath,
+		})
 	}
-	writeJSON(w, http.StatusOK, aliases)
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleUnlinkGame removes a single alias link from {gameId}.

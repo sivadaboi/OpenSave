@@ -539,11 +539,20 @@ func TestLinkGamesEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var aliases []string
+	var aliases []struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		SavePath string `json:"savePath"`
+	}
 	json.NewDecoder(aliasResp.Body).Decode(&aliases)
 	aliasResp.Body.Close()
-	if len(aliases) != 1 || aliases[0] != alias {
-		t.Errorf("GET aliases = %v, want [%s]", aliases, alias)
+	if len(aliases) != 1 || aliases[0].ID != alias {
+		t.Fatalf("GET aliases = %v, want one entry with id %s", aliases, alias)
+	}
+	// The merged game's identity comes back too, so the UI can label the link
+	// with something better than a bare id.
+	if aliases[0].Name == "" || aliases[0].SavePath == "" {
+		t.Errorf("alias should carry the merged game's name and path, got %+v", aliases[0])
 	}
 
 	// Unlink — the merged game comes back as its own tracked entry, and the

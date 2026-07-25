@@ -462,8 +462,10 @@
         <div class="alias-list">
           {#each aliases as a}
             <div class="alias-row">
-              <span class="alias-id" title={a}>🔗 {a}</span>
-              <button class="btn small" disabled={busy} on:click={() => unlink(a)}>Unlink</button>
+              <span class="alias-id" title={a.savePath || a.id}>
+                🔗 {a.name || a.id}{a.savePath ? ` — ${a.savePath}` : ''}
+              </span>
+              <button class="btn small" disabled={busy} on:click={() => unlink(a.id)}>Unlink</button>
             </div>
           {/each}
         </div>
@@ -473,7 +475,10 @@
           <select bind:value={linkTarget}>
             <option value="">Choose a tracked game to merge in…</option>
             {#each otherGames as g}
-              <option value={g.id}>{g.name}</option>
+              <!-- Same-named entries are normal now that one game can be
+                   tracked at several save locations, so show the path too —
+                   otherwise duplicates are indistinguishable in this list. -->
+              <option value={g.id}>{g.name} — {g.savePath}</option>
             {/each}
           </select>
           <button class="btn small primary" disabled={busy || !linkTarget} on:click={linkGame}>Link</button>

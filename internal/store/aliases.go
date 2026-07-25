@@ -98,6 +98,21 @@ func (s *Store) ResolveGameAlias(aliasID string) (string, bool) {
 	return gameID, true
 }
 
+// ListGameAliasDetails returns the alias rows pointing at a canonical game,
+// including the merged game's remembered name and path — a bare id like
+// "balatro-2" is meaningless to a user, especially when one title is tracked
+// at several locations.
+func (s *Store) ListGameAliasDetails(gameID string) ([]GameAlias, error) {
+	var rows []GameAlias
+	err := s.db.Select(&rows,
+		`SELECT alias_id, game_id, alias_name, alias_save_path, alias_app_id
+		 FROM game_aliases WHERE game_id = ? ORDER BY alias_id`, gameID)
+	if err != nil {
+		return nil, fmt.Errorf("list game alias details %s: %w", gameID, err)
+	}
+	return rows, nil
+}
+
 // ListGameAliases returns every alias id pointing at the given canonical game.
 func (s *Store) ListGameAliases(gameID string) ([]string, error) {
 	var ids []string
