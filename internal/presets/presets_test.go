@@ -340,6 +340,13 @@ func TestScanSteamLibrariesAndInstallDirSaves(t *testing.T) {
 	// A cracked install sitting NEXT to steamapps on the library drive.
 	mustMkFile(t, filepath.Join(lib2, "Some Cracked Game", "proj", "Saved", "SaveGames", "save.sav"))
 
+	// A Ubisoft-style install keeping saves inside the game folder under
+	// savegames/<numeric id> — the Assassin's Creed layout no preset knows,
+	// found only by the save-folder-name heuristic. Its DX12 cache sits
+	// alongside and must not be offered.
+	mustMkFile(t, filepath.Join(lib2, "AC Black Flag", "savegames", "65043", "1.save"))
+	mustMkFile(t, filepath.Join(lib2, "AC Black Flag", "DX12Cache", "pipeline.bin"))
+
 	// Steam userdata under the root: a real game named via manifest… and
 	// client plumbing dirs that must be skipped.
 	mustMkFile(t, filepath.Join(root, "userdata", "123", "2358720", "remote", "cloud.sav"))
@@ -369,6 +376,25 @@ func TestScanSteamLibrariesAndInstallDirSaves(t *testing.T) {
 		t.Errorf("cracked install next to steamapps not discovered; got %v", byID)
 	} else if d.Name != "Some Cracked Game" {
 		t.Errorf("installdir entry name = %q", d.Name)
+	}
+
+	// The Ubisoft-style savegames folder must be found, and the DX12 cache
+	// next to it must not be offered as a save.
+	var acSave, cacheOffered bool
+	for _, d := range found {
+		lower := strings.ToLower(d.SavePath)
+		if strings.Contains(lower, "ac black flag") && strings.Contains(lower, "savegames") {
+			acSave = true
+		}
+		if strings.Contains(lower, "dx12cache") {
+			cacheOffered = true
+		}
+	}
+	if !acSave {
+		t.Errorf("Ubisoft-style <install>/savegames not discovered; got %v", byID)
+	}
+	if cacheOffered {
+		t.Error("DX12Cache was offered as a save location")
 	}
 
 	if d, ok := byID["steam-123-2358720"]; !ok {

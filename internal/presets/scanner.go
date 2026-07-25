@@ -93,7 +93,7 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 			}
 			if p.IsWrapper {
 				for _, sub := range listSubdirs(resolved) {
-					if wrapperSystemDirs[toLowerASCII(sub)] {
+					if wrapperSystemDirs[toLowerASCII(sub)] || isCacheDirName(sub) {
 						continue
 					}
 					// Repack wrappers hold one AppID folder per game;
@@ -171,6 +171,41 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 		}
 	}
 
+	// 3b-ii. Save folders found by name inside an install ("savegames",
+	// "Saves", "SaveData"). Catches games that keep saves next to the game
+	// under a layout no preset knows — Ubisoft titles using
+	// <install>/savegames/<id>, for instance. Runs after the precise passes
+	// so anything already pinpointed wins.
+	for _, a := range apps {
+		for _, p := range findSaveDirsUnder(a.InstallDir) {
+			if seen[p] {
+				continue
+			}
+			seen[p] = true
+			discovered = append(discovered, DiscoveredSave{
+				ID: "savedir-" + a.AppID + "-" + sanitizeID(filepath.Base(p)),
+				Name: a.Name, Type: "game", SavePath: p, AppID: a.AppID,
+			})
+		}
+	}
+	for _, lib := range libraries {
+		for _, sub := range listSubdirs(lib) {
+			if libSystemDirs[toLowerASCII(sub)] {
+				continue
+			}
+			for _, p := range findSaveDirsUnder(filepath.Join(lib, sub)) {
+				if seen[p] {
+					continue
+				}
+				seen[p] = true
+				discovered = append(discovered, DiscoveredSave{
+					ID:   "savedir-" + sanitizeID(sub) + "-" + sanitizeID(filepath.Base(p)),
+					Name: sub, Type: "game", SavePath: p,
+				})
+			}
+		}
+	}
+
 	// 3c. Unity saves: %USERPROFILE%/AppData/LocalLow/<Company>/<Game> —
 	// PICO PARK, Hollow Knight, Cuphead, and most Unity titles live here.
 	discovered = append(discovered, sc.scanLocalLow()...)
@@ -185,6 +220,9 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 			continue
 		}
 		for _, sub := range listSubdirs(resolved) {
+			if isCacheDirName(sub) {
+				continue
+			}
 			discovered = append(discovered, DiscoveredSave{
 				ID:       w.id + "-" + sanitizeID(sub),
 				Name:     sub,
@@ -221,6 +259,9 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 		}
 		base := sanitizeID(filepath.Base(resolved))
 		for _, sub := range listSubdirs(resolved) {
+			if isCacheDirName(sub) {
+				continue
+			}
 			discovered = append(discovered, DiscoveredSave{
 				ID:       "custom-" + base + "-" + sanitizeID(sub),
 				Name:     sub,
