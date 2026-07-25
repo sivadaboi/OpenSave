@@ -20,7 +20,16 @@ type httpStatusError struct{ status string }
 
 func (e *httpStatusError) Error() string { return "cover fetch: " + e.status }
 
-var coverClient = &http.Client{Timeout: 15 * time.Second}
+// A cover is a small image on a best-effort path: fail fast rather than tie
+// up a connection, since a scan can request hundreds at once.
+var coverClient = &http.Client{Timeout: 6 * time.Second}
+
+// coverFetchSem bounds how many cover fetches hit the network at once. A big
+// scan renders hundreds of tiles simultaneously; without this the daemon
+// opens a socket per tile and starves the rest of the local API (including
+// the scan request itself, which shares the browser's per-origin connection
+// budget).
+var coverFetchSem = make(chan struct{}, 6)
 
 // coverFailOnce logs the first cover-fetch *connectivity* failure (missing
 // covers 404 without warning) so a systemic problem — the daemon having no
@@ -36,6 +45,40 @@ var steamCDNHosts = []string{
 	"https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/%s/%s",
 	"https://cdn.akamai.steamstatic.com/steam/apps/%s/%s",
 	"https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/%s/%s",
+}
+
+// coverSource remembers which fetch strategy last worked, so we don't pay the
+// full "try every dead host, then the proxy" walk for every single image.
+// On a network that blocks Steam that walk costs ~5 timeouts per cover, which
+// is what made large scans crawl.
+var coverSource struct {
+	sync.Mutex
+	host    int  // index into steamCDNHosts that last succeeded
+	known   bool // host/useProxy below are meaningful
+	viaProx bool // direct hosts are unreachable; go straight to the proxy
+}
+
+// coverMisses remembers App IDs with no art (unreleased/non-Steam titles), so
+// a rescan doesn't re-attempt every one of them over the network.
+var coverMisses sync.Map // appID+portrait -> time.Time
+
+const coverMissTTL = 6 * time.Hour
+
+func coverMissKey(appID string, portrait bool) string {
+	if portrait {
+		return appID + "_p"
+	}
+	return appID
+}
+
+func recentCoverMiss(key string) bool {
+	if v, ok := coverMisses.Load(key); ok {
+		if at, ok := v.(time.Time); ok && time.Since(at) < coverMissTTL {
+			return true
+		}
+		coverMisses.Delete(key)
+	}
+	return false
 }
 
 // handleCover proxies (and disk-caches) Steam CDN cover art through the local
@@ -58,13 +101,32 @@ func (s *Server) handleCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Known to have no art — don't re-walk the network for it on every scan.
+	missKey := coverMissKey(appID, portrait)
+	if recentCoverMiss(missKey) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	coverFetchSem <- struct{}{}
+	defer func() { <-coverFetchSem }()
+
+	// Another request may have fetched it while we waited for a slot.
+	if data, err := os.ReadFile(s.coverCachePath(appID, portrait)); err == nil && len(data) > 0 {
+		writeCover(w, data)
+		return
+	}
+
 	data, err := s.fetchCover(appID, portrait)
 	if err != nil {
 		// A non-200 (e.g. 404) just means this game has no cover art — normal.
 		// Only warn when the network itself couldn't be reached, since that's
 		// what makes *every* cover blank.
 		var statusErr *httpStatusError
-		if !errors.As(err, &statusErr) {
+		if errors.As(err, &statusErr) {
+			// The CDN answered "no such image" — this game simply has no art.
+			coverMisses.Store(missKey, time.Now())
+		} else {
 			coverFailOnce.Do(func() {
 				s.Daemon.Log.Log("warn", "cover art can't be loaded — this network can't reach "+
 					"Steam's CDN or the image-proxy fallback ("+err.Error()+")")
@@ -130,16 +192,51 @@ func (s *Server) fetchCover(appID string, portrait bool) ([]byte, error) {
 		return data, true
 	}
 
+	coverSource.Lock()
+	knownHost, known, viaProxy := coverSource.host, coverSource.known, coverSource.viaProx
+	coverSource.Unlock()
+
+	rememberDirect := func(i int) {
+		coverSource.Lock()
+		coverSource.host, coverSource.known, coverSource.viaProx = i, true, false
+		coverSource.Unlock()
+	}
+
+	// Fast path: reuse whatever worked last time rather than re-walking every
+	// dead host for each image.
+	if known {
+		for _, f := range files {
+			if viaProxy {
+				if data, ok := try(imageProxyURL(fmt.Sprintf(steamCDNHosts[0], appID, f))); ok {
+					return data, nil
+				}
+			} else if data, ok := try(fmt.Sprintf(steamCDNHosts[knownHost], appID, f)); ok {
+				return data, nil
+			}
+		}
+		// A 404 here means this title has no art — no point re-probing every
+		// other source, they'd 404 too.
+		var statusErr *httpStatusError
+		if errors.As(lastErr, &statusErr) {
+			return nil, lastErr
+		}
+	}
+
+	// Full walk: every direct host, then the proxy. Whatever succeeds becomes
+	// the remembered source for subsequent covers.
 	for _, f := range files {
-		for _, tmpl := range steamCDNHosts {
+		for i, tmpl := range steamCDNHosts {
 			if data, ok := try(fmt.Sprintf(tmpl, appID, f)); ok {
+				rememberDirect(i)
 				return data, nil
 			}
 		}
 	}
-	// Every direct host failed — automatically fall back to the image proxy.
 	for _, f := range files {
 		if data, ok := try(imageProxyURL(fmt.Sprintf(steamCDNHosts[0], appID, f))); ok {
+			coverSource.Lock()
+			coverSource.known, coverSource.viaProx = true, true
+			coverSource.Unlock()
 			return data, nil
 		}
 	}
