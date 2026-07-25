@@ -1,22 +1,7 @@
-import resolve from '@rollup/plugin-node-resolve';
-import commonjs from '@rollup/plugin-commonjs';
-import typescript from '@rollup/plugin-typescript';
+// Decky's shared rollup preset handles the externals (react, @decky/ui,
+// @decky/api) and the output shape the loader expects. Hand-rolling this is
+// what left the previous config marking decky-frontend-lib external while
+// declaring it as a dependency nowhere, so a clean checkout couldn't build.
+import deckyPlugin from "@decky/rollup";
 
-export default {
-  input: 'src/index.tsx',
-  output: {
-    file: 'dist/index.js',
-    format: 'iife',
-    name: 'plugin',
-    globals: {
-      react: 'React',
-      'react-dom': 'ReactDOM'
-    }
-  },
-  external: ['react', 'react-dom', 'decky-frontend-lib'],
-  plugins: [
-    resolve(),
-    commonjs(),
-    typescript()
-  ]
-};
+export default deckyPlugin();

@@ -1,20 +1,28 @@
 {
   "name": "opensave-decky-plugin",
-  "version": "1.0.0",
-  "description": "OpenSave Decky Loader Plugin UI",
+  "version": "2.0.0",
+  "description": "OpenSave — peer-to-peer game save sync, in Game Mode",
+  "type": "module",
   "scripts": {
-    "build": "rollup -c"
+    "build": "rollup -c",
+    "watch": "rollup -c -w"
   },
+  "license": "MIT",
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^25.0.0",
-    "@rollup/plugin-node-resolve": "^15.0.0",
-    "@rollup/plugin-typescript": "^11.0.0",
-    "@types/react": "^18.2.0",
-    "rollup": "^4.0.0",
-    "typescript": "^5.0.0"
+    "@decky/rollup": "^1.0.2",
+    "@decky/ui": "^4.11.0",
+    "@types/react": "18.3.3",
+    "rollup": "^4.22.0",
+    "typescript": "^5.6.2"
   },
-  "peerDependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+  "dependencies": {
+    "@decky/api": "^1.1.3",
+    "react-icons": "^5.3.0",
+    "tslib": "^2.7.0"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "ignoreMissing": ["react", "react-dom"]
+    }
   }
 }

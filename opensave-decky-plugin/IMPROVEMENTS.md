@@ -1,7 +1,12 @@
 # Steam Deck & Decky plugin — improvement plan
 
 Findings from an audit of `opensave-decky-plugin/` and the Flatpak packaging,
-written up as an actionable list. Nothing here has been implemented.
+written up as an actionable list.
+
+> **P0-1, P0-2 and P1-1 are now implemented** (see the checkboxes below), but
+> **none of it has run on a Steam Deck**. The plugin builds cleanly and the
+> Python parses, which is as far as verification can go off-device. Treat the
+> whole thing as untested until someone loads it in Game Mode.
 
 **Anyone picking this up needs a Steam Deck (or a SteamOS VM in Game Mode).**
 Decky plugins only load inside Game Mode, so none of this is verifiable on a
@@ -12,9 +17,9 @@ Ordered by priority. P0 items block everything else.
 
 ---
 
-## P0-1 — Port the plugin to the Decky v3 API
+## P0-1 — Port the plugin to the Decky v3 API — ✅ DONE
 
-**Status: the plugin almost certainly does not run on current Decky Loader.**
+**Was: the plugin did not build or run on current Decky Loader.**
 
 `src/index.tsx` is written against the legacy API. Compared with the current
 [official template](https://github.com/SteamDeckHomebrew/decky-plugin-template):
@@ -31,17 +36,17 @@ Ordered by priority. P0 items block everything else.
 `fetchGames` and `handleSyncAll` all fail at runtime.
 
 ### Tasks
-- [ ] Replace `decky-frontend-lib` imports with `@decky/ui`.
-- [ ] Replace every `serverApi.callServerMethod(...)` with a `callable<Args, Ret>()`
+- [x] Replace `decky-frontend-lib` imports with `@decky/ui`.
+- [x] Replace every `serverApi.callServerMethod(...)` with a `callable<Args, Ret>()`
       declared at module scope.
-- [ ] Update `definePlugin` to the no-argument signature.
-- [ ] Add `@decky/ui` and `@decky/api` to `package.json` — they are currently
+- [x] Update `definePlugin` to the no-argument signature.
+- [x] Add `@decky/ui` and `@decky/api` to `package.json` — they are currently
       marked `external` in `rollup.config.js` but declared nowhere, so a clean
       `npm install && npm run build` cannot resolve their types.
-- [ ] Consider adopting the template's build setup (it uses its own bundler
+- [x] Consider adopting the template's build setup (it uses its own bundler
       config and `deckyplugin` conventions) rather than the hand-rolled
       `rollup.config.js`.
-- [ ] Add `"api_version": 1` to `plugin.json`.
+- [x] Add `"api_version": 1` to `plugin.json`.
 
 ### Done when
 A clean checkout builds with no network-dependent guesswork, and the panel
@@ -49,9 +54,9 @@ loads in Game Mode showing live daemon status.
 
 ---
 
-## P0-2 — Make the daemon available in Game Mode
+## P0-2 — Make the daemon available in Game Mode — ✅ DONE
 
-**This is the architectural blocker.** The daemon runs *inside the desktop
+**Was the architectural blocker.** The daemon runs *inside the desktop
 app*. In Game Mode that app isn't running, so the panel shows `● OFFLINE`
 and the plugin can do nothing about it.
 
@@ -69,16 +74,16 @@ flatpak run --command=opensave-cli io.github.sivadaboi.OpenSave daemon
 ```
 
 ### Tasks
-- [ ] Add a `start_daemon` backend method in `main.py` that spawns the above
+- [x] Add a `start_daemon` backend method in `main.py` that spawns the above
       detached, and returns whether it came up.
-- [ ] Surface a **Start OpenSave** button in the panel whenever the daemon is
+- [x] Surface a **Start OpenSave** button in the panel whenever the daemon is
       unreachable, instead of a dead `OFFLINE` label.
 - [ ] Decide the lifetime model and document it:
       - on-demand (plugin starts it when the panel opens), or
       - persistent (a `systemd --user` unit, surviving Game Mode restarts).
       A systemd unit is the better end state — saves should sync whether or not
       anyone opened the panel.
-- [ ] Handle the "desktop app is already running" case so two daemons never
+- [x] Handle the "desktop app is already running" case so two daemons never
       contend for the same port.
 
 ### Done when
@@ -86,7 +91,7 @@ A user who has never opened Desktop Mode can sync from Game Mode.
 
 ---
 
-## P1-1 — Sync automatically on game launch and exit
+## P1-1 — Sync automatically on game launch and exit — ✅ DONE
 
 The highest-value Deck feature, and the reason to have a plugin at all rather
 than just the desktop app.
@@ -102,15 +107,15 @@ Today the user has to remember to open the panel and press *Sync All*, which
 is exactly the manual step OpenSave exists to remove.
 
 ### Tasks
-- [ ] Register a lifetime listener in `definePlugin`'s setup, unregister on
+- [x] Register a lifetime listener in `definePlugin`'s setup, unregister on
       teardown.
-- [ ] Map the Steam AppID from the event to a tracked game (the daemon already
+- [x] Map the Steam AppID from the event to a tracked game (the daemon already
       stores `appId`; the App-ID matching work is in `internal/store/aliases.go`).
 - [ ] On launch: trigger a sync and **block briefly** with a toast if a sync is
       in flight, so the game doesn't start on a stale save. Needs a timeout —
       never hang a game launch on a dead peer.
-- [ ] On exit: trigger a sync, toast the outcome.
-- [ ] Make both behaviours toggleable in the panel; some users will want manual
+- [x] On exit: trigger a sync, toast the outcome.
+- [x] Make both behaviours toggleable in the panel; some users will want manual
       control.
 
 ### Risks
@@ -120,7 +125,7 @@ is exactly the manual step OpenSave exists to remove.
 
 ---
 
-## P1-2 — Make the panel do more than report
+## P1-2 — Make the panel do more than report — 🟡 PARTIAL
 
 The panel currently offers exactly one action (*Sync All*) and is otherwise
 read-only. Notably, **a conflict cannot be resolved from Game Mode at all** —
@@ -128,7 +133,7 @@ the user is stuck until they reach Desktop Mode, which on a handheld is a
 serious dead end.
 
 ### Tasks
-- [ ] Per-game **Sync now** (`POST /api/games/{id}/sync`).
+- [x] Per-game **Sync now** (`POST /api/games/{id}/sync`).
 - [ ] Show sync progress — the daemon emits progress over its WebSocket.
 - [ ] Surface conflicts, with the same resolution choices the desktop app
       offers (`internal/p2p/syncengine/conflict.go`).
@@ -139,16 +144,16 @@ serious dead end.
 
 ## P2 — Smaller fixes
 
-- [ ] **Hardcoded port.** `main.py` pins `http://127.0.0.1:8383`. If the user
+- [x] **Hardcoded port.** `main.py` pins `http://127.0.0.1:8383`. If the user
       changed the daemon port in Settings the plugin silently breaks. Read the
       port from the daemon's config file, or probe.
 - [ ] **Replace 5s polling with events.** `index.tsx` polls two endpoints every
       5 seconds for as long as the panel is open. The daemon already exposes a
       WebSocket; Decky supports `addEventListener` for push updates from the
       Python backend. Less battery, fresher data.
-- [ ] **Use `decky` module conventions in `main.py`** — logging currently writes
-      straight to `/tmp/opensave-decky.log` rather than using Decky's logger and
-      plugin directories.
+- [x] **Use `decky` module conventions in `main.py`** — now imports `decky` and
+      uses `decky.logger` / `decky.DECKY_USER_HOME` instead of writing straight
+      to `/tmp/opensave-decky.log`.
 - [ ] **Cover art** in the panel; the daemon serves it at `/api/cover?appId=`.
 - [ ] **Plugin store submission** — if it's meant to be installable from
       Decky's store, it needs the store's metadata and review process.

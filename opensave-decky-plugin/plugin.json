@@ -1,7 +1,13 @@
 {
   "name": "OpenSave",
   "author": "Siva Prakash",
-  "description": "Universal P2P save synchronizer sidebar panel for Gaming Mode",
-  "version": "1.0.0",
+  "description": "Peer-to-peer game save sync. Syncs your saves around gameplay, without leaving Game Mode.",
+  "version": "2.0.0",
+  "api_version": 1,
+  "publish": {
+    "tags": ["utility", "sync", "saves"],
+    "description": "Keeps game saves in sync between your Steam Deck and your other devices, peer-to-peer. Syncs automatically before a game starts and after you quit, and can start the sync service without dropping to Desktop Mode.",
+    "image": ""
+  },
   "flags": []
 }
