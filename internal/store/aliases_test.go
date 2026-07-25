@@ -30,6 +30,38 @@ func TestFindGameByAppID(t *testing.T) {
 	}
 }
 
+// TestFindGameByAppIDAmbiguous pins the data-integrity guard: tracking one
+// title at several save locations means several local games share an App ID.
+// Matching must refuse to pick one, or a peer's saves could be written into
+// the wrong folder and merge two distinct save sets.
+func TestFindGameByAppIDAmbiguous(t *testing.T) {
+	s := openTestStore(t)
+	for _, g := range []Game{
+		{ID: "balatro", Name: "Balatro", SavePath: `C:\Steam\Balatro`, AppID: "2379780"},
+		{ID: "balatro-2", Name: "Balatro", SavePath: `D:\GSE\Balatro`, AppID: "2379780"},
+	} {
+		if err := s.CreateGame(g); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := s.FindGameByAppID("2379780"); !errors.Is(err, ErrAmbiguousAppID) {
+		t.Errorf("two games sharing an app id should be ambiguous, got %v", err)
+	}
+
+	// Once the duplicate is gone the match is unambiguous again.
+	if err := s.DeleteGame("balatro-2"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.FindGameByAppID("2379780")
+	if err != nil {
+		t.Fatalf("FindGameByAppID after removing the duplicate = %v", err)
+	}
+	if got.ID != "balatro" {
+		t.Errorf("resolved to %q, want balatro", got.ID)
+	}
+}
+
 func TestGameAliasCRUDAndCascade(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.CreateGame(Game{ID: "nevergrave", Name: "NeverGrave", SavePath: `H:\Steam\NeverGrave`}); err != nil {

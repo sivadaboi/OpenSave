@@ -1,28 +1,40 @@
 package store
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 )
 
+// ErrAmbiguousAppID is returned when several tracked games share an App ID,
+// so there is no single correct match.
+var ErrAmbiguousAppID = errors.New("multiple tracked games share this app id")
+
 // FindGameByAppID returns the tracked game with the given (non-empty) Steam
 // App ID. Used for cross-device matching when the user enables it, so a
 // title tracked under different names on two PCs still resolves to one game.
+//
+// It deliberately refuses to guess when more than one local game carries the
+// App ID — which is normal once a user tracks a game at several save
+// locations. Picking one arbitrarily would let a peer's saves land in the
+// wrong folder (and merge two distinct save sets), so ambiguity falls through
+// to the explicit-link path instead.
 func (s *Store) FindGameByAppID(appID string) (Game, error) {
 	if appID == "" {
 		return Game{}, ErrNotFound
 	}
-	var g Game
-	err := s.db.Get(&g, `SELECT * FROM games WHERE app_id = ? ORDER BY name LIMIT 1`, appID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Game{}, ErrNotFound
-	}
-	if err != nil {
+	var games []Game
+	if err := s.db.Select(&games, `SELECT * FROM games WHERE app_id = ? ORDER BY name`, appID); err != nil {
 		return Game{}, fmt.Errorf("find game by appid %s: %w", appID, err)
 	}
-	return g, nil
+	switch len(games) {
+	case 0:
+		return Game{}, ErrNotFound
+	case 1:
+		return games[0], nil
+	default:
+		return Game{}, ErrAmbiguousAppID
+	}
 }
 
 // AddGameAlias records that aliasID refers to the same game as gameID on this

@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -303,8 +304,18 @@ func (e *Engine) ensureManifestGame(gameID string, q manifestGameQuery) (store.G
 		return store.Game{}, sErr
 	}
 	if settings.MatchByAppID && q.AppID != "" {
-		if game, err := e.Store.FindGameByAppID(q.AppID); err == nil {
+		game, err := e.Store.FindGameByAppID(q.AppID)
+		switch {
+		case err == nil:
 			return e.backfillCover(game, q), nil
+		case errors.Is(err, store.ErrAmbiguousAppID):
+			// Several local games share this App ID (e.g. the same title
+			// tracked at more than one save location). Guessing could drop a
+			// peer's saves into the wrong folder, so say so and let the user
+			// link the right pair explicitly.
+			e.Log("warn", fmt.Sprintf(
+				"%q (app id %s) matches more than one tracked game here — link the correct one from its Manage tab to sync it",
+				q.Name, q.AppID))
 		}
 	}
 
