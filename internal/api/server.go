@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -159,11 +161,37 @@ func (s *Server) Start(port int) (string, error) {
 			s.Daemon.Log.Log("error", fmt.Sprintf("api server: %v", err))
 		}
 	}()
+	s.writeAddrFile(ln.Addr().String())
 	return ln.Addr().String(), nil
+}
+
+// addrFilePath is where the running daemon publishes the address it actually
+// bound. The configured port can be taken (another instance, or an app already
+// running), in which case the daemon falls back to an ephemeral port — so the
+// configured value is not a reliable way to find it. Out-of-process clients,
+// notably the Steam Deck's Decky plugin running in Game Mode, read this.
+func (s *Server) addrFilePath() string {
+	return filepath.Join(s.Daemon.Paths.HomeDir, "daemon.addr")
+}
+
+// writeAddrFile publishes the loopback address clients should dial. The
+// listener binds 0.0.0.0 so LAN peers can reach the P2P routes, but
+// "0.0.0.0" is not a connectable host — rewrite it the way the desktop app
+// does before handing it out.
+func (s *Server) writeAddrFile(addr string) {
+	if _, port, err := net.SplitHostPort(addr); err == nil {
+		addr = "127.0.0.1:" + port
+	}
+	if err := os.WriteFile(s.addrFilePath(), []byte(addr), 0o666); err != nil {
+		s.Daemon.Log.Log("warn", "could not publish daemon address: "+err.Error())
+	}
 }
 
 // Stop shuts the HTTP server down gracefully.
 func (s *Server) Stop() {
+	// Remove the published address first: a stale file points clients at a
+	// port nothing is listening on.
+	_ = os.Remove(s.addrFilePath())
 	if s.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

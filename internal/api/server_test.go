@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -431,6 +433,50 @@ func TestDeleteSnapshotAndBranch(t *testing.T) {
 	resp, _ = ts.do(t, http.MethodDelete, "/api/games/del-game/branch/main", nil)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("deleting main should be rejected, got %d", resp.StatusCode)
+	}
+}
+
+// TestDaemonAddrFile pins the contract out-of-process clients rely on to find
+// a running daemon — chiefly the Steam Deck's Decky plugin, which has no way
+// to ask the app which port it ended up on (the configured port may have been
+// taken, and Game Mode never runs the desktop app at all). The file must hold
+// a dialable loopback address while the server runs, and must not linger
+// afterwards pointing at a dead port.
+func TestDaemonAddrFile(t *testing.T) {
+	ts := startTestServer(t)
+
+	addrFile := filepath.Join(ts.daemon.Paths.HomeDir, "daemon.addr")
+	raw, err := os.ReadFile(addrFile)
+	if err != nil {
+		t.Fatalf("daemon.addr not written: %v", err)
+	}
+	addr := strings.TrimSpace(string(raw))
+
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("daemon.addr = %q, not host:port: %v", addr, err)
+	}
+	if host != "127.0.0.1" {
+		t.Errorf("daemon.addr host = %q, want 127.0.0.1 (0.0.0.0 isn't dialable)", host)
+	}
+	if port == "0" || port == "" {
+		t.Errorf("daemon.addr port = %q, want the real bound port", port)
+	}
+
+	// The advertised address must actually serve the API.
+	resp, err := http.Get("http://" + addr + "/api/status")
+	if err != nil {
+		t.Fatalf("advertised address %q not reachable: %v", addr, err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET /api/status on %q = %d, want 200", addr, resp.StatusCode)
+	}
+
+	// Stopping removes it, so nothing is pointed at a dead port.
+	ts.server.Stop()
+	if _, err := os.Stat(addrFile); !os.IsNotExist(err) {
+		t.Errorf("daemon.addr should be removed on Stop, stat err = %v", err)
 	}
 }
 
