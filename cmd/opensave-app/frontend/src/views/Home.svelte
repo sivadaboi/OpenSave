@@ -91,17 +91,27 @@
     if (e.key === 'Escape' && scanOpen) closeScan();
   }
 
-  $: trackedPaths = new Set($gameList.map((g) => (g.savePath ?? '').toLowerCase()));
-  const isTracked = (r) => trackedPaths.has((r.savePath ?? '').toLowerCase());
+  // Compare save paths case-insensitively and ignoring a trailing separator,
+  // so a tracked game still matches its scan entry when one of them carries a
+  // trailing slash.
+  const normPath = (p) => (p ?? '').replace(/[\\/]+$/, '').toLowerCase();
+  $: trackedPaths = new Set($gameList.map((g) => normPath(g.savePath)));
+  const isTracked = (r) => trackedPaths.has(normPath(r.savePath));
   // Note: reference trackedPaths directly (not via isTracked) so Svelte sees
   // it as a dependency and refreshes the list when tracked-state changes.
   $: filteredResults = (scanResults ?? []).filter((r) => {
-    if (!showTracked && trackedPaths.has((r.savePath ?? '').toLowerCase())) return false;
+    if (!showTracked && trackedPaths.has(normPath(r.savePath))) return false;
     if (scanType !== 'all' && r.type !== scanType) return false;
     if (scanFilter && !`${r.name} ${r.savePath}`.toLowerCase().includes(scanFilter.toLowerCase())) return false;
     return true;
   });
-  $: shownAvailable = filteredResults.filter((r) => !isTracked(r)).length;
+  // Keep the saves you can actually add at the top and push already-tracked
+  // ones below a divider — with "Show tracked" on, interleaving them buries
+  // the actionable entries in a wall of tiles.
+  $: availableResults = filteredResults.filter((r) => !trackedPaths.has(normPath(r.savePath)));
+  $: trackedResults = filteredResults.filter((r) => trackedPaths.has(normPath(r.savePath)));
+  $: orderedResults = [...availableResults, ...trackedResults];
+  $: shownAvailable = availableResults.length;
   $: scanCounts = {
     all: (scanResults ?? []).length,
     emulator: (scanResults ?? []).filter((r) => r.type === 'emulator').length,
@@ -291,7 +301,12 @@
 
         <div class="scan-modal-list">
           <div class="scan-grid">
-            {#each filteredResults as item (item.id)}
+            {#each orderedResults as item, i (item.id)}
+              {#if i === availableResults.length && trackedResults.length > 0}
+                <div class="scan-divider">
+                  Already tracked ({trackedResults.length})
+                </div>
+              {/if}
               <div
                 class="cover-tile"
                 class:sel={selected.has(item.id)}
@@ -712,6 +727,26 @@
     font-weight: 700;
     background: var(--accent);
     color: #fff;
+  }
+  /* Full-width heading separating the already-tracked group from the saves
+     you can still add. */
+  .scan-divider {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0 2px;
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .scan-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
   }
   .scan-show-tracked {
     display: flex;
