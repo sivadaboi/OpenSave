@@ -14,15 +14,9 @@ import (
 // now, not documentation. Someone typing the bare command almost always wants
 // to know "is this working?" — the full command list is one `--help` away.
 
-// osMark is the OpenSave wordmark in block art: "OS", the same letters as the
-// app icon. Rendered beside the status rows.
-var osMark = []string{
-	"██████  ██████",
-	"██  ██  ██    ",
-	"██  ██  ██████",
-	"██  ██      ██",
-	"██████  ██████",
-}
+// Deliberately no ASCII-art logo. The panel is built from the same section
+// rules, label rows and hint arrows every other command uses, so it reads as
+// part of this CLI rather than borrowing another tool's look.
 
 // overviewState is everything the panel reports, gathered before printing so
 // the layout can align around it.
@@ -98,14 +92,6 @@ func gatherOverview() overviewState {
 	return st
 }
 
-// statusDot renders an on/off indicator: filled when live, hollow when not.
-func statusDot(on bool, text string) string {
-	if on {
-		return okText(sym("● ", "* ")) + text
-	}
-	return faint(sym("○ ", "- ") + text)
-}
-
 func cmdOverview(args []string) int {
 	asJSON, _ := jsonFlag(args)
 	st := gatherOverview()
@@ -118,71 +104,35 @@ func cmdOverview(args []string) int {
 		device = faint("unnamed")
 	}
 
-	// Three aligned columns — label, value, state — so the indicators line up
-	// down the panel instead of drifting with the text beside them.
-	type row struct{ label, value, state string }
-	rows := []row{
-		{"", heading("OpenSave"), ""},
-		{"", faint("peer-to-peer game save sync"), ""},
-		{},
-		{"cli", accent(st.Version), statusDot(true, "ready")},
-		{"daemon", daemonValue(st), daemonState(st)},
-		{"device", device, ""},
-		{"games", gamesValue(st), ""},
-		{"peers", peersValue(st), peersState(st)},
-		{"relay", relayValue(st), relayState(st)},
-	}
-	if st.Conflicts > 0 {
-		rows = append(rows, row{"conflicts",
-			warnText(fmt.Sprintf("%d save(s)", st.Conflicts)),
-			warnText(sym("● needs a decision", "! needs a decision"))})
-	}
-
-	// Width the value column to its widest entry so states align.
-	valueWidth := 0
-	for _, r := range rows {
-		if r.state != "" && displayWidth(r.value) > valueWidth {
-			valueWidth = displayWidth(r.value)
-		}
-	}
-
+	// Title line uses the same rule the section() headers do elsewhere.
+	title := "OpenSave " + st.Version
 	fmt.Println()
-	markWidth := displayWidth(osMark[0])
-	for i, r := range rows {
-		mark := strings.Repeat(" ", markWidth)
-		if i < len(osMark) {
-			mark = accent(osMark[i])
-		}
-		line := "  " + mark + "   "
-		switch {
-		case r.label == "" && r.value == "":
-			line = strings.TrimRight(line, " ")
-		case r.label == "":
-			line += r.value
-		case r.state == "":
-			line += faint(padRight(r.label, 9)) + r.value
-		default:
-			line += faint(padRight(r.label, 9)) + padRight(r.value, valueWidth+3) + r.state
-		}
-		fmt.Println(strings.TrimRight(line, " "))
+	fmt.Printf("  %s   %s\n", heading(title), faint("peer-to-peer game save sync"))
+	fmt.Printf("  %s\n", faint(strings.Repeat(sym("─", "-"), displayWidth(title)+32)))
+	fmt.Println()
+
+	// State as label rows, matching `daemon status` and `relay status`.
+	field("daemon", daemonSummary(st))
+	field("device", device)
+	field("games", gamesValue(st))
+	field("peers", peersSummary(st))
+	field("relay", relaySummary(st))
+	if st.Conflicts > 0 {
+		field("conflicts", warnText(fmt.Sprintf("%d waiting on a decision", st.Conflicts)))
 	}
 
 	printQuickCommands(st)
 	return 0
 }
 
-func daemonValue(st overviewState) string {
-	if !st.DaemonUp {
-		return faint("—")
-	}
-	return accent(strings.TrimPrefix(st.DaemonAddr, "http://"))
-}
+// Each summary reads as a sentence fragment rather than a value in a status
+// column — the state is the text, not a separate indicator lane.
 
-func daemonState(st overviewState) string {
+func daemonSummary(st overviewState) string {
 	if !st.DaemonUp {
-		return statusDot(false, "not running")
+		return faint("not running")
 	}
-	return statusDot(true, "running")
+	return okText("running") + faint("  on "+strings.TrimPrefix(st.DaemonAddr, "http://"))
 }
 
 func gamesValue(st overviewState) string {
@@ -192,36 +142,22 @@ func gamesValue(st overviewState) string {
 	return fmt.Sprintf("%d tracked", st.Games)
 }
 
-func peersValue(st overviewState) string {
-	if st.PeersTotal == 0 {
-		return faint("—")
-	}
-	return fmt.Sprintf("%d paired", st.PeersTotal)
-}
-
-func peersState(st overviewState) string {
+func peersSummary(st overviewState) string {
 	switch {
 	case st.PeersTotal == 0:
-		return statusDot(false, "none paired")
+		return faint("no devices paired")
 	case st.Peers == 0:
-		return statusDot(false, "none online")
+		return fmt.Sprintf("%d paired, %s", st.PeersTotal, faint("none online"))
 	default:
-		return statusDot(true, fmt.Sprintf("%d online", st.Peers))
+		return fmt.Sprintf("%d paired, %s", st.PeersTotal, okText(fmt.Sprintf("%d online", st.Peers)))
 	}
 }
 
-func relayValue(st overviewState) string {
+func relaySummary(st overviewState) string {
 	if st.RelayRoom == "" {
-		return faint("—")
+		return faint("not joined")
 	}
-	return accent(st.RelayRoom)
-}
-
-func relayState(st overviewState) string {
-	if st.RelayRoom == "" {
-		return statusDot(false, "not joined")
-	}
-	return statusDot(true, "joined")
+	return okText("joined") + faint("  room ") + accent(st.RelayRoom)
 }
 
 // printQuickCommands shows the handful of commands that make sense given the
@@ -229,9 +165,10 @@ func relayState(st overviewState) string {
 func printQuickCommands(st overviewState) {
 	group := func(title string, lines [][2]string) {
 		fmt.Println()
-		fmt.Printf("  %s\n", heading(title))
+		fmt.Printf("  %s\n", faint(strings.ToUpper(title)))
 		for _, l := range lines {
-			fmt.Printf("    %s %s\n", padRight(accent(l[0]), 28), faint(l[1]))
+			fmt.Printf("    %s  %s %s\n",
+				faint(sym("→", "->")), padRight(accent(l[0]), 27), faint(l[1]))
 		}
 	}
 
@@ -271,6 +208,7 @@ func printQuickCommands(st overviewState) {
 	}
 
 	fmt.Println()
-	fmt.Printf("    %s %s\n", padRight(accent("opensave --help"), 28), faint("every command"))
+	fmt.Printf("    %s  %s %s\n",
+		faint(sym("→", "->")), padRight(accent("opensave --help"), 27), faint("every command"))
 	fmt.Println()
 }
