@@ -3,6 +3,46 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] — 2026-07-26
+
+### Fixed
+
+- **Games matched across devices could agree what to sync, then fail to
+  sync it.** App-ID matching and manual game links were applied when a peer
+  asked for a manifest and nowhere else, so the follow-up block transfer
+  came back "Game not found" and no save data ever moved. Every peer route
+  now resolves the same way. An App-ID match is also remembered, so a push
+  reaches the other device immediately instead of waiting for the next
+  periodic reconcile.
+- **The internet relay dropped every device every 15-30 minutes.** The host
+  sleeps an idle instance, and WebSocket traffic doesn't count as activity,
+  so the relay went to sleep underneath live connections. Connected devices
+  now keep it awake, reconnect with backoff and jitter instead of retrying
+  in lockstep, and a routine reconnect no longer fills the activity log with
+  warnings.
+- **The relay could be taken down by one stalled device.** Its outbound
+  queue was bounded by message count while a message can be 16 MB, so a peer
+  that stopped reading could make the relay buffer gigabytes on a 512 MB
+  instance. Now bounded by bytes.
+- **`opensave daemon start --port N` broke pairing.** The chosen port was
+  never recorded, so the other device was told to call back on a port
+  nothing was listening on and pairing silently completed on one side only.
+- **`opensave pair requests` never showed which device was asking** — the
+  name was read from the wrong field, leaving only a bare node id to approve.
+  The device name and its address are both shown now.
+
+### Changed
+
+- **Large saves sync far faster and no longer load into memory first.**
+  Blocks are written to disk as they arrive instead of being collected in
+  full, so a 1 GB save no longer needs 1 GB of RAM before anything is
+  written. Requests are pipelined rather than processed in fixed groups, and
+  block data is compressed over the internet relay. A 40 MB save transfers
+  in about a second on a LAN; the internal end-to-end suite got roughly
+  twice as fast as a side effect.
+- A sync interrupted by quitting the app is now cancelled cleanly instead of
+  being left writing into the save folder during shutdown.
+
 ## [2.1.1] — 2026-07-20
 
 ### Fixed
