@@ -130,15 +130,33 @@
     if (dir) draft.syncBackupsDir = dir;
   }
 
-  // Relay hosting: fetch LAN IPs / public IP to share with friends.
+  // Relay hosting: LAN IPs / public IP to share with friends. Shown only on
+  // request — these identify the machine, so they shouldn't appear on screen
+  // just because the checkbox was ticked.
   let relayInfo = null;
-  async function loadRelayInfo() {
+  let relayInfoShown = false;
+  let relayInfoLoading = false;
+
+  async function toggleRelayInfo() {
+    if (relayInfoShown) {
+      relayInfoShown = false;
+      return;
+    }
+    relayInfoLoading = true;
     try {
+      // Re-fetch each time: the public IP changes, and a stale one sent to a
+      // friend is worse than none.
       relayInfo = await api.get('/api/relay/ips');
+      relayInfoShown = true;
     } catch (e) {
       toast(e.message, 'error');
+    } finally {
+      relayInfoLoading = false;
     }
   }
+
+  // Turning hosting off should also hide addresses left on screen.
+  $: if (draft && !draft.hostRelay && relayInfoShown) relayInfoShown = false;
 </script>
 
 <div class="head">
@@ -225,7 +243,7 @@
         <span class="hint">The relay that carries syncs across the internet. Join a room from <strong>Internet Sync</strong>.</span>
       </div>
       <label class="check">
-        <input type="checkbox" bind:checked={draft.hostRelay} on:change={() => draft.hostRelay && loadRelayInfo()} />
+        <input type="checkbox" bind:checked={draft.hostRelay} />
         Host a WAN relay server on this device
       </label>
       <p class="hint" style="margin-top: 6px;">
@@ -237,8 +255,16 @@
           <input id="s-relay-port" type="number" bind:value={draft.relayPort} />
           <span class="hint">Forward this TCP port on your router so friends on the internet can reach you.</span>
         </div>
-        <button class="btn small" on:click={loadRelayInfo}>Show my addresses to share</button>
-        {#if relayInfo}
+        <button class="btn small" on:click={toggleRelayInfo} disabled={relayInfoLoading}>
+          {#if relayInfoLoading}
+            Looking up…
+          {:else if relayInfoShown}
+            Hide my addresses
+          {:else}
+            Show my addresses to share
+          {/if}
+        </button>
+        {#if relayInfoShown && relayInfo}
           <div class="share-banner">
             <div class="share-title">📡 Share these with your friend</div>
             <div class="share-row"><span>LAN IPs:</span> {relayInfo.lanIps?.join(', ') || '—'}</div>

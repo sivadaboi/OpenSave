@@ -57,10 +57,14 @@ func (sc *Scanner) scanProtonCompat(libraries []string, seen map[string]bool, ap
 			if !e.IsDir() || !isAppID(appID) {
 				continue
 			}
-			steamUser := filepath.Join(compat, appID, "pfx", "drive_c", "users", "steamuser")
-			if !dirExists(steamUser) {
+			// Steam's own prefixes use "steamuser", but a prefix created by
+			// another tool and later added to Steam can carry the real
+			// account name — take whichever users exist.
+			userHomes := prefixUserDirs(filepath.Join(compat, appID, "pfx"))
+			if len(userHomes) == 0 {
 				continue
 			}
+			steamUser := userHomes[0]
 
 			gameName := appNames[appID]
 			perGame := 0

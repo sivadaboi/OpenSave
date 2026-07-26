@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Scanner performs the full auto-detection sweep. Zero value is not
@@ -76,6 +77,15 @@ const (
 	// isn't reachable, so the rest of the scan skips it instead of paying a
 	// timeout per game.
 	resolveFailCutoff = 5
+	// resolveBudget caps the total wall time a scan spends turning App IDs
+	// into names. Steam's store API rate-limits, so a first scan on a machine
+	// with a hundred unknown games would otherwise sit there for minutes —
+	// the failure cutoff never fires because the lookups *succeed*, slowly.
+	//
+	// Whatever isn't resolved in time keeps its folder-derived placeholder;
+	// every success is cached, so names fill in over the next couple of scans
+	// instead of holding the first one hostage.
+	resolveBudget = 6 * time.Second
 )
 
 // Scan sweeps every known save convention and returns the discovered
@@ -285,6 +295,12 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 	// Reload" report).
 	discovered = append(discovered, sc.scanProtonCompat(libraries, dedupSet(discovered), appNames)...)
 
+	// 8b. Wine/Proton prefixes belonging to other launchers — Heroic, Lutris,
+	// Bottles, a bare ~/.wine. This is where non-Steam and cracked games live
+	// on Linux and on a Steam Deck; without it their saves were invisible no
+	// matter how the game was installed.
+	discovered = append(discovered, sc.scanWinePrefixes(dedupSet(discovered))...)
+
 	// Infer AppIDs from names for entries that lack one.
 	nameIndex := nameToAppIDIndex()
 	for i := range discovered {
@@ -438,6 +454,7 @@ func (sc *Scanner) resolveNames(discovered []DiscoveredSave) {
 	sem := make(chan struct{}, resolveConcurrency)
 	var consecutiveFails atomic.Int32
 	var resolveGaveUp atomic.Bool
+	deadline := time.Now().Add(resolveBudget)
 
 	for i := range discovered {
 		if discovered[i].AppID == "" {
@@ -471,12 +488,14 @@ func (sc *Scanner) resolveNames(discovered []DiscoveredSave) {
 			// times over and take tens of seconds. Unresolved names simply
 			// keep their folder-derived placeholder, exactly as they do when
 			// an individual lookup fails.
-			if resolveGaveUp.Load() {
+			if resolveGaveUp.Load() || time.Now().After(deadline) {
 				return
 			}
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			if resolveGaveUp.Load() {
+			// Re-check after queueing: the budget may have run out while this
+			// goroutine waited for a slot.
+			if resolveGaveUp.Load() || time.Now().After(deadline) {
 				return
 			}
 
