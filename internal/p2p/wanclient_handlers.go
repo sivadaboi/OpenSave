@@ -371,7 +371,7 @@ func (w *WanClient) serveBlocks(route string, rawBody json.RawMessage) (int, any
 		return 400, map[string]string{"error": "relPath is required"}
 	}
 
-	game, err := w.engine.Store.GetGame(gameID)
+	game, err := w.engine.trackedGameForPeer(gameID)
 	if err != nil {
 		return 404, map[string]string{"error": "Game not found."}
 	}
@@ -399,7 +399,7 @@ func (w *WanClient) serveDeleteFile(route string, rawBody json.RawMessage) (int,
 	if err := json.Unmarshal(rawBody, &body); err != nil || body.RelPath == "" {
 		return 400, map[string]string{"error": "relPath is required."}
 	}
-	game, err := w.engine.Store.GetGame(gameID)
+	game, err := w.engine.trackedGameForPeer(gameID)
 	if err != nil {
 		return 404, map[string]string{"error": "Game not found."}
 	}

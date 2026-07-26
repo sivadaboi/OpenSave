@@ -352,6 +352,7 @@ func (e *Engine) PingPairedPeers(ctx context.Context) {
 
 // SyncGame pings peers and then syncs one game with everyone online.
 func (e *Engine) SyncGame(ctx context.Context, gameID string) (map[string]syncengine.Result, error) {
+	gameID = e.localGameID(gameID)
 	e.PingPairedPeers(ctx)
 	online := e.OnlinePeers()
 	if len(online) == 0 {
@@ -360,6 +361,43 @@ func (e *Engine) SyncGame(ctx context.Context, gameID string) (map[string]syncen
 	results, err := e.Sync.SyncGame(ctx, gameID, online)
 	e.trackSyncOutcome(gameID, results)
 	return results, err
+}
+
+// localGameID maps an id that may belong to a peer onto the game this device
+// actually tracks. A reverse-pull trigger carries the *sender's* id, which
+// differs whenever the same title was tracked under different names and
+// linked — by hand or by App ID. Without this the trigger is a no-op and the
+// devices only converge on the next periodic reconcile.
+func (e *Engine) localGameID(gameID string) string {
+	if _, err := e.Store.GetGame(gameID); err == nil {
+		return gameID
+	}
+	if canonical, ok := e.Store.ResolveGameAlias(gameID); ok {
+		return canonical
+	}
+	return gameID
+}
+
+// trackedGameForPeer resolves the game a peer is asking about, following an
+// alias when the peer knows the title under a different id.
+//
+// Every peer-facing route needs this, not just the manifest one. Matching used
+// to be applied when handing out a manifest and nowhere else, so two devices
+// that resolved to each other by App ID agreed on what to transfer and then
+// failed on the very next request: the block fetch carried the peer's id, hit
+// a bare lookup, and came back "Game not found". The feature appeared to work
+// right up until it moved data.
+func (e *Engine) trackedGameForPeer(gameID string) (store.Game, error) {
+	game, err := e.Store.GetGame(gameID)
+	if err == nil {
+		return game, nil
+	}
+	if canonical, ok := e.Store.ResolveGameAlias(gameID); ok {
+		if aliased, aErr := e.Store.GetGame(canonical); aErr == nil {
+			return aliased, nil
+		}
+	}
+	return store.Game{}, err
 }
 
 // trackSyncOutcome queues a game for automatic retry if any peer's sync

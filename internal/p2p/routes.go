@@ -307,6 +307,17 @@ func (e *Engine) ensureManifestGame(gameID string, q manifestGameQuery) (store.G
 		game, err := e.Store.FindGameByAppID(q.AppID)
 		switch {
 		case err == nil:
+			// Remember the match as an explicit alias. Only manifest requests
+			// carry an App ID; everything else the peer sends — above all the
+			// reverse-pull trigger, which arrives as a bare peer-side game id
+			// — has nothing to match on. Without recording it, a push from the
+			// peer couldn't be resolved locally and the two devices only
+			// converged on the next periodic reconcile, up to a minute later.
+			if err := e.Store.AddGameAlias(gameID, game.ID); err != nil {
+				e.Log("warn", fmt.Sprintf("could not record App-ID match %s -> %s: %v", gameID, game.ID, err))
+			} else {
+				e.Log("info", fmt.Sprintf("matched peer's %q to local %q by App ID %s", gameID, game.ID, q.AppID))
+			}
 			return e.backfillCover(game, q), nil
 		case errors.Is(err, store.ErrAmbiguousAppID):
 			// Several local games share this App ID (e.g. the same title
@@ -400,7 +411,7 @@ func (e *Engine) handleBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	game, err := e.Store.GetGame(gameID)
+	game, err := e.trackedGameForPeer(gameID)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "Game not found.")
 		return
@@ -434,7 +445,7 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	game, err := e.Store.GetGame(gameID)
+	game, err := e.trackedGameForPeer(gameID)
 	if err != nil {
 		jsonError(w, http.StatusNotFound, "Game not found.")
 		return
