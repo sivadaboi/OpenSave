@@ -158,6 +158,12 @@ jobs:
           cp cmd/opensave-app/build/linux/install-desktop.sh opensave-linux/
           cp cmd/opensave-app/build/appicon.png opensave-linux/opensave.png
           chmod +x opensave-linux/install-desktop.sh
+          # Man page and shell completions, so a CLI install is a complete one.
+          mkdir -p opensave-linux/man opensave-linux/completions
+          cp packaging/man/opensave.1 opensave-linux/man/
+          ./dist/opensave-cli completion bash > opensave-linux/completions/opensave.bash
+          ./dist/opensave-cli completion zsh  > opensave-linux/completions/_opensave
+          ./dist/opensave-cli completion fish > opensave-linux/completions/opensave.fish
           tar -czf opensave-linux-amd64.tar.gz opensave-linux
       - uses: actions/upload-artifact@v4
         with:
@@ -243,6 +249,16 @@ jobs:
         with:
           name: flatpak
           path: flatpak
+      # scripts/install.sh verifies downloads against this before installing.
+      # Piping an installer to a shell is trust enough; it should at least
+      # refuse bytes it can't vouch for.
+      - name: Generate SHA256SUMS
+        run: |
+          find windows linux flatpak -type f \
+            \( -name '*.exe' -o -name '*.tar.gz' -o -name '*.flatpak' \) \
+            -exec sha256sum {} + | sed 's| .*/| |' > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -259,3 +275,4 @@ jobs:
             windows/**/*.exe
             linux/*.tar.gz
             flatpak/*.flatpak
+            SHA256SUMS

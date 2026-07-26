@@ -175,3 +175,57 @@ func mustRead(t *testing.T, path string) string {
 	}
 	return string(raw)
 }
+
+// TestCompletionCoversEveryCommand guards the drift that makes completions
+// quietly useless: a command added to the dispatcher but not to the
+// completion list. Every command the usage text documents must be completable.
+func TestCompletionCoversEveryCommand(t *testing.T) {
+	known := map[string]bool{}
+	for _, c := range topLevelCommands {
+		known[c] = true
+	}
+	// Commands named in the help output, which is what users read.
+	for _, cmd := range []string{
+		"scan", "add", "remove", "status", "sync", "peers", "pair", "unpair",
+		"relay", "snapshot", "snapshots", "rollback", "branch", "checkout",
+		"export", "config", "exclude", "link", "unlink", "links", "daemon",
+		"service", "completion", "upnp", "version",
+	} {
+		if !known[cmd] && cmd != "completion" {
+			t.Errorf("command %q is documented but missing from completions", cmd)
+		}
+	}
+}
+
+// TestCompletionScriptsAreNonEmpty checks each shell gets a script mentioning
+// the commands, rather than an empty or truncated file.
+func TestCompletionScriptsAreNonEmpty(t *testing.T) {
+	for name, script := range map[string]string{
+		"bash": bashCompletion(),
+		"zsh":  zshCompletion(),
+		"fish": fishCompletion(),
+	} {
+		if len(script) < 100 {
+			t.Errorf("%s completion looks empty (%d bytes)", name, len(script))
+		}
+		for _, must := range []string{"sync", "pair", "daemon"} {
+			if !strings.Contains(script, must) {
+				t.Errorf("%s completion never mentions %q", name, must)
+			}
+		}
+	}
+}
+
+// TestSubCommandsAreKnownCommands keeps the sub-command map from referring to
+// a top-level command that no longer exists.
+func TestSubCommandsAreKnownCommands(t *testing.T) {
+	known := map[string]bool{}
+	for _, c := range topLevelCommands {
+		known[c] = true
+	}
+	for parent := range subCommands {
+		if !known[parent] {
+			t.Errorf("subCommands has %q, which isn't a top-level command", parent)
+		}
+	}
+}

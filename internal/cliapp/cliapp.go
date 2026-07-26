@@ -46,11 +46,19 @@ History:
   opensave checkout <gameId> <name>      Switch branch
   opensave export <gameId> <dir>         Copy the current save out to a folder
 
+Configuration:
+  opensave config [set <key> <value>]    Read or change settings
+  opensave exclude list|add|remove       Folders auto-scan should skip
+  opensave link <gameId> <otherId>       Treat two tracked games as the same
+  opensave unlink <aliasId>              Undo a link
+  opensave links <gameId>                Show ids linked to a game
+
 Service:
   opensave daemon start [--port N]       Run the daemon (REST API + watcher)
   opensave daemon status                 Is a daemon running, and where
   opensave daemon stop                   Stop the running daemon
   opensave service install|uninstall     Install a systemd --user service (Linux)
+  opensave completion bash|zsh|fish      Shell completion script
   opensave upnp <port> [--delete]        Forward (or remove) a router port via UPnP
   opensave version                       Print the version
 
@@ -86,6 +94,8 @@ func Run(args []string) int {
 		return cmdRelay(rest)
 	case "service":
 		return cmdService(rest)
+	case "completion":
+		return cmdCompletion(rest)
 	case "version", "--version", "-v":
 		return cmdVersion(rest)
 	case "help", "--help", "-h":
@@ -121,6 +131,16 @@ func Run(args []string) int {
 		return cmdSnapshots(d, rest)
 	case "export":
 		return cmdExport(d, rest)
+	case "exclude":
+		return cmdExclude(d, rest)
+	case "link":
+		return cmdLink(d, rest)
+	case "unlink":
+		return cmdUnlinkGame(d, rest)
+	case "links":
+		return cmdLinks(d, rest)
+	case "config":
+		return cmdConfig(d, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", cmd, usage)
 		return 1

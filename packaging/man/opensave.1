@@ -1,0 +1,213 @@
+.TH OPENSAVE 1 "July 2026" "OpenSave" "User Commands"
+.SH NAME
+opensave \- peer-to-peer game save sync
+.SH SYNOPSIS
+.B opensave
+.I command
+.RI [ arguments ]
+.RB [ --json ]
+.SH DESCRIPTION
+.B OpenSave
+keeps game saves in sync between your own machines. Devices talk directly to
+each other over the LAN, or through a relay when they are on different
+networks. There is no account, no server to sign up to and no storage quota;
+the relay only forwards encrypted frames and never stores saves.
+.PP
+The command line tool is a complete client. It can detect saves, track them,
+pair with other devices, sync, and run the background daemon, so a headless
+machine \(em a server, or a Steam Deck that lives in Game Mode \(em never needs
+the desktop application.
+.PP
+Commands that need live peer state talk to a running daemon over its local
+HTTP API. Commands that only touch local data work whether or not a daemon is
+running.
+.SH GLOBAL OPTIONS
+.TP
+.B --json
+Emit machine\-readable JSON instead of formatted text. Accepted by every
+command, for use in scripts.
+.SH GAMES
+.TP
+.B scan
+Auto\-detect game saves on this machine: Steam libraries, Proton prefixes,
+emulators, and thousands of titles from the Ludusavi manifest.
+.TP
+.BI "add " "name path"
+Track a save folder or file.
+.TP
+.BI "remove " gameId
+Stop tracking a game. Save files and existing snapshots are left on disk.
+.TP
+.B status
+Show tracked games, their branches, and paired devices.
+.SH SYNC
+.TP
+.BI "sync [" gameId "|--all]"
+Sync now. With no argument, syncs every tracked game.
+.TP
+.B peers
+List paired devices, devices discovered on this network, and pending pairing
+requests.
+.TP
+.BI "pair " "host[:port]"
+Ask a device on the LAN to pair. Pairing is mutual: it must be approved on the
+other device.
+.TP
+.B pair requests
+Show incoming pairing requests.
+.TP
+.BI "pair approve " peerId
+Approve an incoming pairing request.
+.TP
+.BI "pair reject " peerId
+Reject an incoming pairing request.
+.TP
+.BI "unpair " peerId
+Drop a paired device.
+.TP
+.B relay status|join|leave
+Manage internet sync. Devices that share a relay room code find each other
+across networks without port forwarding.
+.SH HISTORY
+.TP
+.BI "snapshot " "gameId " [ comment ]
+Create a snapshot of the current save.
+.TP
+.BI "snapshots " gameId
+List snapshots on the active branch, newest first.
+.TP
+.BI "rollback " "gameId snapshotId"
+Restore a snapshot.
+.TP
+.BI "branch " "gameId name"
+Create a branch, for keeping parallel playthroughs.
+.TP
+.BI "checkout " "gameId name"
+Switch to a branch.
+.TP
+.BI "export " "gameId directory"
+Copy the current save out to a folder, exactly as the game wrote it \(em no
+archive and no proprietary wrapper.
+.SH CONFIGURATION
+.TP
+.B config [list]
+Show current settings.
+.TP
+.BI "config set " "key value"
+Change a setting. Keys:
+.BR device-name ,
+.BR match-by-app-id ,
+.BR snapshot-limit ,
+.BR relay-url .
+.TP
+.B exclude list|add|remove
+Manage folders that auto\-scan skips, for stale save locations you do not want
+offered again.
+.TP
+.BI "link " "gameId otherGameId"
+Treat two tracked games as the same game, for a title tracked under different
+names on different machines. The second is merged in and removed from the
+library; its save files are untouched.
+.TP
+.BI "unlink " aliasGameId
+Undo a link, restoring the merged game as its own entry.
+.TP
+.BI "links " gameId
+Show the ids linked to a game.
+.SH SERVICE
+.TP
+.BR "daemon start " [ --port " " \fIN\fR ]
+Run the daemon in the foreground: REST API, save watcher and peer sync.
+.TP
+.B daemon status
+Report whether a daemon is running and where.
+.TP
+.B daemon stop
+Stop a daemon started by
+.BR "daemon start" .
+Daemons belonging to the desktop application or to systemd are deliberately
+left alone.
+.TP
+.B service install|uninstall|status
+Manage a
+.B systemd --user
+unit so syncing runs without anyone opening an application. Linux only.
+.TP
+.B completion bash|zsh|fish
+Print a shell completion script.
+.TP
+.BI "upnp " port " " [ --delete ]
+Forward, or remove, a router port via UPnP.
+.TP
+.B version
+Print the version.
+.SH FILES
+.TP
+.I ~/.opensave/opensave.db
+Tracked games, settings, peers and snapshot metadata.
+.TP
+.I ~/.opensave/backups/
+Snapshot archives.
+.TP
+.I ~/.opensave/daemon.addr
+Address of the running daemon. Written on start, removed on shutdown; this is
+how the CLI and the Steam Deck plugin find a daemon whose port may not be the
+configured one.
+.TP
+.I ~/.opensave/daemon.pid
+Process id, written only by
+.BR "opensave daemon start" .
+.TP
+.I ~/.config/systemd/user/opensave-daemon.service
+Installed by
+.BR "opensave service install" .
+.SH EXAMPLES
+Track everything found on this machine, then sync it:
+.PP
+.nf
+.RS
+opensave scan
+opensave add "Elden Ring" ~/.local/share/EldenRing
+opensave daemon start &
+opensave pair 192.168.1.42
+opensave sync --all
+.RE
+.fi
+.PP
+Set up a Steam Deck to sync in the background, permanently:
+.PP
+.nf
+.RS
+opensave service install
+systemctl --user enable --now opensave-daemon
+sudo loginctl enable-linger $USER
+.RE
+.fi
+.PP
+Join two machines that are not on the same network:
+.PP
+.nf
+.RS
+opensave relay join my-shared-room-code    # on each device
+opensave peers
+.RE
+.fi
+.PP
+Script against it:
+.PP
+.nf
+.RS
+opensave daemon status --json | jq .gameCount
+opensave snapshots elden-ring --json | jq -r '.[0].id'
+.RE
+.fi
+.SH EXIT STATUS
+Returns 0 on success and 1 on failure. With
+.BR --json ,
+failures print an object with an
+.I error
+field.
+.SH SEE ALSO
+Project home: https://github.com/sivadaboi/OpenSave
+.SH LICENSE
+MIT.
