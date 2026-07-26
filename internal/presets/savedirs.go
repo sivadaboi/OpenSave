@@ -19,6 +19,36 @@ const (
 	saveScanMaxHits = 4
 )
 
+// resolveGameContainerDir narrows a per-game container folder — a repack
+// wrapper's subfolder, or Steam's userdata/<user>/<appId> — to the folder that
+// actually holds the saves.
+//
+// These are containers, not save folders. What sits in them alongside the
+// saves is bookkeeping: remotecache.vdf, achievements, stats, and playtime
+// counters. Offering the container tracks all of it, which is what users
+// report as "it didn't detect the exact save game location" — one arrived
+// with the scanner having picked up a playtime.txt.
+//
+// Two shapes cover what these actually contain:
+//
+//	remote/                     Steam's cloud layout, copied by every emulator
+//	Saved/SaveGames/, saves/…   the game's own, when the container wraps it
+//
+// Falls back to the container itself when neither is present, since plenty of
+// games and emulators write their saves straight into it.
+func resolveGameContainerDir(dir string) string {
+	if remote := resolveSteamCloudDir(dir); remote != dir {
+		return remote
+	}
+	// Only narrow on an unambiguous single match. Several candidates means
+	// guessing which one the game uses, and picking wrong is worse than
+	// offering the container the user can see and correct.
+	if nested := findSaveDirsUnder(dir); len(nested) == 1 && nested[0] != dir {
+		return nested[0]
+	}
+	return dir
+}
+
 // resolveSteamCloudDir narrows a Steam-style per-AppID folder to the "remote"
 // subfolder that actually holds the save files.
 //

@@ -101,3 +101,56 @@ func TestResolveSteamCloudDir(t *testing.T) {
 		}
 	})
 }
+
+// A repacked game whose wrapper folder holds the game's own Unreal-style save
+// tree plus a playtime counter. Reported from the field: the scanner offered
+// the folder containing playtime.txt, so the first sync carried the counter
+// and missed the point.
+//
+// "BBQ" is the shape of the real report — repacks often rename the container
+// to the game's internal project name rather than its title.
+func TestResolveGameContainerDir_NarrowsToNestedSaveTree(t *testing.T) {
+	container := filepath.Join(t.TempDir(), "BBQ")
+	mkfile(t, filepath.Join(container, "playtime.txt"), "7200")
+	mkfile(t, filepath.Join(container, "Saved", "SaveGames", "Slot0.sav"), "khazan progress")
+
+	want := filepath.Join(container, "Saved", "SaveGames")
+	if got := resolveGameContainerDir(container); got != want {
+		t.Errorf("resolveGameContainerDir = %q, want %q — offering the container tracks "+
+			"playtime.txt, which changes every session on each device independently", got, want)
+	}
+}
+
+// remote/ is the stronger signal and must win over a name match.
+func TestResolveGameContainerDir_PrefersRemoteOverNameMatch(t *testing.T) {
+	container := filepath.Join(t.TempDir(), "480")
+	mkfile(t, filepath.Join(container, "remote", "save.dat"), "real save")
+	mkfile(t, filepath.Join(container, "SaveBackups", "old.dat"), "a backup, not the live save")
+
+	want := filepath.Join(container, "remote")
+	if got := resolveGameContainerDir(container); got != want {
+		t.Errorf("resolveGameContainerDir = %q, want %q", got, want)
+	}
+}
+
+// Ambiguity is left alone: guessing between candidates risks syncing the wrong
+// one, and the user can see and correct a container.
+func TestResolveGameContainerDir_LeavesAmbiguousLayoutsAlone(t *testing.T) {
+	container := filepath.Join(t.TempDir(), "game")
+	mkfile(t, filepath.Join(container, "Saves", "a.sav"), "one")
+	mkfile(t, filepath.Join(container, "SaveData", "b.sav"), "two")
+
+	if got := resolveGameContainerDir(container); got != container {
+		t.Errorf("resolveGameContainerDir = %q, want the container %q when several "+
+			"save folders are plausible", got, container)
+	}
+}
+
+// No save-shaped folder anywhere: the container is the answer.
+func TestResolveGameContainerDir_KeepsFlatLayouts(t *testing.T) {
+	container := filepath.Join(t.TempDir(), "flat")
+	mkfile(t, filepath.Join(container, "profile.sav"), "data")
+	if got := resolveGameContainerDir(container); got != container {
+		t.Errorf("resolveGameContainerDir = %q, want %q", got, container)
+	}
+}

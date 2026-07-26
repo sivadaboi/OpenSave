@@ -117,10 +117,10 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 						ID:   p.ID + "-" + sub,
 						Name: name,
 						Type: p.Type,
-						// Steam emulators copy Steam's own layout, so the
-						// saves are under remote/ when that exists — not
-						// alongside the achievement and playtime files.
-						SavePath: resolveSteamCloudDir(filepath.Join(resolved, sub)),
+						// A wrapper subfolder is a per-game container, not
+						// the save folder itself — narrow to whatever inside
+						// it actually holds saves.
+						SavePath: resolveGameContainerDir(filepath.Join(resolved, sub)),
 					}
 					if isAppID(sub) {
 						d.AppID = sub
@@ -358,7 +358,7 @@ func (sc *Scanner) scanSteamUserdata(seen map[string]bool, appNames map[string]s
 				// is Steam's own sync index, differs on every machine, and
 				// changes whenever Steam syncs — tracking the parent turns
 				// that into a permanent source of conflicts.
-				gamePath := resolveSteamCloudDir(filepath.Join(userPath, game))
+				gamePath := resolveGameContainerDir(filepath.Join(userPath, game))
 				normalized, err := filepath.Abs(gamePath)
 				if err != nil {
 					continue
