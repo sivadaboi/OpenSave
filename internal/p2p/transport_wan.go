@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/opensave/opensave/internal/p2p/syncengine"
 )
@@ -41,9 +42,28 @@ func (t *wanTransport) FetchManifest(ctx context.Context, peer syncengine.Peer, 
 	return resp, nil
 }
 
+// slowLinkBytesPerSec is the worst throughput a block fetch is given before
+// it's declared dead. Deliberately pessimistic: abandoning a transfer that is
+// merely slow costs a full retry of the same bytes, which is worse than
+// waiting. Used only to size the deadline, never to throttle.
+const slowLinkBytesPerSec = 48 << 10
+
 func (t *wanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, gameID, relPath string, blockIndices []int, blockSize int) ([]syncengine.BlockData, error) {
+	// Give the request a deadline proportional to what it's actually moving,
+	// so a big batch on a poor connection isn't cut off mid-flight.
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline && blockSize > 0 {
+		expected := int64(len(blockIndices)) * int64(blockSize)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx,
+			wanRequestTimeout+time.Duration(expected/slowLinkBytesPerSec)*time.Second)
+		defer cancel()
+	}
+
 	raw, err := t.wan.Request(ctx, peer.ID, "/blocks/"+gameID, "POST", map[string]any{
 		"relPath": relPath, "blockIndices": blockIndices, "blockSize": blockSize,
+		// Peers that don't understand this ignore it and reply with raw
+		// blocks, which decodeBlocks passes straight through.
+		"encodings": gzipEncodings,
 	})
 	if err != nil {
 		return nil, err
@@ -54,7 +74,7 @@ func (t *wanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, ga
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, fmt.Errorf("decode WAN blocks: %w", err)
 	}
-	return resp.Blocks, nil
+	return decodeBlocks(resp.Blocks)
 }
 
 func (t *wanTransport) DeleteRemote(ctx context.Context, peer syncengine.Peer, gameID, relPath string) error {

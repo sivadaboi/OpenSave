@@ -171,7 +171,7 @@ func (w *WanClient) trackPresence(msg RelayMessage) {
 		_ = w.engine.Store.UpsertPeer(peer)
 		if wasOffline {
 			w.engine.Log("info", fmt.Sprintf("peer %q came online via WAN; auto-syncing", peer.Name))
-			go w.engine.SyncAllGames(context.Background())
+			w.engine.GoSync(func(ctx context.Context) { w.engine.SyncAllGames(ctx) })
 		}
 		if changed {
 			w.engine.notifyPeerUpdate()
@@ -315,13 +315,13 @@ func (w *WanClient) routeRequest(ctx context.Context, msg RelayMessage) (int, an
 
 	case strings.HasPrefix(route, "/sync/trigger/"):
 		gameID := route[strings.LastIndex(route, "/")+1:]
-		go func() {
-			syncCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		w.engine.GoSync(func(ctx context.Context) {
+			syncCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 			defer cancel()
 			if _, err := w.engine.SyncGame(syncCtx, gameID); err != nil {
 				w.engine.Log("warn", fmt.Sprintf("WAN-triggered sync %s: %v", gameID, err))
 			}
-		}()
+		})
 		return 200, map[string]any{"success": true, "message": "Sync triggered."}
 
 	default:
@@ -362,9 +362,10 @@ func (w *WanClient) serveManifest(route string) (int, any) {
 func (w *WanClient) serveBlocks(route string, rawBody json.RawMessage) (int, any) {
 	gameID := route[strings.LastIndex(route, "/")+1:]
 	var body struct {
-		RelPath      string `json:"relPath"`
-		BlockIndices []int  `json:"blockIndices"`
-		BlockSize    int    `json:"blockSize"`
+		RelPath      string   `json:"relPath"`
+		BlockIndices []int    `json:"blockIndices"`
+		BlockSize    int      `json:"blockSize"`
+		Encodings    []string `json:"encodings"`
 	}
 	if err := json.Unmarshal(rawBody, &body); err != nil || body.RelPath == "" {
 		return 400, map[string]string{"error": "relPath is required"}
@@ -386,10 +387,7 @@ func (w *WanClient) serveBlocks(route string, rawBody json.RawMessage) (int, any
 	if err != nil {
 		return 500, map[string]string{"error": err.Error()}
 	}
-	out := make([]syncengine.BlockData, len(blocks))
-	for i, b := range blocks {
-		out[i] = syncengine.BlockData{Index: b.Index, Data: b.Data, Length: len(b.Data)}
-	}
+	out := encodeBlocks(blocks, wantsGzip(body.Encodings))
 	return 200, map[string]any{"relPath": body.RelPath, "blocks": out}
 }
 

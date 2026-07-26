@@ -114,7 +114,6 @@ func New(opts Options) (*Daemon, error) {
 	d.P2P.OnUntrackRequest = d.untrackFromPeer
 	d.P2P.OnRetrackRequest = d.retrackFromPeer
 
-
 	// Every new snapshot mirrors to the configured cloud provider in the
 	// background; failures are logged, never fatal.
 	snaps.OnUpload = func(zipPath, remoteFileName string) {
@@ -154,14 +153,16 @@ func New(opts Options) (*Daemon, error) {
 			return err
 		},
 		OnChanged: func(gameID string) {
-			// Watcher-detected save change: push it to online peers.
-			go func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			// Watcher-detected save change: push it to online peers. Bound to
+			// the P2P engine's lifecycle so shutdown cancels a transfer in
+			// flight instead of leaving it writing into the save folder.
+			d.P2P.GoSync(func(ctx context.Context) {
+				ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 				defer cancel()
 				if _, err := d.P2P.SyncGame(ctx, gameID); err != nil {
 					d.Log.Log("info", fmt.Sprintf("post-snapshot sync for %s: %v", gameID, err))
 				}
-			}()
+			})
 			if d.OnGameChanged != nil {
 				d.OnGameChanged(gameID)
 			}
@@ -320,11 +321,13 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 		// request) — without this it only reaches them on the next slow
 		// periodic reconcile. Honors the auto-sync-on-track setting.
 		if settings, err := d.Store.GetSettings(); err != nil || settings.AutoSyncOnTrack {
-			syncCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-			defer cancel()
-			if _, err := d.P2P.SyncGame(syncCtx, game.ID); err != nil {
-				d.Log.Log("info", fmt.Sprintf("initial peer sync for %q: %v", game.Name, err))
-			}
+			d.P2P.GoSync(func(ctx context.Context) {
+				syncCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+				defer cancel()
+				if _, err := d.P2P.SyncGame(syncCtx, game.ID); err != nil {
+					d.Log.Log("info", fmt.Sprintf("initial peer sync for %q: %v", game.Name, err))
+				}
+			})
 		}
 	}()
 

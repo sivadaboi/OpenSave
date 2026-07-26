@@ -48,9 +48,16 @@ type ManifestQuery struct {
 
 // BlockData is one fetched block.
 type BlockData struct {
-	Index  int    `json:"index"`
-	Data   []byte `json:"data"` // JSON-marshals to base64, matching the JS wire format
-	Length int    `json:"length"`
+	Index int    `json:"index"`
+	Data  []byte `json:"data"` // JSON-marshals to base64, matching the JS wire format
+	// Length is always the block's real, uncompressed size — progress
+	// accounting and the patch writer both depend on that.
+	Length int `json:"length"`
+	// Enc names the encoding applied to Data, empty meaning raw bytes. Only
+	// ever set when the requester advertised support for it, so a peer that
+	// predates this field never receives one. Transports decode before the
+	// engine sees the block.
+	Enc string `json:"enc,omitempty"`
 }
 
 // Transport moves sync protocol messages to a peer. The LAN implementation

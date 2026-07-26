@@ -93,7 +93,7 @@ func (e *Engine) requirePairedPeer(next http.Handler) http.Handler {
 			_ = e.Store.UpsertPeer(*matched)
 			if wasOffline {
 				e.Log("info", fmt.Sprintf("peer %q connected; triggering auto-sync for all games", matched.Name))
-				go e.SyncAllGames(context.Background())
+				e.GoSync(func(ctx context.Context) { e.SyncAllGames(ctx) })
 				e.notifyPeerUpdate()
 			}
 		}
@@ -390,9 +390,10 @@ func (e *Engine) handleManifest(w http.ResponseWriter, r *http.Request) {
 func (e *Engine) handleBlocks(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
 	var body struct {
-		RelPath      string `json:"relPath"`
-		BlockIndices []int  `json:"blockIndices"`
-		BlockSize    int    `json:"blockSize"`
+		RelPath      string   `json:"relPath"`
+		BlockIndices []int    `json:"blockIndices"`
+		BlockSize    int      `json:"blockSize"`
+		Encodings    []string `json:"encodings"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RelPath == "" {
 		jsonError(w, http.StatusBadRequest, "relPath is required")
@@ -420,11 +421,7 @@ func (e *Engine) handleBlocks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]syncengine.BlockData, len(blocks))
-	for i, b := range blocks {
-		out[i] = syncengine.BlockData{Index: b.Index, Data: b.Data, Length: len(b.Data)}
-	}
-	jsonOK(w, map[string]any{"blocks": out})
+	jsonOK(w, map[string]any{"blocks": encodeBlocks(blocks, wantsGzip(body.Encodings))})
 }
 
 func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
@@ -535,13 +532,13 @@ func (e *Engine) peerByAddress(ip string) (syncengine.Peer, bool) {
 // newer content for us to pull.
 func (e *Engine) handleSyncTrigger(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	e.GoSync(func(ctx context.Context) {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		defer cancel()
 		if _, err := e.SyncGame(ctx, gameID); err != nil {
 			e.Log("warn", fmt.Sprintf("triggered sync for %s: %v", gameID, err))
 		}
-	}()
+	})
 	jsonOK(w, map[string]any{"status": "triggered"})
 }
 

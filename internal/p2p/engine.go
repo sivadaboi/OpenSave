@@ -28,6 +28,11 @@ const resyncRetryInterval = 20 * time.Second
 // full reconcile runs — 3 × 20s = every 60s.
 const reconcileEveryNTicks = 3
 
+// bgSyncShutdownGrace is how long Stop waits for cancelled background syncs
+// to unwind. Long enough for a transfer to notice cancellation and close its
+// files, short enough that quitting the app still feels immediate.
+const bgSyncShutdownGrace = 5 * time.Second
+
 // GameState is the lightweight per-game summary exchanged in pings/hellos
 // so peers can see what each other has without a full manifest fetch.
 type GameState struct {
@@ -81,6 +86,36 @@ type Engine struct {
 	// pings/hellos, powering the "update from this device" flow.
 	buildMu    sync.Mutex
 	peerBuilds map[string]PeerBuild
+
+	// Lifecycle of background work this engine starts. Syncs triggered by a
+	// peer appearing, or by the retry failsafe, used to run on
+	// context.Background() and so outlived Stop entirely — leaving a partly
+	// written save open while the process tore down around it. Stop cancels
+	// this and waits for them.
+	ctx      context.Context
+	cancel   context.CancelFunc
+	bgSyncWG sync.WaitGroup
+	stopMu   sync.Mutex
+	stopping bool
+}
+
+// GoSync runs a background sync tied to the engine's lifecycle, so shutdown
+// can cancel it and wait for it to unwind. Work requested once shutdown has
+// begun is dropped: a peer-triggered sync arriving as the app closes has
+// nowhere to finish, and starting it would race the wait in Stop.
+func (e *Engine) GoSync(fn func(ctx context.Context)) {
+	e.stopMu.Lock()
+	if e.stopping || e.ctx == nil {
+		e.stopMu.Unlock()
+		return
+	}
+	e.bgSyncWG.Add(1)
+	e.stopMu.Unlock()
+
+	go func() {
+		defer e.bgSyncWG.Done()
+		fn(e.ctx)
+	}()
 }
 
 type cachedManifestHash struct {
@@ -121,7 +156,7 @@ func (e *Engine) StartDiscovery() error {
 				_ = e.Store.UpsertPeer(peer)
 				if wasOffline {
 					e.Log("info", fmt.Sprintf("paired peer %q appeared on LAN; auto-syncing", peer.Name))
-					go e.SyncAllGames(context.Background())
+					e.GoSync(func(ctx context.Context) { e.SyncAllGames(ctx) })
 					e.notifyPeerUpdate()
 				}
 			} else if isNew {
@@ -157,6 +192,33 @@ func (e *Engine) Stop() {
 	if e.RelayHost != nil {
 		e.RelayHost.Stop()
 	}
+
+	// Cancel background syncs and let them unwind before returning. A sync
+	// interrupted mid-transfer holds the partly rebuilt file open; returning
+	// while that is true means shutting down with a live handle on the user's
+	// save directory.
+	//
+	// Bounded, because correctness here must not come at the cost of a hung
+	// quit: a transfer stuck in a call that ignores cancellation would
+	// otherwise keep the app alive for as long as its own timeout. Giving up
+	// leaves a .opensave.tmp behind, which is already handled — manifests
+	// exclude those and the walk garbage-collects stale ones.
+	e.stopMu.Lock()
+	e.stopping = true
+	e.stopMu.Unlock()
+	if e.cancel != nil {
+		e.cancel()
+	}
+	done := make(chan struct{})
+	go func() {
+		e.bgSyncWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(bgSyncShutdownGrace):
+		e.Log("warn", "a sync was still running at shutdown; leaving it to finish on the next start")
+	}
 }
 
 // ApplyRelayHosting starts/stops the in-process relay to match settings.
@@ -168,11 +230,14 @@ func (e *Engine) ApplyRelayHosting(enabled bool, port int) {
 
 // New assembles a P2P engine with LAN + WAN transports routed per peer.
 func New(s *store.Store, snaps *snapshot.Manager, logf func(level, msg string)) *Engine {
+	ctx, cancel := context.WithCancel(context.Background())
 	e := &Engine{
 		Store:     s,
 		Snapshots: snaps,
 		Pairing:   pairing.New(),
 		Log:       logf,
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 	e.Wan = newWanClient(e)
 	e.RelayHost = NewRelayHost(logf)
@@ -341,7 +406,9 @@ func (e *Engine) StartResyncLoop() {
 	stop := e.stopRetry
 	e.pendingMu.Unlock()
 
-	go func() {
+	// Tracked on the engine's lifecycle so a shutdown lands between ticks
+	// rather than half-way through a transfer.
+	e.GoSync(func(ctx context.Context) {
 		ticker := time.NewTicker(resyncRetryInterval)
 		defer ticker.Stop()
 		ticks := 0
@@ -349,28 +416,30 @@ func (e *Engine) StartResyncLoop() {
 			select {
 			case <-stop:
 				return
+			case <-ctx.Done():
+				return
 			case <-ticker.C:
 				ticks++
-				e.retryPendingResyncs()
+				e.retryPendingResyncs(ctx)
 				if ticks%reconcileEveryNTicks == 0 {
-					e.reconcileAllGames()
+					e.reconcileAllGames(ctx)
 				}
 			}
 		}
-	}()
+	})
 }
 
 // reconcileAllGames refreshes peer status and re-syncs every game — the
 // periodic backstop against missed sync triggers.
-func (e *Engine) reconcileAllGames() {
-	e.PingPairedPeers(context.Background())
+func (e *Engine) reconcileAllGames(ctx context.Context) {
+	e.PingPairedPeers(ctx)
 	if len(e.OnlinePeers()) == 0 {
 		return
 	}
-	e.SyncAllGames(context.Background())
+	e.SyncAllGames(ctx)
 }
 
-func (e *Engine) retryPendingResyncs() {
+func (e *Engine) retryPendingResyncs(ctx context.Context) {
 	e.pendingMu.Lock()
 	ids := make([]string, 0, len(e.pendingResync))
 	for id := range e.pendingResync {
@@ -382,14 +451,17 @@ func (e *Engine) retryPendingResyncs() {
 	}
 	// Refresh LAN peer status first so a peer that just reconnected is seen
 	// as online without waiting for the next discovery cycle.
-	e.PingPairedPeers(context.Background())
+	e.PingPairedPeers(ctx)
 	online := e.OnlinePeers()
 	if len(online) == 0 {
 		return // no one to sync with yet; keep waiting
 	}
 	for _, id := range ids {
+		if ctx.Err() != nil {
+			return // shutting down; the failsafe picks these up next start
+		}
 		e.Log("info", fmt.Sprintf("retrying interrupted sync for %s", id))
-		results, err := e.Sync.SyncGame(context.Background(), id, online)
+		results, err := e.Sync.SyncGame(ctx, id, online)
 		if err == nil {
 			e.trackSyncOutcome(id, results) // clears on success
 			e.pendingMu.Lock()

@@ -186,23 +186,40 @@ func TestBatchIndices(t *testing.T) {
 		indices[i] = i
 	}
 
-	// 64KB blocks: 1.5MB/64KB = 24, capped at 16 LAN / 8 WAN.
+	// 64KB blocks: 4MB/64KB = 64, capped at 32 LAN / 16 WAN.
 	lan := BatchIndices(indices, 65536, false)
-	if len(lan[0]) != 16 {
-		t.Errorf("LAN batch size = %d, want 16", len(lan[0]))
+	if len(lan[0]) != 32 {
+		t.Errorf("LAN batch size = %d, want 32", len(lan[0]))
 	}
 	wan := BatchIndices(indices, 65536, true)
-	if len(wan[0]) != 8 {
-		t.Errorf("WAN batch size = %d, want 8", len(wan[0]))
+	if len(wan[0]) != 16 {
+		t.Errorf("WAN batch size = %d, want 16", len(wan[0]))
 	}
 
-	// 2MB blocks: 1.5MB/2MB = 0 -> floor of 1 per batch.
-	big := BatchIndices([]int{0, 1, 2}, 2*1024*1024, false)
-	if len(big) != 3 || len(big[0]) != 1 {
-		t.Errorf("oversized blocks should batch one at a time, got %v", big)
+	// Large files use 2MB blocks, which is where the old 1.5MB target hurt
+	// most: it floored the batch at a single block, so every 2MB of a big
+	// save cost its own relay round trip. Two per request halves that.
+	big := BatchIndices([]int{0, 1, 2}, 2*1024*1024, true)
+	if len(big) != 2 || len(big[0]) != 2 || len(big[1]) != 1 {
+		t.Errorf("2MB blocks should pack two per batch, got %v", big)
 	}
 
-	if ConcurrencyFor(true) != 3 || ConcurrencyFor(false) != 5 {
+	// A block bigger than the whole target still has to go alone.
+	huge := BatchIndices([]int{0, 1, 2}, 8*1024*1024, true)
+	if len(huge) != 3 || len(huge[0]) != 1 {
+		t.Errorf("oversized blocks should batch one at a time, got %v", huge)
+	}
+
+	// Batches must stay inside the 16MB frame limit after base64 (+33%).
+	for _, blockSize := range []int{64 << 10, 512 << 10, 2 << 20} {
+		batches := BatchIndices(indices, blockSize, true)
+		onWire := len(batches[0]) * blockSize * 4 / 3
+		if onWire > 16<<20 {
+			t.Errorf("blockSize %d: batch is %d bytes base64-encoded, over the 16MB frame limit", blockSize, onWire)
+		}
+	}
+
+	if ConcurrencyFor(true) != 6 || ConcurrencyFor(false) != 8 {
 		t.Error("concurrency constants wrong")
 	}
 }

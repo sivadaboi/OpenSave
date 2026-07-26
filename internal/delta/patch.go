@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -29,39 +28,31 @@ type BlockSource struct {
 // relies on os.Rename's platform behavior: on Windows it calls
 // MoveFileEx with MOVEFILE_REPLACE_EXISTING, and on POSIX rename(2) is
 // already atomic — so the destination is replaced in one step with no gap.
-func PatchFile(filePath string, remoteEntry FileEntry, remoteBlocks []BlockSource) (err error) {
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return fmt.Errorf("create parent dir: %w", err)
-	}
-
-	// Read-only save files must not fail the write; clear the attribute
-	// first the same way the JS code chmod 0o666's before write/unlink.
-	clearReadOnlyIfSet(filePath)
-
-	tmpPath := filePath + TmpSuffix
-	if err := writeReconstructedFile(tmpPath, filePath, remoteEntry, remoteBlocks); err != nil {
-		removeWithRetry(tmpPath)
+// It is the all-at-once form of PatchWriter, kept for callers that already
+// hold every block (single small files, tests, backup restore). The sync
+// engine streams through PatchWriter directly instead, so a large file never
+// has to fit in memory.
+func PatchFile(filePath string, remoteEntry FileEntry, remoteBlocks []BlockSource) error {
+	w, err := NewPatchWriter(filePath, remoteEntry)
+	if err != nil {
 		return err
 	}
 
-	gotHash, err := hashFileWhole(tmpPath)
-	if err != nil {
-		removeWithRetry(tmpPath)
-		return fmt.Errorf("hash reconstructed file: %w", err)
+	incoming := make(map[int]bool, len(remoteBlocks))
+	for _, b := range remoteBlocks {
+		incoming[b.Index] = true
 	}
-	if gotHash != remoteEntry.Hash {
-		removeWithRetry(tmpPath)
-		return fmt.Errorf("patch integrity check failed for %s: expected %s got %s", filePath, remoteEntry.Hash, gotHash)
+	for _, b := range remoteBlocks {
+		if err := w.WriteBlock(b.Index, b.Data); err != nil {
+			w.Abort()
+			return err
+		}
 	}
-
-	clearReadOnlyIfSet(tmpPath)
-
-	if err := replaceWithRetry(tmpPath, filePath); err != nil {
-		removeWithRetry(tmpPath)
-		return fmt.Errorf("finalize patched file: %w", err)
+	if err := w.SeedUnchanged(filePath, incoming); err != nil {
+		w.Abort()
+		return err
 	}
-	return nil
+	return w.Commit()
 }
 
 // renameFile is swappable so tests can simulate a transiently locked
@@ -104,53 +95,6 @@ func removeWithRetry(path string) {
 			return
 		}
 	}
-}
-
-// writeReconstructedFile writes blockCount blocks (each remoteEntry.BlockSize
-// bytes, except possibly the last) to tmpPath: incoming blocks from
-// remoteBlocks where supplied, otherwise the corresponding byte range read
-// from the existing srcPath.
-func writeReconstructedFile(tmpPath, srcPath string, remoteEntry FileEntry, remoteBlocks []BlockSource) error {
-	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o666)
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer out.Close()
-
-	supplied := make(map[int][]byte, len(remoteBlocks))
-	for _, b := range remoteBlocks {
-		supplied[b.Index] = b.Data
-	}
-
-	var src *os.File
-	if existing, statErr := os.Stat(srcPath); statErr == nil && !existing.IsDir() {
-		src, err = os.Open(srcPath)
-		if err != nil {
-			return fmt.Errorf("open source file for unchanged blocks: %w", err)
-		}
-		defer src.Close()
-	}
-
-	for _, block := range remoteEntry.Blocks {
-		if data, ok := supplied[block.Index]; ok {
-			if _, err := out.Write(data); err != nil {
-				return fmt.Errorf("write block %d: %w", block.Index, err)
-			}
-			continue
-		}
-		if src == nil {
-			return fmt.Errorf("block %d not supplied and no local source file to copy it from", block.Index)
-		}
-		offset := int64(block.Index) * int64(remoteEntry.BlockSize)
-		buf := make([]byte, block.Length)
-		if _, err := src.ReadAt(buf, offset); err != nil && err != io.EOF {
-			return fmt.Errorf("read unchanged block %d from local file: %w", block.Index, err)
-		}
-		if _, err := out.Write(buf); err != nil {
-			return fmt.Errorf("write copied block %d: %w", block.Index, err)
-		}
-	}
-	return nil
 }
 
 func hashFileWhole(path string) (string, error) {

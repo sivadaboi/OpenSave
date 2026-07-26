@@ -675,12 +675,18 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 	// loop inside each file. Without in-file reporting, a single large
 	// file (e.g. an 18MB save pulled over the relay) sat at 0% for its
 	// whole transfer. Throttled so relay round-trips don't spam the UI.
+	// Guarded because block workers report progress concurrently.
+	var reportMu sync.Mutex
 	var lastReport time.Time
 	reportProgress := func(force bool) {
+		reportMu.Lock()
 		if !force && time.Since(lastReport) < 500*time.Millisecond {
+			reportMu.Unlock()
 			return
 		}
 		lastReport = time.Now()
+		reportMu.Unlock()
+
 		bytesPulled, speed, pct := tracker.stats()
 		ev := ProgressEvent{PeerName: peer.Name, BytesTransferred: bytesPulled, TotalBytes: totalBytes, SpeedBytesPerSec: speed, Percentage: pct}
 		if e.Progress.OnSyncProgress != nil {
@@ -699,17 +705,13 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 		remoteFile := remoteData.Manifest.Files[relPath]
 		indices := changedBlocks[relPath]
 
-		blocks, err := e.fetchFileBlocks(ctx, peer, gameID, relPath, remoteFile, indices, throttle, tracker, reportProgress)
-		if err != nil {
-			return err
-		}
-
 		localFilePath := filepath.Join(game.SavePath, filepath.FromSlash(relPath))
 		if isFile, _ := delta.ResolveLocalSaveFilePath(game.SavePath); isFile {
 			localFilePath = game.SavePath // single-file save mode
 		}
-		if err := delta.PatchFile(localFilePath, remoteFile, blocks); err != nil {
-			return fmt.Errorf("patch %s: %w", relPath, err)
+		if err := e.pullFile(ctx, peer, gameID, relPath, localFilePath,
+			remoteFile, indices, throttle, tracker, reportProgress); err != nil {
+			return err
 		}
 		if remoteFile.MtimeMs > 0 {
 			mtime := time.UnixMilli(int64(remoteFile.MtimeMs))
@@ -734,53 +736,129 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 	return nil
 }
 
-// fetchFileBlocks pulls one file's changed blocks in concurrent batch
-// groups (3 WAN / 5 LAN at a time, group-boundary waits) with per-batch
-// retries.
+// pullFile reconstructs one file, writing each batch of blocks to disk as it
+// arrives rather than collecting them all first. Memory stays proportional to
+// the blocks in flight instead of to the file — a 1 GB save used to need 1 GB
+// of RAM before a single byte was written.
+func (e *Engine) pullFile(ctx context.Context, peer Peer, gameID, relPath, localFilePath string,
+	remoteFile delta.FileEntry, indices []int, throttle *throttler, tracker *progressTracker,
+	onProgress func(force bool)) error {
+
+	writer, err := delta.NewPatchWriter(localFilePath, remoteFile)
+	if err != nil {
+		return fmt.Errorf("patch %s: %w", relPath, err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			writer.Abort()
+		}
+	}()
+
+	incoming := make(map[int]bool, len(indices))
+	for _, idx := range indices {
+		incoming[idx] = true
+	}
+	// Blocks that didn't change come straight from the copy already on disk.
+	if err := writer.SeedUnchanged(localFilePath, incoming); err != nil {
+		return fmt.Errorf("patch %s: %w", relPath, err)
+	}
+
+	if err := e.fetchFileBlocks(ctx, peer, gameID, relPath, remoteFile, indices,
+		throttle, tracker, onProgress, writer); err != nil {
+		return err
+	}
+
+	if err := writer.Commit(); err != nil {
+		return fmt.Errorf("patch %s: %w", relPath, err)
+	}
+	committed = true
+	return nil
+}
+
+// fetchFileBlocks pulls one file's changed blocks into writer using a pool of
+// workers. The previous version processed batches in fixed groups and waited
+// at every group boundary, so the slowest request in each group stalled the
+// rest — costly over a relay, where one slow round trip is common. A pool
+// keeps every slot busy until the work runs out.
 func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, gameID, relPath string,
 	remoteFile delta.FileEntry, indices []int, throttle *throttler, tracker *progressTracker,
-	onGroup func(force bool)) ([]delta.BlockSource, error) {
+	onProgress func(force bool), writer *delta.PatchWriter) error {
 
 	batches := BatchIndices(indices, remoteFile.BlockSize, peer.Wan())
+	if len(batches) == 0 {
+		return nil
+	}
 	concurrency := ConcurrencyFor(peer.Wan())
+	if concurrency > len(batches) {
+		concurrency = len(batches)
+	}
 
-	var all []delta.BlockSource
-	for groupStart := 0; groupStart < len(batches); groupStart += concurrency {
-		groupEnd := groupStart + concurrency
-		if groupEnd > len(batches) {
-			groupEnd = len(batches)
+	// Cancelled as soon as any worker fails, so the rest stop instead of
+	// finishing transfers whose result is going to be thrown away.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		mu       sync.Mutex
+		firstErr error
+	)
+	fail := func(err error) {
+		mu.Lock()
+		if firstErr == nil {
+			firstErr = err
+			cancel()
 		}
-		group := batches[groupStart:groupEnd]
+		mu.Unlock()
+	}
 
-		results := make([][]BlockData, len(group))
-		errs := make([]error, len(group))
-		var wg sync.WaitGroup
-		for i, batch := range group {
-			wg.Add(1)
-			go func(i int, batch []int) {
-				defer wg.Done()
-				results[i], errs[i] = fetchWithRetry(ctx, e.Transport, peer, gameID, relPath, batch, remoteFile.BlockSize, e.Log)
-			}(i, batch)
-		}
-		wg.Wait()
+	work := make(chan []int)
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for batch := range work {
+				blocks, err := fetchWithRetry(ctx, e.Transport, peer, gameID, relPath, batch, remoteFile.BlockSize, e.Log)
+				if err != nil {
+					fail(fmt.Errorf("fetch blocks for %s: %w", relPath, err))
+					return
+				}
+				var batchBytes int64
+				for _, b := range blocks {
+					if err := writer.WriteBlock(b.Index, b.Data); err != nil {
+						fail(fmt.Errorf("patch %s: %w", relPath, err))
+						return
+					}
+					batchBytes += int64(b.Length)
+				}
+				tracker.add(batchBytes)
+				if onProgress != nil {
+					onProgress(false) // in-file progress so big files don't sit at 0%
+				}
+				throttle.wait(ctx, batchBytes)
+			}
+		}()
+	}
 
-		for i, err := range errs {
-			if err != nil {
-				return nil, fmt.Errorf("fetch blocks for %s: %w", relPath, err)
-			}
-			var groupBytes int64
-			for _, b := range results[i] {
-				all = append(all, delta.BlockSource{Index: b.Index, Data: b.Data})
-				groupBytes += int64(b.Length)
-			}
-			tracker.add(groupBytes)
-			if onGroup != nil {
-				onGroup(false) // in-file progress so big files don't sit at 0%
-			}
-			throttle.wait(ctx, groupBytes)
+	for _, batch := range batches {
+		select {
+		case work <- batch:
+		case <-ctx.Done():
+			// A worker failed (or the sync was cancelled); stop feeding it.
 		}
 	}
-	return all, nil
+	close(work)
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if firstErr != nil {
+		return firstErr
+	}
+	// A cancelled parent context with no worker error still means the pull
+	// didn't finish; Commit would otherwise fail with a confusing hash error.
+	return ctx.Err()
 }
 
 func fetchWithRetry(ctx context.Context, t Transport, peer Peer, gameID, relPath string,
@@ -869,10 +947,18 @@ func (e *Engine) deviceName() string {
 	return settings.DeviceName
 }
 
-// throttler enforces the WAN speed limit by pausing after each batch group
+// throttler enforces the WAN speed limit by pausing after each batch
 // proportionally to the bytes just transferred (delay = bytes / limit).
+//
+// Blocks are fetched by several workers at once, so the pacing has to be
+// shared: if each worker just slept for its own batch they would sleep in
+// parallel and the link would run at concurrency x the configured limit.
+// Reserving slots on a single timeline keeps the aggregate rate honest.
 type throttler struct {
 	limitBytesPerSec int64
+
+	mu       sync.Mutex
+	nextFree time.Time
 }
 
 func (e *Engine) throttleFor(isWan bool) *throttler {
@@ -891,12 +977,26 @@ func (t *throttler) wait(ctx context.Context, bytes int64) {
 		return
 	}
 	delay := time.Duration(bytes * int64(time.Second) / t.limitBytesPerSec)
-	if delay < 50*time.Millisecond {
+
+	// Claim this batch's slice of the timeline, then sleep until it starts.
+	// Sub-50ms debts aren't slept off individually but still accumulate here,
+	// so many small batches are paced as accurately as a few large ones.
+	t.mu.Lock()
+	now := time.Now()
+	if t.nextFree.Before(now) {
+		t.nextFree = now
+	}
+	t.nextFree = t.nextFree.Add(delay)
+	until := t.nextFree
+	t.mu.Unlock()
+
+	remaining := time.Until(until)
+	if remaining < 50*time.Millisecond {
 		return
 	}
 	select {
 	case <-ctx.Done():
-	case <-time.After(delay):
+	case <-time.After(remaining):
 	}
 }
 

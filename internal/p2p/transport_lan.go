@@ -49,10 +49,16 @@ func (t *lanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, ga
 	var resp struct {
 		Blocks []syncengine.BlockData `json:"blocks"`
 	}
+	// No encodings advertised: on a LAN the wire is typically faster than the
+	// compressor, so the bytes saved cost more than they're worth. Responses
+	// are still decoded, so a peer that compresses anyway is handled.
 	err := t.postJSON(ctx, peerURL(peer, "/blocks/"+gameID), map[string]any{
 		"relPath": relPath, "blockIndices": blockIndices, "blockSize": blockSize,
 	}, &resp)
-	return resp.Blocks, err
+	if err != nil {
+		return nil, err
+	}
+	return decodeBlocks(resp.Blocks)
 }
 
 func (t *lanTransport) DeleteRemote(ctx context.Context, peer syncengine.Peer, gameID, relPath string) error {

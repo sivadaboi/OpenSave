@@ -183,21 +183,27 @@ func DifferentBlockIndices(localFile *delta.FileEntry, remoteFile delta.FileEntr
 	return indices
 }
 
-// BatchIndices splits block indices into fetch batches sized so a JSON
-// response stays under ~1.5MB (relay/proxy payload limits), capped at 8
-// blocks per batch on WAN and 16 on LAN — exactly the JS math.
+// BatchIndices splits block indices into fetch batches sized so one JSON
+// response stays comfortably inside the 16 MB frame limit both the relay and
+// the client allow, even after base64 inflates the payload by a third.
+//
+// The old 1.5 MB target came from the JS daemon and was the binding
+// constraint on large files: those use 2 MB blocks, so the arithmetic landed
+// on a single block per request and every one of them cost a full relay round
+// trip. Targeting 4 MB fits two, halving the round trips, and gives
+// small-block files much longer batches.
 func BatchIndices(indices []int, blockSize int, isWan bool) [][]int {
 	if blockSize <= 0 {
 		blockSize = 64 * 1024
 	}
-	const targetBatchBytes = 3 * 512 * 1024 // 1.5 MB
+	const targetBatchBytes = 4 << 20 // ~5.3 MB once base64-encoded
 	calculated := targetBatchBytes / blockSize
 	if calculated < 1 {
 		calculated = 1
 	}
-	cap := 16
+	cap := 32
 	if isWan {
-		cap = 8
+		cap = 16
 	}
 	batchSize := calculated
 	if batchSize > cap {
@@ -215,13 +221,19 @@ func BatchIndices(indices []int, blockSize int, isWan bool) [][]int {
 	return batches
 }
 
-// ConcurrencyFor returns how many batches to fetch at once: 3 on WAN, 5 on
-// LAN.
+// ConcurrencyFor returns how many batches to fetch at once.
+//
+// WAN transfers are latency-bound, not bandwidth-bound: each batch is a full
+// round trip out to the relay, across to the peer and back, so throughput is
+// roughly (bytes in flight) / RTT. Raising the number of outstanding requests
+// is what makes a large file move at a sensible rate over the internet;
+// raising the batch size alone doesn't, because the request still can't
+// overlap the next one.
 func ConcurrencyFor(isWan bool) int {
 	if isWan {
-		return 3
+		return 6
 	}
-	return 5
+	return 8
 }
 
 func toSet(items []string) map[string]struct{} {
