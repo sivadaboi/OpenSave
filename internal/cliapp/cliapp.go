@@ -273,18 +273,36 @@ func cmdScan(d *daemon.Daemon) int {
 	found := d.Scanner.Scan(settings.CustomScanPaths)
 	found = presets.FilterExcluded(found, settings.ExcludePaths)
 	if len(found) == 0 {
-		fmt.Println("No game saves auto-detected.")
+		section("Auto-scan")
+		note("No game saves detected.")
+		hint("opensave add <name> <path>     track a folder yourself")
+		fmt.Println()
 		return 0
 	}
-	fmt.Printf("Detected %d save location(s):\n\n", len(found))
+
+	// Grouped by kind, because a flat list of 250 entries is unreadable.
+	byType := map[string][]presets.DiscoveredSave{}
 	for _, f := range found {
-		appID := f.AppID
-		if appID == "" {
-			appID = "-"
-		}
-		fmt.Printf("  [%s] %s\n      path: %s  (appId: %s)\n", f.Type, f.Name, f.SavePath, appID)
+		byType[f.Type] = append(byType[f.Type], f)
 	}
-	fmt.Println("\nTrack one with: opensave add <name> <path>")
+	labels := []struct{ kind, title string }{
+		{"game", "Games"}, {"emulator", "Emulators"}, {"repack", "Repacks"},
+	}
+
+	section(fmt.Sprintf("Auto-scan %s %d save location(s)", symDot(), len(found)))
+	for _, l := range labels {
+		list := byType[l.kind]
+		if len(list) == 0 {
+			continue
+		}
+		fmt.Printf("\n  %s %s\n", faint(strings.ToUpper(l.title)), faint(fmt.Sprintf("(%d)", len(list))))
+		for _, f := range list {
+			fmt.Printf("    %s %s\n", symBullet(), bold(f.Name))
+			fmt.Printf("        %s\n", faint(f.SavePath))
+		}
+	}
+	hint("opensave add <name> <path>     track one of these")
+	fmt.Println()
 	return 0
 }
 
@@ -305,7 +323,9 @@ func cmdAdd(d *daemon.Daemon, args []string) int {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
-	fmt.Printf("Tracking %q (id: %s)\n  save path: %s\n", game.Name, game.ID, game.SavePath)
+	success("Now tracking %s", bold(game.Name))
+	note("id:   " + game.ID)
+	note("path: " + game.SavePath)
 	return 0
 }
 
@@ -316,26 +336,46 @@ func cmdStatus(d *daemon.Daemon) int {
 		return 1
 	}
 
-	fmt.Printf("Tracked games: %d\n\n", len(games))
+	if len(games) == 0 {
+		section("Tracked games")
+		note("Nothing tracked yet.")
+		hint("opensave scan", "opensave add <name> <path>")
+		fmt.Println()
+		return 0
+	}
+
+	section(fmt.Sprintf("Tracked games %s %d", symDot(), len(games)))
 	for _, g := range games {
-		fmt.Printf("  %s (%s)\n    save path: %s\n", g.Name, g.ID, g.SavePath)
+		fmt.Printf("  %s %s  %s\n", symBullet(), bold(g.Name), faint(g.ID))
+		fmt.Printf("      %s\n", faint(g.SavePath))
+
 		branches, _ := d.Store.ListBranches(g.ID)
 		for _, b := range branches {
 			snaps, _ := d.Store.ListSnapshots(g.ID, b)
-			marker := " "
+			label := faint(b)
 			if b == g.ActiveBranch {
-				marker = "*"
+				label = accent(b) + faint(" (active)")
 			}
-			fmt.Printf("    %s branch %-12s %d snapshot(s)\n", marker, b, len(snaps))
+			fmt.Printf("      %s %s\n", padRight(label, 28),
+				faint(fmt.Sprintf("%d snapshot(s)", len(snaps))))
 		}
+		fmt.Println()
 	}
 
 	peers, err := d.Store.ListPeers()
-	if err == nil {
-		fmt.Printf("\nPaired peers: %d\n", len(peers))
+	if err == nil && len(peers) > 0 {
+		section("Paired devices")
+		t := newTable("device", "type", "address", "status")
 		for _, p := range peers {
-			fmt.Printf("  %s (%s) — %s:%d [%s]\n", p.Name, p.DeviceType, p.Address, p.Port, p.Status)
+			status := faint(p.Status)
+			if p.Status == "online" {
+				status = okText(p.Status)
+			}
+			t.add(bold(p.Name), faint(p.DeviceType),
+				faint(fmt.Sprintf("%s:%d", p.Address, p.Port)), status)
 		}
+		t.render()
+		fmt.Println()
 	}
 	return 0
 }
@@ -355,7 +395,8 @@ func cmdSnapshot(d *daemon.Daemon, args []string) int {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
-	fmt.Printf("Created snapshot %s (%.1f KB) on branch %s\n", snap.ID, float64(snap.SizeBytes)/1024, snap.BranchName)
+	success("Snapshot %s on branch %s", accent(snap.ID), bold(snap.BranchName))
+	note(humanBytes(snap.SizeBytes))
 	return 0
 }
 
@@ -369,7 +410,8 @@ func cmdRollback(d *daemon.Daemon, args []string) int {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
-	fmt.Printf("Restored snapshot %s (from %s)\n", snap.ID, snap.Timestamp)
+	success("Restored %s", accent(snap.ID))
+	note("taken " + snap.Timestamp)
 	return 0
 }
 
