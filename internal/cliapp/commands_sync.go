@@ -222,9 +222,17 @@ func cmdPeers(args []string) int {
 
 	if len(payload.PairingRequests) > 0 {
 		section("Waiting for your approval")
-		t := newTable("device", "id")
+		t := newTable("device", "from", "id")
 		for _, r := range payload.PairingRequests {
-			t.add(bold(r.Name), faint(r.PeerID))
+			name := r.DeviceName
+			if name == "" {
+				name = "(unnamed device)"
+			}
+			origin := fmt.Sprintf("%s:%d", r.Address, r.Port)
+			if r.IsWan {
+				origin = "over the relay"
+			}
+			t.add(bold(name), faint(origin), faint(r.PeerID))
 		}
 		t.render()
 		hint("opensave pair approve <id>")
@@ -272,7 +280,13 @@ type peersPayload struct {
 	} `json:"discoveredPeers"`
 	PairingRequests []struct {
 		PeerID string `json:"peerId"`
-		Name   string `json:"name"`
+		// The daemon sends this as "deviceName"; decoding it as "name" left
+		// the column blank on every request, so approving one meant trusting
+		// a bare node id with no way to tell which machine was asking.
+		DeviceName string `json:"deviceName"`
+		Address    string `json:"address"`
+		Port       int    `json:"port"`
+		IsWan      bool   `json:"isWan"`
 	} `json:"pairingRequests"`
 }
 
@@ -309,11 +323,22 @@ func cmdPair(args []string) int {
 			fmt.Println("No pending pairing requests.")
 			return 0
 		}
-		fmt.Printf("%d pending request(s):\n\n", len(payload.PairingRequests))
+		section(fmt.Sprintf("Pairing requests %s %d waiting", symDot(), len(payload.PairingRequests)))
+		t := newTable("DEVICE", "FROM", "ID")
 		for _, r := range payload.PairingRequests {
-			fmt.Printf("  %-24s %s\n", r.Name, r.PeerID)
+			name := r.DeviceName
+			if name == "" {
+				name = "(unnamed device)"
+			}
+			origin := fmt.Sprintf("%s:%d", r.Address, r.Port)
+			if r.IsWan {
+				origin = "over the relay"
+			}
+			t.add(bold(name), faint(origin), faint(r.PeerID))
 		}
-		fmt.Println("\nApprove with `opensave pair approve <id>`.")
+		t.render()
+		hint("opensave pair approve <id>", "opensave pair reject <id>")
+		fmt.Println()
 		return 0
 
 	case "approve":

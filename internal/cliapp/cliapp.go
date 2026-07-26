@@ -6,9 +6,11 @@ package cliapp
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,7 +21,6 @@ import (
 	"github.com/opensave/opensave/internal/store"
 	"github.com/opensave/opensave/internal/sysintegration/upnp"
 )
-
 
 // Run dispatches CLI arguments; returns a process exit code.
 func Run(args []string) int {
@@ -178,6 +179,23 @@ func runDaemon(args []string) int {
 		return 1
 	}
 	defer server.Stop()
+
+	// Persist the port actually bound. Pairing hands the other device
+	// settings.Port to call back on, so a daemon started with --port (or one
+	// that fell back to an ephemeral port because the configured one was
+	// taken) would otherwise advertise a port nothing is listening on: the
+	// peer records the wrong address, its approve-confirm never arrives, and
+	// pairing silently completes on one side only.
+	if _, portStr, splitErr := net.SplitHostPort(addr); splitErr == nil {
+		if bound, convErr := strconv.Atoi(portStr); convErr == nil && bound > 0 {
+			if settings, sErr := d.Store.GetSettings(); sErr == nil && settings.Port != bound {
+				settings.Port = bound
+				if err := d.Store.UpdateSettings(settings); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: could not record the listening port: %v\n", err)
+				}
+			}
+		}
+	}
 
 	// Record the PID so `opensave daemon stop` can find *this* daemon. Only
 	// the CLI writes it: the desktop app serves the same API, and stopping it
