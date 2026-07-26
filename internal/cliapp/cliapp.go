@@ -20,73 +20,6 @@ import (
 	"github.com/opensave/opensave/internal/sysintegration/upnp"
 )
 
-const usage = `OpenSave — P2P game save sync
-
-No account, no server, no quota. Devices sync directly with each other.
-
-Games:
-  opensave scan                          Auto-detect game saves on this machine
-  opensave add <name> <path>             Track a game save folder/file
-  opensave remove <gameId>               Stop tracking a game
-  opensave untrack-all --yes             Stop tracking everything (keeps snapshots)
-  opensave game <gameId> set <k> <v>     Per-game settings (path, app-id, auto-sync…)
-  opensave launch <gameId>               Start the game
-  opensave status                        Show tracked games, branches, peers
-
-Sync:
-  opensave sync [<gameId>|--all]         Sync now (all games by default)
-  opensave peers                         List paired devices
-  opensave pair <host[:port]>            Ask a device on your LAN to pair
-  opensave pair requests|approve|reject  Handle incoming pairing requests
-  opensave unpair <peerId>               Drop a paired device
-  opensave probe <host[:port]>           Check whether a device answers
-  opensave forget <peerId>               Remove a stale device record
-  opensave relay status|join|leave       Internet sync between networks
-  opensave conflicts                     Saves waiting on a decision
-  opensave resolve <gameId> <choice>     Settle a conflict
-
-History:
-  opensave snapshot <gameId> [comment]   Create a snapshot
-  opensave snapshots <gameId>            List snapshots
-  opensave rollback <gameId> <snapId>    Restore a snapshot
-  opensave branch <gameId> <name>        Create a branch
-  opensave checkout <gameId> <name>      Switch branch
-  opensave export <gameId> <dir>         Copy the current save out to a folder
-  opensave backup export <file.sscb>     Write a portable backup archive
-  opensave backup import <file.sscb>     Read one back
-  opensave branch-delete <gameId> <name> Delete a branch and its snapshots
-  opensave snapshot-delete <id> <snapId> Delete one snapshot
-  opensave prune [--apply-default]       Apply retention limits now
-  opensave files <gameId> <snapId>       List a snapshot's contents
-  opensave files <id> <snap> <path>      Restore a single file from it
-
-Cloud backup:
-  opensave cloud status                  Provider and connection state
-  opensave cloud browse                  Everything stored in the cloud
-  opensave cloud list <gameId>           Cloud snapshots for one game
-  opensave cloud push <gameId>           Upload local snapshots
-  opensave cloud restore <id> <file>     Pull one back
-  opensave cloud delete <gameId> --yes   Remove a game's cloud copies
-
-Configuration:
-  opensave config [set <key> <value>]    Read or change settings
-  opensave scanpath list|add|remove      Extra folders to auto-scan
-  opensave exclude list|add|remove       Folders auto-scan should skip
-  opensave link <gameId> <otherId>       Treat two tracked games as the same
-  opensave unlink <aliasId>              Undo a link
-  opensave links <gameId>                Show ids linked to a game
-
-Service:
-  opensave daemon start [--port N]       Run the daemon (REST API + watcher)
-  opensave daemon status                 Is a daemon running, and where
-  opensave daemon stop                   Stop the running daemon
-  opensave service install|uninstall     Install a systemd --user service (Linux)
-  opensave completion bash|zsh|fish      Shell completion script
-  opensave upnp <port> [--delete]        Forward (or remove) a router port via UPnP
-  opensave version                       Print the version
-
-Add --json to any command for machine-readable output.
-`
 
 // Run dispatches CLI arguments; returns a process exit code.
 func Run(args []string) int {
@@ -153,7 +86,7 @@ func Run(args []string) int {
 	case "version", "--version", "-v":
 		return cmdVersion(rest)
 	case "help", "--help", "-h":
-		fmt.Print(usage)
+		printUsage()
 		return 0
 	}
 
@@ -202,7 +135,8 @@ func Run(args []string) int {
 	case "untrack-all":
 		return cmdUntrackAll(d, rest)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", cmd, usage)
+		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
+		printUsage()
 		return 1
 	}
 }

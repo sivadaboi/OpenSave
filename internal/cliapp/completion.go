@@ -8,17 +8,9 @@ import (
 // Shell completion. Emitted as a script rather than shelling out to a
 // framework, so the CLI keeps its zero-dependency, single-binary shape.
 
-// topLevelCommands drives completion and is the single place a new command
-// has to be registered for the shells to know about it.
-var topLevelCommands = []string{
-	"scan", "add", "remove", "status", "game", "launch", "untrack-all",
-	"sync", "peers", "pair", "unpair", "relay", "conflicts", "resolve",
-	"probe", "forget", "cloud", "files",
-	"snapshot", "snapshots", "rollback", "branch", "checkout", "export", "backup",
-	"exclude", "scanpath", "link", "unlink", "links", "config",
-	"prune", "snapshot-delete", "branch-delete",
-	"daemon", "service", "upnp", "version", "help",
-}
+// topLevelCommands is derived from the documented command groups, so a new
+// command cannot appear in --help and be missing from completion.
+var topLevelCommands = commandNames()
 
 var subCommands = map[string][]string{
 	"pair":    {"requests", "approve", "reject"},

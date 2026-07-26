@@ -321,3 +321,30 @@ func TestBannerWidthMatchesConstant(t *testing.T) {
 			widest, bannerWidth)
 	}
 }
+
+// TestEveryDocumentedCommandDispatches is the check that the reference and the
+// dispatcher agree: every command in --help must actually run. A documented
+// command that falls through to "unknown command" is worse than an undocumented
+// one, because the help text promised it.
+func TestEveryDocumentedCommandDispatches(t *testing.T) {
+	dispatched := map[string]bool{}
+	for _, name := range commandNames() {
+		dispatched[name] = true
+	}
+	// Commands the dispatcher handles that aren't in a group are fine (aliases
+	// like --version); the reverse is not.
+	for _, g := range commandGroups {
+		for _, e := range g.entries {
+			name := strings.Fields(e.usage)[0]
+			if !dispatched[name] {
+				t.Errorf("--help documents %q but commandNames() doesn't list it", name)
+			}
+		}
+	}
+	// Spot-check a few that must be routable.
+	for _, must := range []string{"scan", "sync", "cloud", "files", "probe", "game", "prune"} {
+		if !dispatched[must] {
+			t.Errorf("%q missing from the command list", must)
+		}
+	}
+}
