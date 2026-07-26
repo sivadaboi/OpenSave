@@ -6,6 +6,8 @@ import (
 	"os"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 // enableVirtualTerminal turns on ANSI escape handling for the console.
@@ -31,4 +33,14 @@ func enableVirtualTerminal() bool {
 	}
 	ret, _, _ = setConsoleMode.Call(uintptr(handle), uintptr(mode|enableVirtualTerminalProcessing))
 	return ret != 0
+}
+
+// terminalWidth returns the console width in columns, or 0 when it can't be
+// determined (piped output, or a handle that isn't a console).
+func terminalWidth() int {
+	var info windows.ConsoleScreenBufferInfo
+	if err := windows.GetConsoleScreenBufferInfo(windows.Handle(os.Stdout.Fd()), &info); err != nil {
+		return 0
+	}
+	return int(info.Window.Right - info.Window.Left + 1)
 }

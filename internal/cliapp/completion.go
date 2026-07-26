@@ -13,6 +13,7 @@ import (
 var topLevelCommands = []string{
 	"scan", "add", "remove", "status", "game", "launch", "untrack-all",
 	"sync", "peers", "pair", "unpair", "relay", "conflicts", "resolve",
+	"probe", "forget", "cloud", "files",
 	"snapshot", "snapshots", "rollback", "branch", "checkout", "export", "backup",
 	"exclude", "scanpath", "link", "unlink", "links", "config",
 	"prune", "snapshot-delete", "branch-delete",
@@ -28,6 +29,7 @@ var subCommands = map[string][]string{
 	"exclude":  {"list", "add", "remove"},
 	"scanpath": {"list", "add", "remove"},
 	"game":     {"set"},
+	"cloud":    {"status", "browse", "list", "push", "restore", "delete"},
 	"backup":  {"export", "import"},
 	"config":  {"list", "set"},
 }

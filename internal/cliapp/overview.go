@@ -104,12 +104,18 @@ func cmdOverview(args []string) int {
 		device = faint("unnamed")
 	}
 
-	// Title line uses the same rule the section() headers do elsewhere.
-	title := "OpenSave " + st.Version
 	fmt.Println()
-	fmt.Printf("  %s   %s\n", heading(title), faint("peer-to-peer game save sync"))
-	fmt.Printf("  %s\n", faint(strings.Repeat(sym("─", "-"), displayWidth(title)+32)))
-	fmt.Println()
+	if showBanner() {
+		printBanner()
+		fmt.Printf("\n  %s   %s\n\n",
+			heading(st.Version), faint("peer-to-peer game save sync"))
+	} else {
+		// Narrow terminal or piped output — the wordmark would wrap or turn
+		// into mojibake, so use the same title-and-rule the sections use.
+		title := "OpenSave " + st.Version
+		fmt.Printf("  %s   %s\n", heading(title), faint("peer-to-peer game save sync"))
+		fmt.Printf("  %s\n\n", faint(strings.Repeat(sym("─", "-"), displayWidth(title)+32)))
+	}
 
 	// State as label rows, matching `daemon status` and `relay status`.
 	field("daemon", daemonSummary(st))

@@ -39,6 +39,8 @@ Sync:
   opensave pair <host[:port]>            Ask a device on your LAN to pair
   opensave pair requests|approve|reject  Handle incoming pairing requests
   opensave unpair <peerId>               Drop a paired device
+  opensave probe <host[:port]>           Check whether a device answers
+  opensave forget <peerId>               Remove a stale device record
   opensave relay status|join|leave       Internet sync between networks
   opensave conflicts                     Saves waiting on a decision
   opensave resolve <gameId> <choice>     Settle a conflict
@@ -55,6 +57,16 @@ History:
   opensave branch-delete <gameId> <name> Delete a branch and its snapshots
   opensave snapshot-delete <id> <snapId> Delete one snapshot
   opensave prune [--apply-default]       Apply retention limits now
+  opensave files <gameId> <snapId>       List a snapshot's contents
+  opensave files <id> <snap> <path>      Restore a single file from it
+
+Cloud backup:
+  opensave cloud status                  Provider and connection state
+  opensave cloud browse                  Everything stored in the cloud
+  opensave cloud list <gameId>           Cloud snapshots for one game
+  opensave cloud push <gameId>           Upload local snapshots
+  opensave cloud restore <id> <file>     Pull one back
+  opensave cloud delete <gameId> --yes   Remove a game's cloud copies
 
 Configuration:
   opensave config [set <key> <value>]    Read or change settings
@@ -126,6 +138,14 @@ func Run(args []string) int {
 		return cmdBranchDelete(rest)
 	case "launch":
 		return cmdLaunch(rest)
+	case "cloud":
+		return cmdCloud(rest)
+	case "files":
+		return cmdFiles(rest)
+	case "probe":
+		return cmdProbe(rest)
+	case "forget":
+		return cmdForget(rest)
 	case "service":
 		return cmdService(rest)
 	case "completion":
