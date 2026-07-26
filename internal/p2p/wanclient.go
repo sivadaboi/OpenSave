@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -20,7 +22,31 @@ const (
 	wanReconnectDelay    = 5 * time.Second
 	wanRequestTimeout    = 30 * time.Second
 	wanPeerExpiry        = 20 * time.Second
+
+	// wanReconnectMaxDelay caps the exponential backoff. A relay that is
+	// genuinely down must not be hammered every 5s forever, and when it is
+	// merely cycling, every client in every room would otherwise pile onto
+	// the cold instance at the same instant.
+	wanReconnectMaxDelay = 60 * time.Second
+
+	// wanKeepWarmInterval is how often a connected client pokes the relay's
+	// /health over plain HTTP. Hosts that idle a service out (Render's free
+	// tier sleeps after ~15 quiet minutes) count inbound *requests*, and
+	// frames on an already-established WebSocket don't appear to qualify —
+	// so the heartbeat above keeps the socket alive while the instance
+	// underneath it still goes to sleep and drops everyone. A real request
+	// every few minutes is what actually resets that timer, and one online
+	// client keeps the room warm for all of them.
+	wanKeepWarmTimeout = 30 * time.Second
+
+	// wanOutageReportAfter is how long the relay must stay unreachable before
+	// the drop is worth telling the user about. Below this it's a blip that
+	// reconnect already handled.
+	wanOutageReportAfter = 45 * time.Second
 )
+
+// wanKeepWarmInterval is a var so tests don't have to wait minutes for a tick.
+var wanKeepWarmInterval = 4 * time.Minute
 
 // RelayMessage is the WAN relay wire envelope, matching wan-client.js.
 type RelayMessage struct {
@@ -70,6 +96,14 @@ type WanClient struct {
 	generation int // bumped on every (re)connect to invalidate stale loops
 	stopped    bool
 	cancelConn context.CancelFunc
+
+	// failures counts consecutive failed connect attempts, driving the
+	// reconnect backoff and deciding how loudly to report a drop. Reset the
+	// moment a connection succeeds.
+	failures int
+	// downSince is when the current outage began, so a routine relay cycle
+	// (back within seconds) can stay quiet while a real outage escalates.
+	downSince time.Time
 }
 
 func newWanClient(e *Engine) *WanClient {
@@ -125,6 +159,8 @@ func (w *WanClient) Disconnect() {
 	w.state = "disconnected"
 	w.lastError = ""
 	w.discovered = map[string]WanPeer{}
+	w.failures = 0
+	w.downSince = time.Time{}
 	w.mu.Unlock()
 
 	w.markWanPeersOffline()
@@ -147,7 +183,15 @@ func (w *WanClient) markWanPeersOffline() {
 func (w *WanClient) run(ctx context.Context, gen int, settings store.Settings) {
 	wsURL := fmt.Sprintf("%s/?room=%s&device=%s",
 		settings.RelayURL, url.QueryEscape(settings.SyncCode), url.QueryEscape(settings.DeviceName))
-	w.engine.Log("info", fmt.Sprintf("connecting to WAN relay %s (room %s)", settings.RelayURL, settings.SyncCode))
+
+	// Announce the dial only when a human action prompted it. Retries during
+	// an outage would otherwise repeat this line every few seconds.
+	w.mu.Lock()
+	firstAttempt := w.failures == 0
+	w.mu.Unlock()
+	if firstAttempt {
+		w.engine.Log("info", fmt.Sprintf("connecting to WAN relay %s (room %s)", settings.RelayURL, settings.SyncCode))
+	}
 
 	dialCtx, cancelDial := context.WithTimeout(ctx, 15*time.Second)
 	conn, _, err := websocket.Dial(dialCtx, wsURL, nil)
@@ -167,9 +211,26 @@ func (w *WanClient) run(ctx context.Context, gen int, settings store.Settings) {
 	w.conn = conn
 	w.state = "connected"
 	w.lastError = ""
+	outage := w.downSince
+	w.failures = 0
+	w.downSince = time.Time{}
 	w.mu.Unlock()
 
-	w.engine.Log("success", "connected to WAN relay")
+	// Report the gap in proportion to how much it mattered. A relay that
+	// cycles and comes back in a few seconds is routine and shouldn't read
+	// as an incident in the activity log.
+	switch {
+	case outage.IsZero():
+		w.engine.Log("success", "connected to WAN relay")
+	case time.Since(outage) > wanOutageReportAfter:
+		w.engine.Log("success", fmt.Sprintf("reconnected to WAN relay after %s offline",
+			time.Since(outage).Round(time.Second)))
+	default:
+		w.engine.Log("info", "WAN relay reconnected after a brief drop")
+	}
+
+	// Keep the relay host from idling this instance out from under us.
+	go w.keepWarm(ctx, settings.RelayURL)
 
 	// Announce presence.
 	pairedIDs := w.pairedPeerIDs()
@@ -220,6 +281,61 @@ func (w *WanClient) run(ctx context.Context, gen int, settings store.Settings) {
 	}
 }
 
+// keepWarmURL turns the relay's WebSocket URL into the http(s) origin its
+// /health endpoint lives on.
+func keepWarmURL(relayURL string) string {
+	base := strings.TrimSuffix(relayURL, "/")
+	switch {
+	case strings.HasPrefix(base, "wss://"):
+		base = "https://" + strings.TrimPrefix(base, "wss://")
+	case strings.HasPrefix(base, "ws://"):
+		base = "http://" + strings.TrimPrefix(base, "ws://")
+	}
+	return base + "/health"
+}
+
+// keepWarm pings the relay's /health over HTTP for as long as this
+// connection lives. See wanKeepWarmInterval for why the WebSocket traffic
+// alone isn't enough. Failures are ignored: the read loop is what actually
+// decides the connection is gone, and a failed poke shouldn't produce a
+// second, redundant error in the log.
+func (w *WanClient) keepWarm(ctx context.Context, relayURL string) {
+	url := keepWarmURL(relayURL)
+	ticker := time.NewTicker(wanKeepWarmInterval)
+	defer ticker.Stop()
+	client := &http.Client{Timeout: wanKeepWarmTimeout}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				return // malformed relay URL: retrying won't fix it
+			}
+			resp, err := client.Do(req)
+			if err == nil {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+			}
+		}
+	}
+}
+
+// reconnectDelay backs off exponentially with jitter: ~5s, 10s, 20s, 40s,
+// then capped. The jitter matters because a relay restart drops every client
+// in every room simultaneously — without it they all retry in lockstep and
+// stampede the instance while it is still cold.
+func reconnectDelay(failures int) time.Duration {
+	delay := wanReconnectDelay << min(failures, 8) // avoid overflowing the shift
+	if delay > wanReconnectMaxDelay {
+		delay = wanReconnectMaxDelay
+	}
+	jitter := time.Duration(rand.Int63n(int64(delay / 2)))
+	return delay/2 + jitter
+}
+
 // connectionLost schedules a reconnect unless the client was stopped.
 func (w *WanClient) connectionLost(ctx context.Context, gen int, state, errMsg string) {
 	w.mu.Lock()
@@ -231,27 +347,47 @@ func (w *WanClient) connectionLost(ctx context.Context, gen int, state, errMsg s
 	w.state = state
 	w.lastError = errMsg
 	stopped := w.stopped
+	if w.downSince.IsZero() {
+		w.downSince = time.Now()
+	}
+	failures := w.failures
+	w.failures++
+	downFor := time.Since(w.downSince)
 	w.mu.Unlock()
 
 	w.engine.notifyPeerUpdate()
 	if stopped {
 		return
 	}
-	if errMsg != "" {
+
+	delay := reconnectDelay(failures)
+
+	// Hosts that sleep an idle instance drop every client on a routine cycle,
+	// so the first few drops are expected and reconnect handles them silently.
+	// Escalate only once the relay has actually stayed away.
+	switch {
+	case errMsg != "" && (strings.Contains(errMsg, "x509") || strings.Contains(errMsg, "certificate")):
 		// x509 failures against a healthy relay are almost always transient
 		// (free-tier relay waking up serving a stale cert) or a wrong local
 		// clock — say so instead of leaving a scary bare TLS error.
-		if strings.Contains(errMsg, "x509") || strings.Contains(errMsg, "certificate") {
-			errMsg += " — the relay may still be waking up (retrying automatically); if this persists, check this device's date & time"
+		w.engine.Log("warn", "WAN relay error: "+errMsg+
+			" — the relay may still be waking up (retrying automatically); if this persists, check this device's date & time")
+	case downFor > wanOutageReportAfter:
+		msg := fmt.Sprintf("WAN relay unreachable for %s; still retrying (every %s)",
+			downFor.Round(time.Second), delay.Round(time.Second))
+		if errMsg != "" {
+			msg += ": " + errMsg
 		}
-		w.engine.Log("warn", "WAN relay error: "+errMsg)
+		w.engine.Log("warn", msg)
+	default:
+		// Routine drop. Stay silent on the way down — the reconnect below
+		// logs the outcome, so a cycle costs one line instead of three.
 	}
-	w.engine.Log("info", "WAN relay connection lost; reconnecting in 5s")
 
 	select {
 	case <-ctx.Done():
 		// canceled by a newer Connect()/Disconnect(); they own the state now
-	case <-time.After(wanReconnectDelay):
+	case <-time.After(delay):
 		w.Connect()
 	}
 }
@@ -308,10 +444,21 @@ func (w *WanClient) Request(ctx context.Context, peerID, route, method string, b
 		MsgID: msgID, Route: route, Method: method, Body: rawBody,
 	})
 
+	// wanRequestTimeout is a floor, not a ceiling: a caller moving several
+	// megabytes of save data sets a deadline sized to the payload, and a flat
+	// 30s would abandon a transfer that was making perfectly good progress on
+	// a slow link.
+	timeout := wanRequestTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		if until := time.Until(deadline); until > timeout {
+			timeout = until
+		}
+	}
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-time.After(wanRequestTimeout):
+	case <-time.After(timeout):
 		return nil, fmt.Errorf("WAN request timeout on route %s", route)
 	case resp := <-respCh:
 		if resp.Status >= 200 && resp.Status < 300 {
