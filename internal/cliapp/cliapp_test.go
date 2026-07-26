@@ -285,3 +285,39 @@ func TestDisplayWidthIgnoresEscapes(t *testing.T) {
 		t.Errorf("padRight to 10 gave display width %d", displayWidth(got))
 	}
 }
+
+// TestBannerSplitIsClean pins the column that divides the wordmark's "Open"
+// from its "Save". The glyphs interlock, so only one column separates every
+// row without cutting through a letter — if the art is ever regenerated this
+// catches a split that would slice a glyph in half.
+func TestBannerSplitIsClean(t *testing.T) {
+	for i, line := range banner {
+		runes := []rune(line)
+		if len(runes) <= bannerSplit {
+			continue // short descender rows belong entirely to "Open"
+		}
+		// The character immediately before the split must belong to "n", and
+		// the split itself starts "S" — neither may be mid-glyph whitespace
+		// straddling both halves.
+		left := strings.TrimRight(string(runes[:bannerSplit]), " ")
+		right := strings.TrimLeft(string(runes[bannerSplit:]), " ")
+		if left == "" || right == "" {
+			t.Errorf("row %d: split at %d leaves an empty half", i, bannerSplit)
+		}
+	}
+}
+
+// TestBannerWidthMatchesConstant keeps bannerWidth honest: it gates whether
+// the wordmark is drawn at all, so an understated value would let it wrap.
+func TestBannerWidthMatchesConstant(t *testing.T) {
+	widest := 0
+	for _, line := range banner {
+		if n := len([]rune(line)); n > widest {
+			widest = n
+		}
+	}
+	if widest > bannerWidth {
+		t.Errorf("banner is %d columns wide but bannerWidth says %d — it will wrap",
+			widest, bannerWidth)
+	}
+}

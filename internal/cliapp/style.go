@@ -26,6 +26,9 @@ const (
 	ansiAccent = "\033[38;2;138;99;244m"
 	// Lighter accent for headings.
 	ansiAccentBright = "\033[38;2;155;122;247m"
+	// The app's --text, used for the "Open" half of the wordmark so it matches
+	// the logo rather than being a harsher pure white.
+	ansiWhite        = "\033[38;2;232;232;234m"
 	ansiSuccess      = "\033[38;2;74;222;128m"  // #4ade80
 	ansiWarn         = "\033[38;2;251;191;36m"  // #fbbf24
 	ansiDanger       = "\033[38;2;217;87;87m"   // #d95757
@@ -66,6 +69,7 @@ func bold(s string) string    { return paint(ansiBold, s) }
 func dim(s string) string     { return paint(ansiDim, s) }
 func faint(s string) string   { return paint(ansiFaint, s) }
 func okText(s string) string  { return paint(ansiSuccess, s) }
+func white(s string) string   { return paint(ansiWhite, s) }
 func warnText(s string) string { return paint(ansiWarn, s) }
 func dangerText(s string) string { return paint(ansiDanger, s) }
 
