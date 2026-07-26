@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -50,16 +51,84 @@ type Server struct {
 	rooms            map[string]map[*client]struct{}
 	totalConnections int64
 	totalMessages    int64
+	droppedMessages  int64
 	startedAt        time.Time
+
+	// totalQueued is the byte size of all outbound messages buffered across
+	// every client, so one busy room can't consume the whole instance.
+	totalQueued atomic.Int64
 
 	httpServer *http.Server
 	listener   net.Listener
 }
 
+// Queue budgets. The read limit below allows a 16 MB frame, so bounding the
+// outbound queue by message *count* bounds nothing useful: 256 slots x 16 MB
+// is gigabytes per slow client, and the relay runs on a 512 MB instance. Real
+// block batches are ~2 MB on the wire, so a few MB per client is enough to
+// keep transfers pipelined while making a stall cost megabytes, not the
+// process.
+const (
+	maxQueuedBytesPerClient = 8 << 20   // 8 MiB
+	maxQueuedBytesTotal     = 128 << 20 // 128 MiB across every room
+	sendQueueSlots          = 64
+)
+
 type client struct {
 	conn       *websocket.Conn
 	deviceName string
 	send       chan []byte
+	srv        *Server
+	// queued is the byte size of everything currently sitting in send.
+	// Senders reserve against the budget before committing to the channel,
+	// so the cap is never exceeded even under concurrent relays.
+	queued atomic.Int64
+}
+
+// enqueue hands raw to the client's writer, or reports false when doing so
+// would exceed the per-client or global byte budget. A drop is safe: the
+// sync protocol already retries a block fetch that doesn't answer, whereas
+// buffering without limit takes the whole relay down for everyone.
+func (c *client) enqueue(raw []byte) bool {
+	size := int64(len(raw))
+	if c.queued.Add(size) > maxQueuedBytesPerClient {
+		c.queued.Add(-size)
+		return false
+	}
+	if c.srv.totalQueued.Add(size) > maxQueuedBytesTotal {
+		c.srv.totalQueued.Add(-size)
+		c.queued.Add(-size)
+		return false
+	}
+	select {
+	case c.send <- raw:
+		return true
+	default:
+		c.srv.totalQueued.Add(-size)
+		c.queued.Add(-size)
+		return false
+	}
+}
+
+// release accounts for a message once the writer has taken it off the queue.
+func (c *client) release(raw []byte) {
+	size := int64(len(raw))
+	c.queued.Add(-size)
+	c.srv.totalQueued.Add(-size)
+}
+
+// drain releases every message still queued for a client that is going away.
+// Callers hold Server.mu, which is what makes this safe against a concurrent
+// enqueue.
+func (c *client) drain() {
+	for {
+		select {
+		case raw := <-c.send:
+			c.release(raw)
+		default:
+			return
+		}
+	}
 }
 
 // New creates a relay server.
@@ -129,6 +198,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"clients":          clientCount,
 		"totalConnections": s.totalConnections,
 		"totalMessages":    s.totalMessages,
+		// Queue health: a non-zero drop count means a client couldn't keep up
+		// and the sync protocol had to retry, which is the signal that the
+		// budgets below are too tight for real traffic.
+		"droppedMessages": s.droppedMessages,
+		"queuedBytes":     s.totalQueued.Load(),
 	}
 	s.mu.Unlock()
 
@@ -160,7 +234,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c := &client{conn: conn, deviceName: deviceName, send: make(chan []byte, 256)}
+	c := &client{conn: conn, deviceName: deviceName, send: make(chan []byte, sendQueueSlots), srv: s}
 
 	s.mu.Lock()
 	room, ok := s.rooms[roomCode]
@@ -185,6 +259,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				delete(s.rooms, roomCode)
 			}
 		}
+		// Give back whatever is still queued, or a churn of disconnects
+		// would slowly eat the global budget until nothing could be relayed.
+		c.drain()
 		s.mu.Unlock()
 		conn.Close(websocket.StatusNormalClosure, "")
 	}()
@@ -204,6 +281,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				writeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 				err := conn.Write(writeCtx, websocket.MessageText, raw)
 				cancel()
+				c.release(raw)
 				if err != nil {
 					return
 				}
@@ -219,22 +297,21 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
+		// Enqueue under the same lock that owns room membership: that way a
+		// client being torn down can't be handed a message after its queue
+		// has been drained, which would leak its bytes from the global budget.
+		// enqueue never blocks, so this stays a short critical section.
 		s.mu.Lock()
 		s.totalMessages++
-		peers := make([]*client, 0, len(s.rooms[roomCode]))
 		for other := range s.rooms[roomCode] {
-			if other != c {
-				peers = append(peers, other)
+			if other == c {
+				continue
+			}
+			if !other.enqueue(raw) {
+				s.droppedMessages++ // slow client: drop rather than stall the room
 			}
 		}
 		s.mu.Unlock()
-
-		for _, other := range peers {
-			select {
-			case other.send <- raw:
-			default: // slow client: drop rather than stall the room
-			}
-		}
 	}
 }
 
