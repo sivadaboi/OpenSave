@@ -64,13 +64,18 @@ type Server struct {
 
 // Queue budgets. The read limit below allows a 16 MB frame, so bounding the
 // outbound queue by message *count* bounds nothing useful: 256 slots x 16 MB
-// is gigabytes per slow client, and the relay runs on a 512 MB instance. Real
-// block batches are ~2 MB on the wire, so a few MB per client is enough to
-// keep transfers pipelined while making a stall cost megabytes, not the
-// process.
+// is gigabytes per slow client, and the relay runs on a 512 MB instance.
+//
+// The per-client figure is not arbitrary. A syncing peer has
+// ConcurrencyFor(true) block requests outstanding, each answered with a batch
+// of BatchIndices' target size, inflated by a third on the wire by base64 —
+// currently 8 x 2 MB x 4/3, about 22 MB arriving at once. Anything below that
+// sheds responses during a perfectly healthy transfer, and each shed response
+// costs the requester a full retry. Keep this comfortably above that product;
+// if the sync constants change, this has to move with them.
 const (
-	maxQueuedBytesPerClient = 8 << 20   // 8 MiB
-	maxQueuedBytesTotal     = 128 << 20 // 128 MiB across every room
+	maxQueuedBytesPerClient = 32 << 20  // 32 MiB: ~22 MiB in flight plus headroom
+	maxQueuedBytesTotal     = 256 << 20 // 256 MiB across every room
 	sendQueueSlots          = 64
 )
 

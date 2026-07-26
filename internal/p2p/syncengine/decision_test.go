@@ -186,7 +186,7 @@ func TestBatchIndices(t *testing.T) {
 		indices[i] = i
 	}
 
-	// 64KB blocks: 4MB/64KB = 64, capped at 32 LAN / 16 WAN.
+	// 64KB blocks: 2MB/64KB = 32, capped at 32 LAN / 16 WAN.
 	lan := BatchIndices(indices, 65536, false)
 	if len(lan[0]) != 32 {
 		t.Errorf("LAN batch size = %d, want 32", len(lan[0]))
@@ -196,18 +196,18 @@ func TestBatchIndices(t *testing.T) {
 		t.Errorf("WAN batch size = %d, want 16", len(wan[0]))
 	}
 
-	// Large files use 2MB blocks, which is where the old 1.5MB target hurt
-	// most: it floored the batch at a single block, so every 2MB of a big
-	// save cost its own relay round trip. Two per request halves that.
+	// A block at or above the target goes one per batch. Anything larger
+	// would exceed what the relay is willing to buffer per client for the
+	// concurrent fetches in flight; see TestRelayBudgetCoversConcurrentBlockFetches.
 	big := BatchIndices([]int{0, 1, 2}, 2*1024*1024, true)
-	if len(big) != 2 || len(big[0]) != 2 || len(big[1]) != 1 {
-		t.Errorf("2MB blocks should pack two per batch, got %v", big)
+	if len(big) != 3 || len(big[0]) != 1 {
+		t.Errorf("2MB blocks should go one per batch, got %v", big)
 	}
 
-	// A block bigger than the whole target still has to go alone.
-	huge := BatchIndices([]int{0, 1, 2}, 8*1024*1024, true)
-	if len(huge) != 3 || len(huge[0]) != 1 {
-		t.Errorf("oversized blocks should batch one at a time, got %v", huge)
+	// 512KB blocks (the 20-100MB file range) pack four to a 2MB batch.
+	mid := BatchIndices(indices, 512<<10, true)
+	if len(mid[0]) != 4 {
+		t.Errorf("512KB batch size = %d, want 4", len(mid[0]))
 	}
 
 	// Batches must stay inside the 16MB frame limit after base64 (+33%).
@@ -219,7 +219,7 @@ func TestBatchIndices(t *testing.T) {
 		}
 	}
 
-	if ConcurrencyFor(true) != 6 || ConcurrencyFor(false) != 8 {
+	if ConcurrencyFor(true) != 8 || ConcurrencyFor(false) != 8 {
 		t.Error("concurrency constants wrong")
 	}
 }

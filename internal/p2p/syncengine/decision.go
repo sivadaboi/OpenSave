@@ -183,20 +183,26 @@ func DifferentBlockIndices(localFile *delta.FileEntry, remoteFile delta.FileEntr
 	return indices
 }
 
-// BatchIndices splits block indices into fetch batches sized so one JSON
-// response stays comfortably inside the 16 MB frame limit both the relay and
-// the client allow, even after base64 inflates the payload by a third.
+// BatchIndices splits block indices into fetch batches.
 //
-// The old 1.5 MB target came from the JS daemon and was the binding
-// constraint on large files: those use 2 MB blocks, so the arithmetic landed
-// on a single block per request and every one of them cost a full relay round
-// trip. Targeting 4 MB fits two, halving the round trips, and gives
-// small-block files much longer batches.
+// Two constraints set the size. A batch becomes one WebSocket message, so it
+// must fit the 16 MB frame limit after base64 inflates it by a third. More
+// tightly, `concurrency` of these can be in flight to a single client at once,
+// and the relay bounds what it will buffer per client — see
+// maxQueuedBytesPerClient in relay/server.go, which has to stay above
+// ConcurrencyFor(true) x this x 4/3, or the relay sheds a response and the
+// requester pays a full retry for it.
+//
+// 2 MB is the balance: large enough that a 2 MB-block file doesn't spend a
+// round trip per block the way the old 1.5 MB target did, small enough that
+// eight can be outstanding without the relay having to hold 40 MB for one
+// peer. Throughput comes from the number in flight, not from any one being
+// huge, and smaller messages also mean a retry re-sends less.
 func BatchIndices(indices []int, blockSize int, isWan bool) [][]int {
 	if blockSize <= 0 {
 		blockSize = 64 * 1024
 	}
-	const targetBatchBytes = 4 << 20 // ~5.3 MB once base64-encoded
+	const targetBatchBytes = 2 << 20 // ~2.7 MB once base64-encoded
 	calculated := targetBatchBytes / blockSize
 	if calculated < 1 {
 		calculated = 1
@@ -231,7 +237,7 @@ func BatchIndices(indices []int, blockSize int, isWan bool) [][]int {
 // overlap the next one.
 func ConcurrencyFor(isWan bool) int {
 	if isWan {
-		return 6
+		return 8
 	}
 	return 8
 }

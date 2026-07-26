@@ -43,10 +43,15 @@ func (t *wanTransport) FetchManifest(ctx context.Context, peer syncengine.Peer, 
 }
 
 // slowLinkBytesPerSec is the worst throughput a block fetch is given before
-// it's declared dead. Deliberately pessimistic: abandoning a transfer that is
-// merely slow costs a full retry of the same bytes, which is worse than
-// waiting. Used only to size the deadline, never to throttle.
-const slowLinkBytesPerSec = 48 << 10
+// it's declared dead, used only to size the deadline and never to throttle.
+//
+// Pessimism has a cost on the other side: this deadline is also how long a
+// request waits when the answer is never coming at all (a relay that shed the
+// response, a peer that died mid-reply). Too generous and a lost message
+// becomes a two-minute stall instead of a quick retry. 128 KB/s is roughly a
+// 1 Mbps link — slow enough to cover a genuinely bad connection, fast enough
+// that a dropped response is noticed in tens of seconds.
+const slowLinkBytesPerSec = 128 << 10
 
 func (t *wanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, gameID, relPath string, blockIndices []int, blockSize int) ([]syncengine.BlockData, error) {
 	// Give the request a deadline proportional to what it's actually moving,
