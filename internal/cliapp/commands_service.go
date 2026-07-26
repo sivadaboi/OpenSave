@@ -253,7 +253,7 @@ func userUnitDir() (string, error) {
 func renderUnit(exePath string) string {
 	return `[Unit]
 Description=OpenSave save-sync daemon
-Documentation=https://github.com/sivadaboi/OpenSave
+Documentation=https://github.com/Liquid-co/OpenSave
 After=network-online.target
 Wants=network-online.target
 

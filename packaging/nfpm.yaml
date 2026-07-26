@@ -23,7 +23,7 @@ description: |
   are on different networks. Includes a headless daemon and CLI for servers
   and Steam Decks.
 vendor: OpenSave
-homepage: https://github.com/sivadaboi/OpenSave
+homepage: https://github.com/Liquid-co/OpenSave
 license: MIT
 
 contents:

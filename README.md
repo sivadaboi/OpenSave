@@ -160,7 +160,7 @@ No account, no token, no server to sign up to.
 ### Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sivadaboi/OpenSave/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh | sh
 ```
 
 Installs to `~/.local/bin` (no root). The download is verified against the

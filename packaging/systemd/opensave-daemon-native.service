@@ -12,7 +12,7 @@
 # Game Mode / Desktop Mode switches.
 Description=OpenSave save-sync daemon
 Documentation=man:opensave(1)
-Documentation=https://github.com/sivadaboi/OpenSave
+Documentation=https://github.com/Liquid-co/OpenSave
 After=network-online.target
 Wants=network-online.target
 

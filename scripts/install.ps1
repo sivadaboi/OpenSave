@@ -1,6 +1,6 @@
 # OpenSave installer for Windows.
 #
-#   irm https://raw.githubusercontent.com/sivadaboi/OpenSave/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.ps1 | iex
 #
 # Installs the CLI to %LOCALAPPDATA%\OpenSave\bin and puts it on your PATH, so
 # `opensave` works from any terminal. Installs as `opensave.exe` — the name the
@@ -15,7 +15,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-$Repo      = 'sivadaboi/OpenSave'
+$Repo      = 'Liquid-co/OpenSave'
 $InstallDir = if ($env:OPENSAVE_INSTALL_DIR) { $env:OPENSAVE_INSTALL_DIR }
               else { Join-Path $env:LOCALAPPDATA 'OpenSave\bin' }
 $Version   = if ($env:OPENSAVE_VERSION) { $env:OPENSAVE_VERSION } else { 'latest' }

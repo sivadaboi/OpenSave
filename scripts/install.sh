@@ -1,7 +1,7 @@
 #!/bin/sh
 # OpenSave installer — headless CLI + daemon for Linux.
 #
-#   curl -fsSL https://raw.githubusercontent.com/sivadaboi/OpenSave/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh | sh
 #
 # Installs to ~/.local/bin by default, so no root is needed. Override with:
 #   OPENSAVE_INSTALL_DIR=/usr/local/bin   where to put the binaries
@@ -14,7 +14,7 @@
 
 set -eu
 
-REPO="sivadaboi/OpenSave"
+REPO="Liquid-co/OpenSave"
 INSTALL_DIR="${OPENSAVE_INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${OPENSAVE_VERSION:-latest}"
 

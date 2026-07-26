@@ -57,7 +57,7 @@
 
   // ---- Point download buttons at the exact latest release assets ----
   // Best-effort; falls back to the releases page (already the href) on failure.
-  var API = 'https://api.github.com/repos/sivadaboi/OpenSave/releases/latest';
+  var API = 'https://api.github.com/repos/Liquid-co/OpenSave/releases/latest';
   fetch(API)
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (rel) {
