@@ -47,6 +47,8 @@ History:
   opensave branch <gameId> <name>        Create a branch
   opensave checkout <gameId> <name>      Switch branch
   opensave export <gameId> <dir>         Copy the current save out to a folder
+  opensave backup export <file.sscb>     Write a portable backup archive
+  opensave backup import <file.sscb>     Read one back
 
 Configuration:
   opensave config [set <key> <value>]    Read or change settings
@@ -98,6 +100,8 @@ func Run(args []string) int {
 		return cmdConflicts(rest)
 	case "resolve":
 		return cmdResolve(rest)
+	case "backup":
+		return cmdBackup(rest)
 	case "service":
 		return cmdService(rest)
 	case "completion":

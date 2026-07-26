@@ -71,13 +71,18 @@ func cmdDaemonStatus(args []string) int {
 	if json.Unmarshal(raw, &st) != nil {
 		return emitRawJSON(raw)
 	}
-	fmt.Printf("Running at %s\n", base)
-	fmt.Printf("  device:    %s\n", st.Settings.DeviceName)
-	fmt.Printf("  games:     %d\n", st.GameCount)
-	fmt.Printf("  peers:     %d\n", st.PeerCount)
+
+	section("OpenSave " + symDot() + " daemon")
+	field("status", okText(sym("● running", "running")))
+	field("address", base)
+	field("device", st.Settings.DeviceName)
+	field("games", fmt.Sprintf("%d", st.GameCount))
+	field("peers", fmt.Sprintf("%d", st.PeerCount))
 	if st.ConflictCount > 0 {
-		fmt.Printf("  conflicts: %d — resolve them in the app or on another device\n", st.ConflictCount)
+		field("conflicts", warnText(fmt.Sprintf("%d waiting on a decision", st.ConflictCount)))
+		hint("opensave conflicts")
 	}
+	fmt.Println()
 	return 0
 }
 

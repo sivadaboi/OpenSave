@@ -13,7 +13,7 @@ import (
 var topLevelCommands = []string{
 	"scan", "add", "remove", "status",
 	"sync", "peers", "pair", "unpair", "relay", "conflicts", "resolve",
-	"snapshot", "snapshots", "rollback", "branch", "checkout", "export",
+	"snapshot", "snapshots", "rollback", "branch", "checkout", "export", "backup",
 	"exclude", "link", "unlink", "links", "config",
 	"daemon", "service", "upnp", "version", "help",
 }
@@ -25,6 +25,7 @@ var subCommands = map[string][]string{
 	"daemon":  {"start", "status", "stop"},
 	"service": {"install", "uninstall", "status"},
 	"exclude": {"list", "add", "remove"},
+	"backup":  {"export", "import"},
 	"config":  {"list", "set"},
 }
 
@@ -115,6 +116,7 @@ func fishCompletion() string {
 		"snapshot": "Create a snapshot", "snapshots": "List snapshots",
 		"rollback": "Restore a snapshot", "branch": "Create a branch",
 		"checkout": "Switch branch", "export": "Copy a save out",
+		"backup": "Portable backup archive",
 		"exclude": "Folders to skip when scanning", "link": "Treat two games as one",
 		"unlink": "Undo a link", "links": "Show linked ids", "config": "Read/write settings",
 		"daemon": "Run or control the daemon", "service": "Install as a service",

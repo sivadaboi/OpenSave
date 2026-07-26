@@ -23,7 +23,7 @@ func cmdSync(args []string) int {
 		if asJSON {
 			return emitRawJSON(raw)
 		}
-		fmt.Println("Sync triggered for all tracked games.")
+		success("Sync started for all tracked games.")
 		return 0
 	}
 
@@ -40,10 +40,10 @@ func cmdSync(args []string) int {
 		Queued bool `json:"queued"`
 	}
 	if json.Unmarshal(raw, &res) == nil && res.Queued {
-		fmt.Printf("Sync for %q queued behind the one already running.\n", gameID)
+		success("Queued %s behind the sync already running.", bold(gameID))
 		return 0
 	}
-	fmt.Printf("Sync triggered for %q.\n", gameID)
+	success("Sync started for %s.", bold(gameID))
 	return 0
 }
 
@@ -61,30 +61,37 @@ func cmdConflicts(args []string) int {
 		return emitJSON(conflicts)
 	}
 	if len(conflicts) == 0 {
-		fmt.Println("No conflicts. Everything is in sync.")
+		section("Conflicts")
+		fmt.Printf("  %s Everything is in sync.\n", symOK())
+		fmt.Println()
 		return 0
 	}
-	fmt.Printf("%d save(s) need a decision:\n\n", len(conflicts))
+
+	section(fmt.Sprintf("Conflicts %s %d waiting on a decision", symDot(), len(conflicts)))
+	t := newTable("game", "diverged from", "newer side", "files")
 	for gameID, c := range conflicts {
-		fmt.Printf("  %s\n", gameID)
-		fmt.Printf("    diverged from: %s\n", c.Peer.Name)
-		if c.DiffTotal > 0 {
-			fmt.Printf("    files differing: %d\n", c.DiffTotal)
-		}
+		var newer string
 		switch {
 		case c.LocalStats.LatestMtimeMs > c.RemoteStats.LatestMtimeMs:
-			fmt.Printf("    newer side: this device\n")
+			newer = accent("this device")
 		case c.RemoteStats.LatestMtimeMs > c.LocalStats.LatestMtimeMs:
-			fmt.Printf("    newer side: %s\n", c.Peer.Name)
+			newer = accent(c.Peer.Name)
 		default:
-			fmt.Printf("    newer side: same age\n")
+			newer = faint("same age")
 		}
-		fmt.Println()
+		files := faint("—")
+		if c.DiffTotal > 0 {
+			files = fmt.Sprintf("%d", c.DiffTotal)
+		}
+		t.add(bold(gameID), c.Peer.Name, newer, files)
 	}
-	fmt.Println("Settle one with:")
-	fmt.Println("  opensave resolve <gameId> keep-both     # safest: keeps both, theirs on a branch")
-	fmt.Println("  opensave resolve <gameId> keep-local    # this device's save wins")
-	fmt.Println("  opensave resolve <gameId> keep-remote   # the other device's save wins")
+	t.render()
+	hint(
+		"opensave resolve <game> keep-both      keeps both, theirs on a branch (safest)",
+		"opensave resolve <game> keep-local     this device's save wins",
+		"opensave resolve <game> keep-remote    the other device's save wins",
+	)
+	fmt.Println()
 	return 0
 }
 
@@ -130,8 +137,9 @@ func cmdResolve(args []string) int {
 	}
 	// Applying can pull the peer's whole save, so the daemon does it in the
 	// background; the request only confirms it was accepted.
-	fmt.Printf("Resolving %q (%s). This runs in the background — watch `opensave conflicts`.\n",
-		gameID, choice)
+	success("Resolving %s (%s).", bold(gameID), accent(choice))
+	note("This runs in the background — a large save can take a while.")
+	hint("opensave conflicts")
 	return 0
 }
 
@@ -190,46 +198,61 @@ func cmdPeers(args []string) int {
 		return emitRawJSON(raw) // shape changed; show what we got
 	}
 
-	if len(payload.Peers) == 0 {
-		fmt.Println("No paired devices.")
-	} else {
-		fmt.Printf("Paired (%d):\n", len(payload.Peers))
+	if len(payload.Peers) > 0 {
+		section("Paired devices")
+		t := newTable("device", "status", "address", "id")
 		for id, p := range payload.Peers {
-			status := p.Status
-			if status == "" {
-				status = "unknown"
+			var status string
+			switch p.Status {
+			case "online":
+				status = okText(sym("● online", "online"))
+			case "offline", "":
+				status = faint(sym("● offline", "offline"))
+			default:
+				status = warnText(p.Status)
 			}
 			addr := p.Address
 			if addr != "" && p.Port != 0 {
 				addr = fmt.Sprintf("%s:%d", p.Address, p.Port)
 			}
-			fmt.Printf("  %-24s %-9s %s\n", p.Name, status, addr)
-			fmt.Printf("  %-24s %s\n", "", id)
+			t.add(bold(p.Name), status, faint(addr), faint(id))
 		}
+		t.render()
 	}
 
 	if len(payload.PairingRequests) > 0 {
-		fmt.Printf("\nIncoming pairing requests (%d) — approve with `opensave pair approve <id>`:\n",
-			len(payload.PairingRequests))
+		section("Waiting for your approval")
+		t := newTable("device", "id")
 		for _, r := range payload.PairingRequests {
-			fmt.Printf("  %-24s %s\n", r.Name, r.PeerID)
+			t.add(bold(r.Name), faint(r.PeerID))
 		}
+		t.render()
+		hint("opensave pair approve <id>")
 	}
+
 	if len(payload.DiscoveredPeers) > 0 {
-		fmt.Printf("\nDiscovered on this network (%d) — pair with `opensave pair <address>`:\n",
-			len(payload.DiscoveredPeers))
+		section("Found on this network")
+		t := newTable("device", "address")
 		for _, d := range payload.DiscoveredPeers {
 			addr := d.Address
 			if addr != "" && d.Port != 0 {
 				addr = fmt.Sprintf("%s:%d", d.Address, d.Port)
 			}
-			fmt.Printf("  %-24s %s\n", d.Name, addr)
+			t.add(bold(d.Name), faint(addr))
 		}
+		t.render()
+		hint("opensave pair <address>")
 	}
-	if len(payload.Peers) == 0 && len(payload.DiscoveredPeers) == 0 {
-		fmt.Println("\nNothing discovered yet. On the same network, devices find each other")
-		fmt.Println("automatically; across the internet use `opensave relay join <code>`.")
+
+	if len(payload.Peers) == 0 && len(payload.DiscoveredPeers) == 0 && len(payload.PairingRequests) == 0 {
+		section("Devices")
+		note("Nothing paired or discovered yet.")
+		hint(
+			"opensave pair <address>        same network",
+			"opensave relay join <code>     different networks",
+		)
 	}
+	fmt.Println()
 	return 0
 }
 
@@ -305,7 +328,7 @@ func cmdPair(args []string) int {
 		if asJSON {
 			return emitRawJSON(raw)
 		}
-		fmt.Printf("Approved pairing with %s.\n", args[1])
+		success("Paired with %s.", bold(args[1]))
 		return 0
 
 	case "reject":
@@ -320,7 +343,7 @@ func cmdPair(args []string) int {
 		if asJSON {
 			return emitRawJSON(raw)
 		}
-		fmt.Printf("Rejected pairing with %s.\n", args[1])
+		success("Rejected %s.", bold(args[1]))
 		return 0
 
 	default:
@@ -341,8 +364,9 @@ func cmdPair(args []string) int {
 		if asJSON {
 			return emitRawJSON(raw)
 		}
-		fmt.Printf("Pairing request sent to %s:%d.\n", host, port)
-		fmt.Println("Approve it on that device (or run `opensave pair approve <peerId>` there).")
+		success("Pairing request sent to %s.", bold(fmt.Sprintf("%s:%d", host, port)))
+		note("Pairing is mutual — approve it on that device to finish.")
+		hint("opensave pair requests     (on the other device)")
 		return 0
 	}
 }
@@ -367,7 +391,7 @@ func cmdUnpair(args []string) int {
 	if asJSON {
 		return emitRawJSON(raw)
 	}
-	fmt.Printf("Unpaired %s.\n", args[0])
+	success("Unpaired %s.", bold(args[0]))
 	return 0
 }
 
@@ -396,12 +420,17 @@ func cmdRelay(args []string) int {
 		if json.Unmarshal(raw, &s) != nil {
 			return emitRawJSON(raw)
 		}
+		section("Internet sync")
 		if s.SyncCode == "" {
-			fmt.Println("Not in a relay room. Join one with `opensave relay join <code>`.")
+			field("room", faint("not joined"))
+			field("relay", faint(s.RelayURL))
+			hint("opensave relay join <code>     same code on every device")
+			fmt.Println()
 			return 0
 		}
-		fmt.Printf("Relay room: %s\n", s.SyncCode)
-		fmt.Printf("Relay server: %s\n", s.RelayURL)
+		field("room", accent(s.SyncCode))
+		field("relay", faint(s.RelayURL))
+		fmt.Println()
 		return 0
 
 	case "join":
@@ -416,7 +445,8 @@ func cmdRelay(args []string) int {
 		if asJSON {
 			return emitRawJSON(raw)
 		}
-		fmt.Printf("Joined relay room %q. Devices in the same room can now find each other.\n", args[1])
+		success("Joined relay room %s.", accent(args[1]))
+		note("Use the same code on your other devices so they find each other.")
 		return 0
 
 	case "leave":
@@ -427,7 +457,7 @@ func cmdRelay(args []string) int {
 		if asJSON {
 			return emitRawJSON(raw)
 		}
-		fmt.Println("Left the relay room.")
+		success("Left the relay room.")
 		return 0
 
 	default:

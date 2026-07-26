@@ -229,3 +229,59 @@ func TestSubCommandsAreKnownCommands(t *testing.T) {
 		}
 	}
 }
+
+// TestStylingNeverLeaksIntoPipes is the rule that matters most for a
+// scriptable CLI: escape sequences must never reach a pipe, a file or --json
+// output. The test suite is not a TTY, so colour must already be off here.
+func TestStylingNeverLeaksIntoPipes(t *testing.T) {
+	if colorEnabled {
+		t.Fatal("colour is enabled while not attached to a terminal")
+	}
+	for name, got := range map[string]string{
+		"accent":  accent("x"),
+		"bold":    bold("x"),
+		"dim":     dim("x"),
+		"faint":   faint("x"),
+		"ok":      okText("x"),
+		"warn":    warnText("x"),
+		"danger":  dangerText("x"),
+		"heading": heading("x"),
+	} {
+		if got != "x" {
+			t.Errorf("%s(%q) = %q — escape codes leaked into non-TTY output", name, "x", got)
+		}
+	}
+	if strings.Contains(symOK()+symFail()+symBullet(), "\033") {
+		t.Error("symbols leaked escape codes into non-TTY output")
+	}
+}
+
+// TestPaintRespectsColorToggle covers the other direction: when colour IS on,
+// the helpers actually emit and terminate escape sequences.
+func TestPaintRespectsColorToggle(t *testing.T) {
+	original := colorEnabled
+	colorEnabled = true
+	defer func() { colorEnabled = original }()
+
+	got := accent("hello")
+	if !strings.HasPrefix(got, "\033[") {
+		t.Errorf("accent() = %q, want a leading escape sequence", got)
+	}
+	if !strings.HasSuffix(got, ansiReset) {
+		t.Errorf("accent() = %q, want a trailing reset", got)
+	}
+}
+
+// TestDisplayWidthIgnoresEscapes pins the table alignment fix: padding has to
+// count visible characters, or coloured cells push every later column out.
+func TestDisplayWidthIgnoresEscapes(t *testing.T) {
+	plain := "online"
+	colored := "\033[38;2;74;222;128monline\033[0m"
+	if displayWidth(plain) != displayWidth(colored) {
+		t.Errorf("displayWidth(%q)=%d but displayWidth(coloured)=%d",
+			plain, displayWidth(plain), displayWidth(colored))
+	}
+	if got := padRight(colored, 10); displayWidth(got) != 10 {
+		t.Errorf("padRight to 10 gave display width %d", displayWidth(got))
+	}
+}

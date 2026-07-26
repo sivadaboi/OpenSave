@@ -165,10 +165,24 @@ jobs:
           ./dist/opensave-cli completion zsh  > opensave-linux/completions/_opensave
           ./dist/opensave-cli completion fish > opensave-linux/completions/opensave.fish
           tar -czf opensave-linux-amd64.tar.gz opensave-linux
+
+          # arm64 CLI + relay, for a Raspberry Pi or ARM NAS acting as an
+          # always-on peer. No desktop app: the Wails build needs native
+          # WebKit, so this is the headless pair only (pure Go, cross-compiles
+          # cleanly with CGO off).
+          mkdir -p opensave-linux-arm64
+          CGO_ENABLED=0 GOARCH=arm64 go build -ldflags="-s -w" \
+            -o opensave-linux-arm64/opensave-cli ./cmd/opensave-cli
+          CGO_ENABLED=0 GOARCH=arm64 go build -ldflags="-s -w" \
+            -o opensave-linux-arm64/opensave-relay ./cmd/opensave-relay
+          cp packaging/man/opensave.1 opensave-linux-arm64/ 2>/dev/null || true
+          tar -czf opensave-linux-arm64.tar.gz opensave-linux-arm64
       - uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: opensave-linux-amd64.tar.gz
+          path: |
+            opensave-linux-amd64.tar.gz
+            opensave-linux-arm64.tar.gz
 
   # Flatpak bundle: the only install that works on a stock Steam Deck.
   # SteamOS ships no WebKitGTK and wipes pacman installs on OS updates; the

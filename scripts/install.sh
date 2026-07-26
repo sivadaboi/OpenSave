@@ -53,14 +53,17 @@ esac
 
 case "$arch" in
     x86_64|amd64) arch="amd64" ;;
-    aarch64|arm64)
-        die "arm64 Linux builds aren't published yet. Build from source:
-  git clone https://github.com/$REPO && cd OpenSave
-  go build -o opensave-cli ./cmd/opensave-cli" ;;
+    aarch64|arm64) arch="arm64" ;;
     *) die "unsupported architecture: $arch" ;;
 esac
 
 ASSET="opensave-linux-${arch}.tar.gz"
+
+# The arm64 build is the headless pair only — the desktop app needs native
+# WebKit, which doesn't cross-compile.
+if [ "$arch" = "arm64" ]; then
+    say "Note: arm64 ships the CLI and relay only (no desktop app)."
+fi
 
 if [ "$VERSION" = "latest" ]; then
     BASE="https://github.com/$REPO/releases/latest/download"
@@ -103,9 +106,16 @@ fi
 
 tar -xzf "$tmp/$ASSET" -C "$tmp" || die "could not extract $ASSET"
 
-src="$tmp/opensave-linux"
-[ -d "$src" ] || die "unexpected archive layout: $src missing"
-[ -f "$src/opensave-cli" ] || die "opensave-cli missing from the archive"
+# The archive's top-level directory differs by architecture
+# (opensave-linux, opensave-linux-arm64), so find it rather than assume.
+src=""
+for candidate in "$tmp"/opensave-linux*; do
+    if [ -d "$candidate" ] && [ -f "$candidate/opensave-cli" ]; then
+        src="$candidate"
+        break
+    fi
+done
+[ -n "$src" ] || die "opensave-cli not found in $ASSET — unexpected archive layout"
 
 mkdir -p "$INSTALL_DIR" || die "could not create $INSTALL_DIR"
 
