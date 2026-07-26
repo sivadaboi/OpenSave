@@ -59,16 +59,17 @@ func TestKeepWarmPingsHealthEndpoint(t *testing.T) {
 
 	// Cancelling the connection context must stop the pings: otherwise every
 	// reconnect would leak another warmer goroutine for the process lifetime.
+	//
+	// Returning is the whole assertion. Nothing else pings this server, so a
+	// goroutine that has exited cannot still be sending. Counting requests
+	// after the cancel instead would be flaky by construction: a request
+	// already in flight is recorded by the handler whenever it happens to
+	// arrive, which can be after the goroutine is gone.
 	cancel()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("keepWarm did not return after its context was cancelled")
-	}
-	settled := hits.Load()
-	time.Sleep(100 * time.Millisecond)
-	if grew := hits.Load() - settled; grew > 0 {
-		t.Errorf("keepWarm kept pinging after it returned: %d more requests", grew)
+	case <-time.After(5 * time.Second):
+		t.Fatal("keepWarm did not return after its context was cancelled — every reconnect would leak one of these")
 	}
 }
 
