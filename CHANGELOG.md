@@ -5,31 +5,46 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ## [2.2.0] — 2026-07-26
 
-### Fixed
+### Added
 
-- **Games matched across devices could agree what to sync, then fail to
-  sync it.** App-ID matching and manual game links were applied when a peer
-  asked for a manifest and nowhere else, so the follow-up block transfer
-  came back "Game not found" and no save data ever moved. Every peer route
-  now resolves the same way. An App-ID match is also remembered, so a push
-  reaches the other device immediately instead of waiting for the next
-  periodic reconcile.
-- **The internet relay dropped every device every 15-30 minutes.** The host
-  sleeps an idle instance, and WebSocket traffic doesn't count as activity,
-  so the relay went to sleep underneath live connections. Connected devices
-  now keep it awake, reconnect with backoff and jitter instead of retrying
-  in lockstep, and a routine reconnect no longer fills the activity log with
-  warnings.
-- **The relay could be taken down by one stalled device.** Its outbound
-  queue was bounded by message count while a message can be 16 MB, so a peer
-  that stopped reading could make the relay buffer gigabytes on a 512 MB
-  instance. Now bounded by bytes.
-- **`opensave daemon start --port N` broke pairing.** The chosen port was
-  never recorded, so the other device was told to call back on a port
-  nothing was listening on and pairing silently completed on one side only.
-- **`opensave pair requests` never showed which device was asking** — the
-  name was read from the wrong field, leaving only a bare node id to approve.
-  The device name and its address are both shown now.
+- **Open a game's save folder from the app.** Every tracked game has a
+  button that reveals its save location in Explorer, Finder or your Linux
+  file manager — for checking what the scanner actually picked, or getting
+  at a file by hand.
+- **Match the same game across devices, even under different names.** A
+  title tracked as "The First Berserker: Khazan" on one machine and a
+  repack's folder name on another can now be linked, either automatically by
+  Steam App ID or by linking the two entries yourself. App-ID matching is
+  off by default, so a cracked and a legitimate copy of the same game are
+  never merged without you asking.
+- **A completely rebuilt command line.** `opensave` is now a full headless
+  client rather than a helper: auto-scan, tracking, pairing and approval,
+  sync, conflict resolution, snapshots and branches, cloud backup, snapshot
+  browsing and single-file restore, per-game settings, game linking, and
+  running as a background service. It has styled output, a status panel on
+  the bare command, shell completions for bash/zsh/fish, a man page, an
+  installer on Windows and Linux, `--json` on every command for scripting,
+  and `opensave update` to update itself. A Steam Deck in Game Mode or a
+  headless server never needs the desktop app.
+- **Select several games at once.** Multi-select in the library for batch
+  untracking, plus a "reset tracking" option that clears the library without
+  touching your saves or snapshots.
+- **Exclude folders from auto-scan.** Stale or wrong save locations can be
+  dismissed permanently instead of being offered on every scan.
+- **A Changelog page, and readable release notes.** The changelog lives
+  under Settings in the sidebar, and the greeting after an update shows what
+  changed since the version you were actually on.
+- **Steam Deck: a rebuilt Decky plugin.** Sync, snapshot and resolve
+  conflicts from Game Mode, with live sync progress and cover art in the
+  panel, a daemon that starts itself, and a systemd service so syncing
+  continues without opening anything.
+- **Wider save detection.** Nine more emulators (PS1, PS4, Vita, Xbox,
+  Dreamcast, 3DS and Switch forks), saves inside non-Steam Wine prefixes
+  from Heroic, Bottles and Lutris, and save folders found by name inside a
+  game's install directory.
+- **Native Linux packages.** `.deb` and `.rpm` alongside the tarball and
+  Flatpak.
+- **A Support tab**, if you want to help fund the relay and the project.
 
 ### Changed
 
@@ -38,10 +53,56 @@ All notable changes to OpenSave are documented here. This project adheres to
   full, so a 1 GB save no longer needs 1 GB of RAM before anything is
   written. Requests are pipelined rather than processed in fixed groups, and
   block data is compressed over the internet relay. A 40 MB save transfers
-  in about a second on a LAN; the internal end-to-end suite got roughly
-  twice as fast as a side effect.
+  in about a second on a LAN.
+- **Auto-scan is quicker and quieter.** Cover-art fetches no longer hold up
+  a scan, an unreachable Steam API costs one timeout instead of one per
+  game, already-tracked saves are shown grouped below a divider rather than
+  hidden, and shader caches are no longer offered as saves.
+- **Cover art works on networks that block Steam.** When Steam's CDN can't
+  be reached the app falls back to an image proxy automatically, and only
+  warns about genuine connectivity problems rather than every game without
+  published art.
 - A sync interrupted by quitting the app is now cancelled cleanly instead of
   being left writing into the save folder during shutdown.
+
+### Fixed
+
+- **Auto-scan tracked the folder around your saves rather than the saves.**
+  Steam and every Steam emulator keep the real save files in a `remote/`
+  subfolder, with sync bookkeeping, achievements and playtime counters
+  beside it; the scanner offered the parent. Those extra files change on
+  every session independently on each device, so two machines diverged after
+  every play with no save having changed — reported as both "it didn't find
+  the exact save location" and "it's a bit glitchy". Containers wrapping a
+  game's own save tree are unwrapped too.
+- **Games matched across devices could agree what to sync, then fail to sync
+  it.** App-ID matching and manual links were applied when a peer asked for a
+  manifest and nowhere else, so the actual file transfer came back "Game not
+  found" and no save data moved.
+- **Pairing could complete on only one device.** The device starting the
+  pairing tells the other which port to call back on, and a daemon that had
+  fallen back to a different port advertised one nothing was listening on —
+  so the approval succeeded on one machine and the other showed no paired
+  devices at all. Internet sync kept working in that state, which made it
+  look like a LAN-only fault. A callback that can't get through is now
+  reported instead of passing silently.
+- **The internet relay dropped every device every 15-30 minutes.** The host
+  sleeps an idle instance and WebSocket traffic doesn't count as activity, so
+  the relay went to sleep underneath live connections. Connected devices keep
+  it awake now, reconnect with backoff instead of retrying in lockstep, and a
+  routine reconnect no longer fills the activity log with warnings.
+- **The relay could be taken down by a single stalled device.** Its outbound
+  queue was bounded by message count while a message can be 16 MB, so one
+  peer that stopped reading could make it buffer gigabytes.
+- **A newer database no longer stops an older build from starting.**
+- **Sync no longer guesses when two tracked games share an App ID.** Picking
+  one could drop a peer's saves into the wrong folder, so it says so and lets
+  you link the right pair yourself.
+- Several save locations for the same game can be tracked separately.
+- The auto-scan window no longer closes when you click into its search box —
+  and the same fix applies to every other dialog.
+- `opensave pair requests` shows which device is asking, instead of a bare
+  id you had to approve blind.
 
 ## [2.1.1] — 2026-07-20
 
