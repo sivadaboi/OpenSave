@@ -114,10 +114,13 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 						name = fmt.Sprintf("%s (%s)", p.Name, sub)
 					}
 					d := DiscoveredSave{
-						ID:       p.ID + "-" + sub,
-						Name:     name,
-						Type:     p.Type,
-						SavePath: filepath.Join(resolved, sub),
+						ID:   p.ID + "-" + sub,
+						Name: name,
+						Type: p.Type,
+						// Steam emulators copy Steam's own layout, so the
+						// saves are under remote/ when that exists — not
+						// alongside the achievement and playtime files.
+						SavePath: resolveSteamCloudDir(filepath.Join(resolved, sub)),
 					}
 					if isAppID(sub) {
 						d.AppID = sub
@@ -351,7 +354,11 @@ func (sc *Scanner) scanSteamUserdata(seen map[string]bool, appNames map[string]s
 				if !isAppID(game) || steamUserdataSystemIDs[game] {
 					continue
 				}
-				gamePath := filepath.Join(userPath, game)
+				// The saves are in remote/; remotecache.vdf sitting beside it
+				// is Steam's own sync index, differs on every machine, and
+				// changes whenever Steam syncs — tracking the parent turns
+				// that into a permanent source of conflicts.
+				gamePath := resolveSteamCloudDir(filepath.Join(userPath, game))
 				normalized, err := filepath.Abs(gamePath)
 				if err != nil {
 					continue

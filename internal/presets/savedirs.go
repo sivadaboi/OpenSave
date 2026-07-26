@@ -19,6 +19,31 @@ const (
 	saveScanMaxHits = 4
 )
 
+// resolveSteamCloudDir narrows a Steam-style per-AppID folder to the "remote"
+// subfolder that actually holds the save files.
+//
+// Steam writes userdata/<user>/<appId>/remote/ for the saves and
+// remotecache.vdf beside it for its own sync bookkeeping. Every Steam emulator
+// used by repacks copies that layout, adding achievement, stats and playtime
+// files next to remote/. Offering the parent therefore tracks the saves plus a
+// pile of things that are not saves — which is what users see as "it didn't
+// find the actual save location".
+//
+// It also makes sync unreliable rather than merely untidy: remotecache.vdf and
+// playtime counters differ per machine and change on every session, so two
+// devices diverge constantly even when nobody's save moved, and each
+// divergence is a conflict.
+//
+// Falls back to the folder itself when there is no remote/ — plenty of games
+// and emulators write straight into the AppID folder.
+func resolveSteamCloudDir(appDir string) string {
+	remote := filepath.Join(appDir, "remote")
+	if dirExists(remote) {
+		return remote
+	}
+	return appDir
+}
+
 // looksLikeSaveDirName reports whether a folder name suggests save data:
 // "Saves", "savegames", "SaveData", "AutoSave", "SAVE" and friends. Matching
 // ignores case and the separators people use interchangeably.
