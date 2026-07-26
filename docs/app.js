@@ -74,12 +74,19 @@
       var linuxUrl =
         find(function (n) { return n.indexOf('linux') !== -1 && n.indexOf('.tar') !== -1; }) ||
         find(function (n) { return n.indexOf('.tar.gz') !== -1; });
+      // Steam Deck: the Flatpak, and only the Flatpak. Without this the Deck
+      // button was the one download that dropped you on the raw asset list,
+      // where "opensave-linux-amd64.tar.gz" reads like the Steam Deck build
+      // and isn't — stock SteamOS ships no WebKitGTK, so the tarball's app
+      // won't start. People picked it and reported OpenSave as broken.
+      var flatpakUrl = find(function (n) { return n.slice(-8) === '.flatpak'; });
 
       var map = {
         'windows': winInstaller || winPortable,   // generic CTAs -> installer
         'windows-installer': winInstaller,
         'windows-portable': winPortable,
-        'linux': linuxUrl
+        'linux': linuxUrl,
+        'flatpak': flatpakUrl
       };
       document.querySelectorAll('a[data-dl]').forEach(function (a) {
         var url = map[a.getAttribute('data-dl')];

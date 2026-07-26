@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenSave CLI — sync your saves from the terminal, or from Steam Deck Game Mode</title>
+  <meta name="description" content="The OpenSave command line is the whole app without the window: auto-detect saves, pair devices, sync, snapshot and resolve conflicts from a terminal. One binary, no runtime, ideal for a Steam Deck, a home server, or anything without a screen.">
+  <meta property="og:title" content="OpenSave CLI — the whole app, without the window">
+  <meta property="og:description" content="Auto-detect saves, pair devices, sync, snapshot and resolve conflicts from a terminal. One binary. Perfect for Steam Deck Game Mode and headless servers.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://open-save.vercel.app/cli.html">
+  <meta property="og:image" content="https://open-save.vercel.app/screenshots/home-library.png">
+  <meta name="theme-color" content="#0c0c0d">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="icon.png?v=2">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div class="ambient-layer" aria-hidden="true">
+    <div class="ambient-glow glow-1"></div>
+    <div class="ambient-glow glow-2"></div>
+  </div>
+
+  <!-- ===================== NAV ===================== -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a class="logo" href="index.html" aria-label="OpenSave home">
+        <img src="icon.png?v=2" alt="" class="logo-img">
+        <span class="logo-text">Open<span>Save</span></span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="index.html#showcase">Screenshots</a>
+        <a href="index.html#features">Features</a>
+        <a href="index.html#how">How it works</a>
+        <a href="cli.html" class="is-active">CLI</a>
+        <a href="index.html#faq">FAQ</a>
+        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="donate-link">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-10.2-9.6C.4 8.5 1.7 5 5.1 4.2c2-.5 4 .3 5.1 2 .9-1.7 3-2.5 5-2 3.4.8 4.7 4.3 3.3 7.2C19.5 16.4 12 21 12 21z"/></svg>
+          Donate
+        </a>
+        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener" class="github-link">
+          <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+          GitHub
+        </a>
+        <a href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener" class="nav-cta">Download</a>
+      </nav>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero cli-hero" id="top">
+    <div class="hero-container">
+      <div class="hero-eyebrow">
+        <span class="badge-dot"></span> Command line · Windows, Linux &amp; Steam Deck
+      </div>
+      <h1 class="hero-title">The whole app, <span>without the window</span>.</h1>
+      <p class="hero-subtitle">
+        <code>opensave</code> does everything the desktop app does — find your saves, pair your
+        devices, sync, snapshot, settle conflicts — from a terminal. It's the same sync engine
+        and the same data, just without a screen in the way. Which is exactly what you want on a
+        Steam Deck in Game Mode, or a machine that lives in a cupboard.
+      </p>
+      <div class="hero-ctas">
+        <a href="#install" class="btn-primary">Install it</a>
+        <a href="#five-minutes" class="btn-secondary">See it work</a>
+      </div>
+
+      <!-- Screenshot: `opensave` with no arguments — the status panel. -->
+      <figure class="hero-shot cli-shot">
+        <div class="app-window">
+          <div class="win-bar">
+            <div class="win-dots"><span></span><span></span><span></span></div>
+            <span class="win-title">opensave</span>
+          </div>
+          <img src="screenshots/cli-status.png"
+               alt="The OpenSave command line status panel: a large ASCII OpenSave wordmark in white and purple, followed by the version, whether the daemon is running, the device name, how many games are tracked, paired devices, and relay status — then suggested next commands grouped under Start here, Saves, and Add a device."
+               width="820" height="683" loading="eager">
+        </div>
+        <figcaption>Type <code>opensave</code> on its own and it tells you what's happening right now, plus what to do next.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===================== WHO IT'S FOR ===================== -->
+  <section class="section section-tinted" id="why">
+    <div class="section-container">
+      <div class="section-heading">
+        <span class="section-eyebrow">Why bother</span>
+        <h2>Three places a window gets in the way.</h2>
+        <p class="section-sub">
+          If you're happy with the desktop app, keep using it — this isn't a replacement.
+          It exists for the places a desktop app can't reach.
+        </p>
+      </div>
+
+      <div class="features-grid">
+        <article class="feature-card">
+          <div class="feature-icon">🎮</div>
+          <h3>A Steam Deck in Game Mode</h3>
+          <p>
+            Game Mode is not a desktop. Switching out to click a sync button and back again is
+            enough friction that people simply stop bothering. Install the CLI as a background
+            service once and your Deck syncs on its own — you never see it, you never think
+            about it.
+          </p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon">🖥️</div>
+          <h3>A machine with no screen</h3>
+          <p>
+            A home server, a NAS, or an old PC acting as the always-on device your laptop and
+            Deck sync through. You reach it over SSH; there's no desktop session to run a window
+            in. The CLI runs there happily as a systemd service.
+          </p>
+        </article>
+
+        <article class="feature-card">
+          <div class="feature-icon">⌨️</div>
+          <h3>You just prefer the terminal</h3>
+          <p>
+            Some people are simply faster in a shell. Every command speaks <code>--json</code>
+            too, so you can wire OpenSave into your own scripts — snapshot before a risky boss
+            fight, show sync status in a status bar, whatever you like.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== WHAT IT IS ===================== -->
+  <section class="section" id="what">
+    <div class="section-container narrow">
+      <div class="section-heading">
+        <span class="section-eyebrow">What it actually is</span>
+        <h2>Not a cut-down version.</h2>
+      </div>
+
+      <div class="cli-facts">
+        <div class="cli-fact">
+          <h4>One file, nothing to install alongside it</h4>
+          <p>
+            A single native binary, around 15&nbsp;MB. No Python, no Node, no runtime, no
+            dependencies to chase. Copy it somewhere on your PATH and it works.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>The same engine as the app</h4>
+          <p>
+            It isn't a thin wrapper that shells out to something else. The desktop app and the
+            CLI are the same sync engine compiled into two front ends — identical save
+            detection, identical block-level transfer, identical conflict rules.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>The same data, on the same machine</h4>
+          <p>
+            Both read and write <code>~/.opensave</code>. Track a game in the app and it's there
+            in the CLI a second later, and the other way round. You can use both on one machine
+            without them fighting.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>It talks to a running daemon when there is one</h4>
+          <p>
+            Commands that need live state (peers, sync progress) speak to whichever daemon is
+            already running — the app's, or one you started yourself. Commands that only touch
+            local data work whether anything is running or not.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== INSTALL ===================== -->
+  <section class="section section-tinted" id="install">
+    <div class="section-container narrow">
+      <div class="section-heading">
+        <span class="section-eyebrow">Install</span>
+        <h2>One line, and it sorts itself out.</h2>
+        <p class="section-sub">
+          The installer picks the right build for your system, puts it on your PATH, and shows
+          you the status panel when it's done. No manual steps.
+        </p>
+      </div>
+
+      <h4 class="cli-sub">Linux &amp; Steam Deck</h4>
+      <div class="oss-terminal">
+        <div class="win-bar">
+          <div class="win-dots"><span></span><span></span><span></span></div>
+          <div class="win-title">install — Linux &amp; Steam Deck</div>
+        </div>
+        <pre class="terminal-body"><span class="t-prompt">$</span> curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh | sh</pre>
+      </div>
+
+      <h4 class="cli-sub">Windows (PowerShell)</h4>
+      <div class="oss-terminal">
+        <div class="win-bar">
+          <div class="win-dots"><span></span><span></span><span></span></div>
+          <div class="win-title">install — Windows PowerShell</div>
+        </div>
+        <pre class="terminal-body"><span class="t-prompt">&gt;</span> irm https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.ps1 | iex</pre>
+      </div>
+
+      <p class="cli-note">
+        Downloads are checked against the SHA256 checksums published with each release — piping a
+        script into a shell is enough trust on its own, so the installer refuses to install bytes
+        it can't vouch for. It installs to your user folder, so it never asks for admin rights.
+      </p>
+
+      <div class="cli-callout">
+        <h4>Three names, one program</h4>
+        <p>
+          After installing you can type <code>opensave</code>, or <code>os</code> if you like
+          short things. <code>opensave-cli</code> also works — it's the name the Steam Deck
+          plugin and the Linux packages use internally. If something on your system already
+          answers to <code>os</code>, the installer notices and leaves it alone rather than
+          shadowing it.
+        </p>
+      </div>
+
+      <div class="cli-callout">
+        <h4>Keeping it current</h4>
+        <p>
+          <code>opensave update</code> replaces the binary in place from the latest release.
+          <code>opensave update --check</code> just tells you whether there's a newer one.
+          Pre-release builds are never offered automatically — you have to go and get those
+          yourself.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FIRST FIVE MINUTES ===================== -->
+  <section class="section" id="five-minutes">
+    <div class="section-container narrow">
+      <div class="section-heading">
+        <span class="section-eyebrow">Your first five minutes</span>
+        <h2>From nothing to syncing.</h2>
+        <p class="section-sub">Run these in order on the first device, then the marked ones on the second.</p>
+      </div>
+
+      <div class="cli-steps">
+        <div class="cli-step">
+          <div class="how-num">1</div>
+          <div class="cli-step-body">
+            <h4>Find your saves</h4>
+            <p>
+              Scans the places games actually keep saves: Steam, Proton prefixes, emulators,
+              Heroic and Lutris, plus a community database covering 20,000+ titles.
+            </p>
+            <div class="oss-terminal">
+              
+        <div class="win-bar">
+          <div class="win-dots"><span></span><span></span><span></span></div>
+          <div class="win-title">find your saves</div>
+        </div>
+        <pre class="terminal-body"><span class="t-prompt">$</span> opensave scan</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="cli-step">
+          <div class="how-num">2</div>
+          <div class="cli-step-body">
+            <h4>Track the ones you care about</h4>
+            <p>
+              Scanning shows you what's out there; tracking is you saying "watch this one".
+              You can also point it at a folder by hand for anything the scan missed.
+            </p>
+            <div class="oss-terminal">
+              
+        <div class="win-bar">
+          <div class="win-dots"><span></span><span></span><span></span></div>
+          <div class="win-title">track a game</div>
+        </div>
+        <pre class="terminal-body"><span class="t-prompt">$</span> opensave add "Elden Ring" ~/.local/share/EldenRing</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="cli-step">
+          <div class="how-num">3</div>
+          <div class="cli-step-body">
+            <h4>Start the sync service</h4>
+            <p>
+              This is the part that watches for changes and talks to your other devices. Run it
+              in a terminal to try it out, or install it as a service so it starts on login and
+              you never think about it again.
+            </p>
+            <div class="oss-terminal">
+              
+        <div class="win-bar">
+          <div class="win-dots"><span></span><span></span><span></span></div>
+          <div class="win-title">start the sync service</div>
+        </div>
+        <pre class="terminal-body"><span class="t-prompt">$</span> opensave daemon start
+<span class="t-dim">  # or, permanently:</span>
+<span class="t-prompt">$</span> opensave service install</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="cli-step">
+          <div class="how-num">4</div>
+          <div class="cli-step-body">
+            <h4>Pair your second device</h4>
+            <p>
+              On the same network, point one device at the other's address. Pairing is mutual —
+              the second device has to approve it, so nobody can pair with you unilaterally.
+            </p>
+            <div class="oss-terminal">
+              
+        <div class="win-bar">
+          <div class="win-dots"><span></span><span></span><span></span></div>
+          <div class="win-title">pair a second device</div>
+        </div>
+        <pre class="terminal-body"><span class="t-prompt">$</span> opensave pair 192.168.1.42
+<span class="t-dim">  # then on the other device:</span>
+<span class="t-prompt">$</span> opensave pair requests
+<span class="t-prompt">$</span> opensave pair approve node_a1b2c3…</pre>
+            </div>
+            <p class="cli-inline-note">
+              On different networks instead? Run <code>opensave relay join &lt;code&gt;</code>
+              with the same made-up code on both devices and they'll find each other through the
+              relay — no port forwarding, and the relay only passes encrypted data through, it
+              never stores your saves.
+            </p>
+          </div>
+        </div>
+
+        <div class="cli-step">
+          <div class="how-num">5</div>
+          <div class="cli-step-body">
+            <h4>That's it</h4>
+            <p>
+              From here saves sync on their own whenever they change. These are the commands
+              you'd actually use day to day.
+            </p>
+            <div class="oss-terminal">
+              
+        <div class="win-bar">
+          <div class="win-dots"><span></span><span></span><span></span></div>
+          <div class="win-title">day to day</div>
+        </div>
+        <pre class="terminal-body"><span class="t-prompt">$</span> opensave              <span class="t-dim"># what's happening right now</span>
+<span class="t-prompt">$</span> opensave status       <span class="t-dim"># what's tracked here</span>
+<span class="t-prompt">$</span> opensave sync --all   <span class="t-dim"># sync everything now</span></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== STEAM DECK ===================== -->
+  <section class="section section-tinted" id="steamdeck">
+    <div class="section-container narrow">
+      <div class="section-heading">
+        <span class="section-eyebrow">Steam Deck</span>
+        <h2>Set it up once, in Desktop Mode. Never open it again.</h2>
+        <p class="section-sub">
+          The whole point is that after this, your Deck syncs while you're in Game Mode and you
+          never have to leave a game to make it happen.
+        </p>
+      </div>
+
+      <div class="oss-terminal">
+        <div class="win-bar">
+          <div class="win-dots"><span></span><span></span><span></span></div>
+          <div class="win-title">Steam Deck — one-time setup</div>
+        </div>
+        <pre class="terminal-body"><span class="t-dim"># 1. install (Desktop Mode, Konsole)</span>
+<span class="t-prompt">$</span> curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh | sh
+
+<span class="t-dim"># 2. find your saves and start the service</span>
+<span class="t-prompt">$</span> opensave scan
+<span class="t-prompt">$</span> opensave service install
+<span class="t-prompt">$</span> systemctl --user enable --now opensave-daemon
+
+<span class="t-dim"># 3. keep it running when you're not logged in</span>
+<span class="t-prompt">$</span> sudo loginctl enable-linger $USER
+
+<span class="t-dim"># 4. pair with your PC (same network)</span>
+<span class="t-prompt">$</span> opensave pair 192.168.1.42</pre>
+      </div>
+
+      <div class="cli-facts">
+        <div class="cli-fact">
+          <h4>Why the linger step matters</h4>
+          <p>
+            Without it, SteamOS stops your background services the moment you switch to Game
+            Mode — which is precisely when you want syncing to be happening. That one command is
+            the difference between "it works" and "it works only while I'm looking at it".
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>Not just Steam games</h4>
+          <p>
+            Save detection covers Wine and Proton prefixes from Heroic, Bottles and Lutris, not
+            just Steam's own. If a game keeps its saves inside a prefix, OpenSave finds them.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>There's a Game Mode plugin as well</h4>
+          <p>
+            If you use Decky Loader, the OpenSave plugin puts sync, snapshots and conflict
+            resolution in the Game Mode quick-access panel, with live progress. It drives the
+            same daemon the CLI does — the two work together.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>Storage stays sane</h4>
+          <p>
+            Only the parts of a save that actually changed get transferred, and snapshot
+            retention limits keep history from growing without bound. Useful on a device where
+            the SSD fills up fast.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== WHAT'S IMPROVED ===================== -->
+  <section class="section" id="improved">
+    <div class="section-container narrow">
+      <div class="section-heading">
+        <span class="section-eyebrow">What changed in 2.2</span>
+        <h2>It used to be a helper. Now it's the whole thing.</h2>
+        <p class="section-sub">
+          Earlier versions could track a game and start a daemon, and that was about it. Anything
+          else meant opening the desktop app — which defeats the point on a device that doesn't
+          have one.
+        </p>
+      </div>
+
+      <div class="cli-facts">
+        <div class="cli-fact">
+          <h4>Everything the app can do</h4>
+          <p>
+            Pairing and approvals, conflict resolution, snapshots and branches, rollback, cloud
+            backup, browsing inside a snapshot and restoring a single file out of it, per-game
+            settings, linking games across devices, excluding folders from scans. The one honest
+            exception is signing into Google Drive, Dropbox or OneDrive, which needs a browser
+            for consent — WebDAV and local/NAS providers work entirely from the terminal.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>Output you can actually read</h4>
+          <p>
+            Grouped sections, aligned columns and colour used to mean something rather than to
+            decorate. It detects when output isn't a terminal and drops the styling, so piping
+            to a file or a log gives you clean text.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>It tells you what to do next</h4>
+          <p>
+            Running <code>opensave</code> with no arguments shows the current state and suggests
+            the commands that make sense from there — rather than dumping a wall of help at
+            someone who just wants to know if it's working.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>Tab completion, a man page, an installer</h4>
+          <p>
+            Completions for bash, zsh and fish, a proper <code>man opensave</code>, and installers
+            for both platforms that handle PATH for you. Completions are generated from the same
+            list that builds the help, so they can't drift apart.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>Built for scripts</h4>
+          <p>
+            <code>--json</code> works on every command, and exit codes mean what you'd expect, so
+            you can drive OpenSave from a shell script or a status bar without parsing
+            human-readable text.
+          </p>
+        </div>
+        <div class="cli-fact">
+          <h4>Updates itself</h4>
+          <p>
+            <code>opensave update</code> pulls the latest release and swaps the binary in place.
+            No package manager needed, and no reinstalling to pick up a fix.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== COMMAND REFERENCE ===================== -->
+  <section class="section section-tinted" id="commands">
+    <div class="section-container">
+      <div class="section-heading">
+        <span class="section-eyebrow">Reference</span>
+        <h2>Every command, grouped.</h2>
+        <p class="section-sub">
+          <code>opensave --help</code> prints this too, and <code>--json</code> works on all of them.
+        </p>
+      </div>
+
+      <div class="cli-ref-grid">
+        <div class="cli-ref">
+          <h4>Games</h4>
+          <dl>
+            <dt>scan</dt><dd>Auto-detect saves on this machine</dd>
+            <dt>add &lt;name&gt; &lt;path&gt;</dt><dd>Track a folder or file</dd>
+            <dt>remove &lt;game&gt;</dt><dd>Stop tracking (files are kept)</dd>
+            <dt>status</dt><dd>What's tracked, and its branches</dd>
+            <dt>game &lt;game&gt; set …</dt><dd>Per-game settings</dd>
+            <dt>launch &lt;game&gt;</dt><dd>Start the game</dd>
+          </dl>
+        </div>
+
+        <div class="cli-ref">
+          <h4>Sync &amp; devices</h4>
+          <dl>
+            <dt>sync [game|--all]</dt><dd>Sync now</dd>
+            <dt>peers</dt><dd>Paired and discovered devices</dd>
+            <dt>pair &lt;address&gt;</dt><dd>Ask a device to pair</dd>
+            <dt>pair approve|reject</dt><dd>Handle incoming requests</dd>
+            <dt>relay join &lt;code&gt;</dt><dd>Sync across networks</dd>
+            <dt>conflicts</dt><dd>Saves waiting on a decision</dd>
+            <dt>resolve &lt;game&gt; …</dt><dd>keep-both, keep-local, keep-remote</dd>
+          </dl>
+        </div>
+
+        <div class="cli-ref">
+          <h4>History</h4>
+          <dl>
+            <dt>snapshot &lt;game&gt;</dt><dd>Save a restore point</dd>
+            <dt>snapshots &lt;game&gt;</dt><dd>List them</dd>
+            <dt>rollback &lt;game&gt; &lt;id&gt;</dt><dd>Go back to one</dd>
+            <dt>branch / checkout</dt><dd>Parallel playthroughs</dd>
+            <dt>files &lt;game&gt; &lt;id&gt;</dt><dd>Look inside a snapshot</dd>
+            <dt>export &lt;game&gt; &lt;dir&gt;</dt><dd>Copy the save out as-is</dd>
+            <dt>backup export|import</dt><dd>Portable archive</dd>
+          </dl>
+        </div>
+
+        <div class="cli-ref">
+          <h4>Setup &amp; service</h4>
+          <dl>
+            <dt>daemon start|status|stop</dt><dd>The sync service</dd>
+            <dt>service install</dt><dd>Run it on login (Linux)</dd>
+            <dt>config [set …]</dt><dd>Settings</dd>
+            <dt>exclude / scanpath</dt><dd>Where to scan, and where not to</dd>
+            <dt>link / unlink</dt><dd>Treat two games as the same</dd>
+            <dt>cloud …</dt><dd>Cloud backup</dd>
+            <dt>completion bash|zsh|fish</dt><dd>Tab completion</dd>
+            <dt>update [--check]</dt><dd>Update this binary</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SCRIPTING ===================== -->
+  <section class="section" id="scripting">
+    <div class="section-container narrow">
+      <div class="section-heading">
+        <span class="section-eyebrow">Scripting</span>
+        <h2>Machine-readable, on purpose.</h2>
+        <p class="section-sub">
+          Add <code>--json</code> to anything and you get structured output instead of a pretty
+          table — no scraping, no guessing.
+        </p>
+      </div>
+
+      <div class="oss-terminal">
+        <div class="win-bar">
+          <div class="win-dots"><span></span><span></span><span></span></div>
+          <div class="win-title">scripting with --json</div>
+        </div>
+        <pre class="terminal-body"><span class="t-dim"># is the daemon up, and how many games does it know about?</span>
+<span class="t-prompt">$</span> opensave daemon status --json | jq .gameCount
+
+<span class="t-dim"># the newest snapshot id for a game</span>
+<span class="t-prompt">$</span> opensave snapshots elden-ring --json | jq -r '.[0].id'
+
+<span class="t-dim"># snapshot everything before something risky</span>
+<span class="t-prompt">$</span> opensave status --json | jq -r '.games[].id' \
+    | xargs -I{} opensave snapshot {} "before the patch"</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FAQ ===================== -->
+  <section class="section section-tinted" id="cli-faq">
+    <div class="section-container narrow">
+      <div class="section-heading">
+        <span class="section-eyebrow">Questions</span>
+        <h2>The usual ones.</h2>
+      </div>
+
+      <div class="faq-list">
+        <details class="faq-item" open>
+          <summary>Do I need the desktop app as well?</summary>
+          <p>No. The CLI is complete on its own — that's the point of it. The one thing it can't do is sign you into Google Drive, Dropbox or OneDrive, because those need a browser to grant consent. WebDAV, webhooks and local/NAS backup targets work entirely from the terminal.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Can I run both on the same machine?</summary>
+          <p>Yes. They share one database and one set of saves, so tracking a game in one shows up in the other. Only one sync service runs at a time — if the app is already running, the CLI talks to that one rather than starting a second.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Is it slower or more limited than the app?</summary>
+          <p>Neither. It's the same sync engine — same save detection, same block-level transfer that only sends the parts of a file that changed, same conflict rules. The window is the only difference.</p>
+        </details>
+        <details class="faq-item">
+          <summary>What happens if two devices change the same save?</summary>
+          <p>OpenSave stops and asks rather than picking a winner. <code>opensave conflicts</code> shows what's waiting, and <code>opensave resolve</code> settles it — <code>keep-both</code> is the safe option, which keeps your version and parks the other device's on a separate branch so nothing is lost. Both devices confirm independently; neither can overwrite the other on its own.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Does it phone home?</summary>
+          <p>No accounts, no telemetry, no analytics. It talks to your own devices, to GitHub when you ask it to check for updates, and to the relay only if you've turned on internet sync — and the relay just passes encrypted data between your devices without storing any of it.</p>
+        </details>
+        <details class="faq-item">
+          <summary>Does it work on macOS?</summary>
+          <p>Not yet — there are no published macOS builds. It compiles from source if you have Go installed (<code>go build ./cmd/opensave-cli</code>), but that path isn't tested the way Windows and Linux are.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CTA ===================== -->
+  <section class="section footer-cta">
+    <div class="section-container center">
+      <h2>Get your Deck syncing on its own.</h2>
+      <p class="section-sub">One install, one service, and you can stop thinking about save files.</p>
+      <div class="hero-ctas center">
+        <a href="#install" class="btn-primary">Install the CLI</a>
+        <a href="index.html" class="btn-secondary">Back to home</a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <img src="icon.png?v=2" alt="" class="logo-img">
+        <span class="logo-text">Open<span>Save</span></span>
+      </div>
+      <nav class="footer-links">
+        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="footer-donate">Donate</a>
+        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="cli.html">CLI</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener">Report a bug</a>
+      </nav>
+      <p class="footer-note">MIT licensed. No accounts. No telemetry. Made for people who love their saves.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

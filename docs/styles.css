@@ -413,6 +413,202 @@ code {
 .footer-cta h2 { font-size: clamp(28px, 4vw, 44px); font-weight: 800; letter-spacing: -0.03em; }
 .footer-cta .section-sub { margin-bottom: 30px; }
 
+/* ---------- CLI page ---------- */
+
+/* Bigger, more confident CTAs on this page. The default 15px/12px buttons
+   read as secondary next to a full-width hero, which is the wrong signal for
+   the primary action on the page. Scoped here rather than changed globally so
+   the rest of the site is untouched. */
+.cli-hero .btn-primary,
+.cli-hero .btn-secondary,
+.footer-cta .btn-primary,
+.footer-cta .btn-secondary {
+  font-size: 17px;
+  padding: 16px 34px;
+  border-radius: 12px;
+}
+.cli-hero .hero-ctas { gap: 16px; margin-top: 6px; }
+.cli-hero { padding-bottom: 12px; }
+.cli-hero .hero-subtitle code,
+.cli-note code, .cli-fact code, .cli-callout code,
+.faq-item code, .section-sub code, .cli-inline-note code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  color: var(--text);
+}
+/* The capture is 820px wide. The site's hero window is 1080px, and scaling a
+   terminal screenshot past its native size makes the text visibly soft — so
+   this one keeps its own width and stays centred. */
+.cli-shot { margin-top: 48px; max-width: 860px; }
+.cli-shot .app-window { background: #0c0c0d; }
+.cli-shot img { display: block; width: 100%; height: auto; }
+.cli-shot figcaption {
+  margin-top: 14px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* the nav item for the page you're on */
+.nav-links a.is-active { color: var(--accent-hover); }
+
+/* two-column fact list, used for "what it is" and "what changed" */
+#why .section-heading, #steamdeck .section-heading { max-width: 820px; }
+
+/* .features-grid is a four-column grid shared with the home page. This page
+   has three cards, so they filled three of four columns and sat left of
+   centre under a centred heading. */
+#why .features-grid { grid-template-columns: repeat(3, 1fr); max-width: 1040px; margin: 0 auto; }
+
+/* Sections holding terminal blocks need more room than the 760px "narrow"
+   container: the install one-liner is ~94 characters, which overflowed and
+   produced a horizontal scrollbar over the command itself. Wide enough that
+   the longest line fits without one. */
+#install .section-container,
+#five-minutes .section-container,
+#steamdeck .section-container,
+#scripting .section-container { max-width: 940px; }
+
+.cli-facts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 22px;
+  margin-top: 8px;
+}
+.cli-fact {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 26px 28px;
+}
+.cli-fact h4 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.cli-fact p { font-size: 14.5px; line-height: 1.65; color: var(--text-secondary); }
+
+/* Terminal blocks on this page carry real multi-line output, so they need
+   more vertical room than the single-line ones elsewhere on the site. */
+.cli-page .oss-terminal, .section .oss-terminal + .oss-terminal { margin-top: 0; }
+#install .oss-terminal, #five-minutes .oss-terminal,
+#steamdeck .oss-terminal, #scripting .oss-terminal {
+  margin-bottom: 4px;
+}
+#install .terminal-body, #five-minutes .terminal-body,
+#steamdeck .terminal-body, #scripting .terminal-body {
+  padding: 20px 24px;
+  line-height: 1.85;
+  font-size: 13px;
+  white-space: pre;
+  margin: 0;
+}
+
+/* If a narrow viewport still forces a scroll, make it a thin unobtrusive bar
+   rather than the browser default sitting across the command. */
+.terminal-body::-webkit-scrollbar { height: 8px; }
+.terminal-body::-webkit-scrollbar-track { background: transparent; }
+.terminal-body::-webkit-scrollbar-thumb {
+  background: var(--bg-active);
+  border-radius: 4px;
+}
+.terminal-body { scrollbar-width: thin; scrollbar-color: var(--bg-active) transparent; }
+
+.cli-sub {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 28px 0 10px;
+}
+.cli-sub:first-of-type { margin-top: 0; }
+
+.cli-note {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin-top: 18px;
+}
+
+.cli-callout {
+  margin-top: 20px;
+  padding: 18px 22px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-lg);
+}
+.cli-callout h4 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.cli-callout p { font-size: 14.5px; line-height: 1.65; color: var(--text-secondary); }
+
+/* numbered walkthrough */
+.cli-steps { display: flex; flex-direction: column; gap: 42px; }
+.cli-step { display: flex; gap: 20px; align-items: flex-start; }
+.cli-step-body { flex: 1; min-width: 0; }
+.cli-step-body h4 {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.cli-step-body p { font-size: 14.5px; line-height: 1.7; color: var(--text-secondary); margin-bottom: 14px; }
+.cli-inline-note {
+  margin-top: 14px;
+  margin-bottom: 0 !important;
+  font-size: 13.5px !important;
+  color: var(--text-dim) !important;
+}
+
+/* dimmed comments inside terminal blocks */
+.t-dim { color: var(--text-dim); }
+
+/* command reference */
+.cli-ref-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+.cli-ref {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+}
+.cli-ref h4 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent-hover);
+  margin-bottom: 14px;
+}
+.cli-ref dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; }
+.cli-ref dt {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.cli-ref dd { font-size: 13.5px; color: var(--text-secondary); margin: 0; }
+
+@media (max-width: 860px) {
+  .cli-facts, .cli-ref-grid { grid-template-columns: 1fr; }
+  .cli-ref dl { grid-template-columns: 1fr; gap: 2px 0; }
+  .cli-ref dd { margin-bottom: 10px; }
+  .cli-step { gap: 14px; }
+}
+
 /* ---------- footer ---------- */
 .footer { border-top: 1px solid var(--border); padding: 40px 24px; background: var(--bg-sidebar); }
 .footer-container { max-width: var(--maxw); margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; }
