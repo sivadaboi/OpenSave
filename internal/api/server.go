@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -162,7 +163,42 @@ func (s *Server) Start(port int) (string, error) {
 		}
 	}()
 	s.writeAddrFile(ln.Addr().String())
+	s.recordBoundPort(ln.Addr().String())
 	return ln.Addr().String(), nil
+}
+
+// recordBoundPort stores the port actually listening in settings.
+//
+// Pairing hands the other device settings.Port to call back on, and the
+// callback is what completes the handshake on the initiating side. When the
+// configured port is taken the daemon falls back to an ephemeral one, so
+// without this the initiator advertises a port nothing is listening on: the
+// approval succeeds on the device that granted it, its approve-confirm goes
+// nowhere, and the device that started the pairing is left showing no peers
+// at all. Internet sync still works in that state, because relay-routed peers
+// are never addressed by port — which makes it look like a LAN-only fault.
+func (s *Server) recordBoundPort(addr string) {
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return
+	}
+	bound, err := strconv.Atoi(portStr)
+	if err != nil || bound <= 0 {
+		return
+	}
+	settings, err := s.Daemon.Store.GetSettings()
+	if err != nil || settings.Port == bound {
+		return
+	}
+	previous := settings.Port
+	settings.Port = bound
+	if err := s.Daemon.Store.UpdateSettings(settings); err != nil {
+		s.Daemon.Log.Log("warn", fmt.Sprintf("could not record the listening port %d: %v", bound, err))
+		return
+	}
+	s.Daemon.Log.Log("info", fmt.Sprintf(
+		"listening on port %d (configured %d was unavailable); peers will be told to use %d",
+		bound, previous, bound))
 }
 
 // addrFilePath is where the running daemon publishes the address it actually

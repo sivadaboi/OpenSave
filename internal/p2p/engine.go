@@ -614,7 +614,16 @@ func (e *Engine) ApprovePairing(ctx context.Context, peerID string) error {
 			e.Log("warn", fmt.Sprintf("WAN approve-confirm to %s failed (peer saved anyway): %v", req.DeviceName, err))
 		}
 	} else if err := postApproveConfirm(ctx, req.Address, req.Port, confirmBody); err != nil {
-		e.Log("warn", fmt.Sprintf("approve-confirm to %s failed (peer saved anyway): %v", req.DeviceName, err))
+		// The peer is kept — the user did approve — but this is the half of
+		// the handshake that tells the *other* device it worked. Silently
+		// warning here is why "it says paired on one machine and no devices
+		// on the other" is a confusing report to receive: from the approving
+		// side everything looked fine.
+		e.Log("error", fmt.Sprintf(
+			"paired with %q here, but could not reach it back on %s:%d to confirm (%v) — "+
+				"that device will still show no paired peers. Check that it allows incoming "+
+				"connections on port %d (Windows Firewall blocks them by default), then pair again from it.",
+			req.DeviceName, req.Address, req.Port, err, req.Port))
 	}
 
 	e.Log("success", fmt.Sprintf("paired with %q (%s:%d)", req.DeviceName, req.Address, req.Port))
