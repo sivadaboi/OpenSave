@@ -71,9 +71,18 @@ Add --json to any command for machine-readable output.
 
 // Run dispatches CLI arguments; returns a process exit code.
 func Run(args []string) int {
+	// Bare `opensave` shows what the system is doing right now. Someone
+	// typing the command with no arguments wants to know whether it's
+	// working, not to read the manual — that's what --help is for.
 	if len(args) == 0 {
-		fmt.Print(usage)
-		return 0
+		return cmdOverview(nil)
+	}
+
+	// `opensave --json` on its own means "the overview, machine-readable" —
+	// the flag is documented as working on every command, so it has to work
+	// on the default one too.
+	if len(args) == 1 && args[0] == "--json" {
+		return cmdOverview(args)
 	}
 
 	cmd, rest := args[0], args[1:]
