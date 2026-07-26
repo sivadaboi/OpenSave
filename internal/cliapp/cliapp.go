@@ -28,6 +28,9 @@ Games:
   opensave scan                          Auto-detect game saves on this machine
   opensave add <name> <path>             Track a game save folder/file
   opensave remove <gameId>               Stop tracking a game
+  opensave untrack-all --yes             Stop tracking everything (keeps snapshots)
+  opensave game <gameId> set <k> <v>     Per-game settings (path, app-id, auto-sync…)
+  opensave launch <gameId>               Start the game
   opensave status                        Show tracked games, branches, peers
 
 Sync:
@@ -49,9 +52,13 @@ History:
   opensave export <gameId> <dir>         Copy the current save out to a folder
   opensave backup export <file.sscb>     Write a portable backup archive
   opensave backup import <file.sscb>     Read one back
+  opensave branch-delete <gameId> <name> Delete a branch and its snapshots
+  opensave snapshot-delete <id> <snapId> Delete one snapshot
+  opensave prune [--apply-default]       Apply retention limits now
 
 Configuration:
   opensave config [set <key> <value>]    Read or change settings
+  opensave scanpath list|add|remove      Extra folders to auto-scan
   opensave exclude list|add|remove       Folders auto-scan should skip
   opensave link <gameId> <otherId>       Treat two tracked games as the same
   opensave unlink <aliasId>              Undo a link
@@ -111,6 +118,14 @@ func Run(args []string) int {
 		return cmdResolve(rest)
 	case "backup":
 		return cmdBackup(rest)
+	case "prune":
+		return cmdPrune(rest)
+	case "snapshot-delete":
+		return cmdSnapshotDelete(rest)
+	case "branch-delete":
+		return cmdBranchDelete(rest)
+	case "launch":
+		return cmdLaunch(rest)
 	case "service":
 		return cmdService(rest)
 	case "completion":
@@ -160,6 +175,12 @@ func Run(args []string) int {
 		return cmdLinks(d, rest)
 	case "config":
 		return cmdConfig(d, rest)
+	case "game":
+		return cmdGame(d, rest)
+	case "scanpath":
+		return cmdScanPath(d, rest)
+	case "untrack-all":
+		return cmdUntrackAll(d, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", cmd, usage)
 		return 1

@@ -11,10 +11,11 @@ import (
 // topLevelCommands drives completion and is the single place a new command
 // has to be registered for the shells to know about it.
 var topLevelCommands = []string{
-	"scan", "add", "remove", "status",
+	"scan", "add", "remove", "status", "game", "launch", "untrack-all",
 	"sync", "peers", "pair", "unpair", "relay", "conflicts", "resolve",
 	"snapshot", "snapshots", "rollback", "branch", "checkout", "export", "backup",
-	"exclude", "link", "unlink", "links", "config",
+	"exclude", "scanpath", "link", "unlink", "links", "config",
+	"prune", "snapshot-delete", "branch-delete",
 	"daemon", "service", "upnp", "version", "help",
 }
 
@@ -24,7 +25,9 @@ var subCommands = map[string][]string{
 	"resolve": {"keep-both", "keep-local", "keep-remote"},
 	"daemon":  {"start", "status", "stop"},
 	"service": {"install", "uninstall", "status"},
-	"exclude": {"list", "add", "remove"},
+	"exclude":  {"list", "add", "remove"},
+	"scanpath": {"list", "add", "remove"},
+	"game":     {"set"},
 	"backup":  {"export", "import"},
 	"config":  {"list", "set"},
 }

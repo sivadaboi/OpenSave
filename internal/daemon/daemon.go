@@ -241,7 +241,7 @@ func SteamCoverURL(appID string) string {
 // TrackGame adds a new game, takes its initial snapshot (when the save
 // location already has content), and starts watching it.
 func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
-	abs, err := d.validateSavePath(game.SavePath)
+	abs, err := d.ValidateSavePath(game.SavePath)
 	if err != nil {
 		return store.Game{}, err
 	}
@@ -338,7 +338,9 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 // validateSavePath rejects save locations that can never be right: paths
 // that don't exist, whole-profile/system directories, drive roots,
 // OpenSave's own data directory, and paths another game already tracks.
-func (d *Daemon) validateSavePath(rawPath string) (string, error) {
+// ValidateSavePath is exported so the CLI applies exactly the same checks the
+// app does when a save location is set or moved.
+func (d *Daemon) ValidateSavePath(rawPath string) (string, error) {
 	if strings.TrimSpace(rawPath) == "" {
 		return "", fmt.Errorf("save path is required")
 	}
