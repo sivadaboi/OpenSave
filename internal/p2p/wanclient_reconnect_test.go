@@ -36,15 +36,17 @@ func TestKeepWarmPingsHealthEndpoint(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	old := wanKeepWarmInterval
-	wanKeepWarmInterval = 10 * time.Millisecond
-	defer func() { wanKeepWarmInterval = old }()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// The interval is passed in, so nothing here mutates state the goroutine
+	// reads concurrently.
 	w := &WanClient{}
-	go w.keepWarm(ctx, srv.URL)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		w.keepWarm(ctx, srv.URL, 10*time.Millisecond)
+	}()
 
 	deadline := time.After(3 * time.Second)
 	for hits.Load() < 3 {
@@ -58,11 +60,15 @@ func TestKeepWarmPingsHealthEndpoint(t *testing.T) {
 	// Cancelling the connection context must stop the pings: otherwise every
 	// reconnect would leak another warmer goroutine for the process lifetime.
 	cancel()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("keepWarm did not return after its context was cancelled")
+	}
 	settled := hits.Load()
 	time.Sleep(100 * time.Millisecond)
-	if grew := hits.Load() - settled; grew > 1 {
-		t.Errorf("keepWarm kept pinging after ctx cancel: %d more requests", grew)
+	if grew := hits.Load() - settled; grew > 0 {
+		t.Errorf("keepWarm kept pinging after it returned: %d more requests", grew)
 	}
 }
 

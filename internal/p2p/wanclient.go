@@ -45,8 +45,8 @@ const (
 	wanOutageReportAfter = 45 * time.Second
 )
 
-// wanKeepWarmInterval is a var so tests don't have to wait minutes for a tick.
-var wanKeepWarmInterval = 4 * time.Minute
+// wanKeepWarmInterval is how often a live connection pokes /health.
+const wanKeepWarmInterval = 4 * time.Minute
 
 // RelayMessage is the WAN relay wire envelope, matching wan-client.js.
 type RelayMessage struct {
@@ -230,7 +230,7 @@ func (w *WanClient) run(ctx context.Context, gen int, settings store.Settings) {
 	}
 
 	// Keep the relay host from idling this instance out from under us.
-	go w.keepWarm(ctx, settings.RelayURL)
+	go w.keepWarm(ctx, settings.RelayURL, wanKeepWarmInterval)
 
 	// Announce presence.
 	pairedIDs := w.pairedPeerIDs()
@@ -299,9 +299,13 @@ func keepWarmURL(relayURL string) string {
 // alone isn't enough. Failures are ignored: the read loop is what actually
 // decides the connection is gone, and a failed poke shouldn't produce a
 // second, redundant error in the log.
-func (w *WanClient) keepWarm(ctx context.Context, relayURL string) {
+//
+// The interval is a parameter rather than read from the package var: this
+// runs in its own goroutine that nothing joins, so a test overriding a
+// shared var would be writing it while this goroutine reads it.
+func (w *WanClient) keepWarm(ctx context.Context, relayURL string, interval time.Duration) {
 	url := keepWarmURL(relayURL)
-	ticker := time.NewTicker(wanKeepWarmInterval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	client := &http.Client{Timeout: wanKeepWarmTimeout}
 
