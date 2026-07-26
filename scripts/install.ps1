@@ -92,6 +92,24 @@ try {
     Copy-Item $target $dest -Force
     Write-Host "==> Installed to $dest"
 
+    # Short aliases. Shims rather than copies of a 15 MB binary, and rather
+    # than symlinks, which need either admin rights or Developer Mode.
+    # `opensave-cli` is kept because the docs, the Deck plugin and the
+    # packaging all refer to the tool by that name.
+    foreach ($alias in @('os', 'opensave-cli')) {
+        $shim = Join-Path $InstallDir "$alias.cmd"
+        # Don't shadow an unrelated command that already answers to this name;
+        # "os" is short enough to collide with something already installed.
+        $clash = Get-Command $alias -ErrorAction SilentlyContinue
+        if ($clash -and $clash.Source -and ($clash.Source -notlike "$InstallDir*")) {
+            Write-Host "    (skipped '$alias' - already taken by $($clash.Source))" -ForegroundColor Yellow
+            continue
+        }
+        # %* forwards every argument; the exit code propagates on its own.
+        "@echo off`r`n`"%~dp0opensave.exe`" %*" | Set-Content -Path $shim -Encoding ASCII
+        Write-Host "    $shim"
+    }
+
     # ── PATH ─────────────────────────────────────────────────────────────
 
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -108,12 +126,18 @@ try {
     $installed = & $dest version 2>$null
     Write-Host ''
     Write-Host "==> $installed"
+
+    # Show what it found, rather than leaving the user at a bare prompt
+    # wondering whether any of that worked.
     Write-Host ''
+    & $dest
+
     Write-Host 'Next steps:'
-    Write-Host '  opensave                 status panel'
     Write-Host '  opensave scan            find your game saves'
     Write-Host '  opensave daemon start    run the sync service'
+    Write-Host '  opensave --help          everything it can do'
     Write-Host ''
+    Write-Host "'os' works as a short alias for 'opensave'."
     Write-Host "The desktop app is a separate download: https://github.com/$Repo/releases/latest"
 }
 finally {

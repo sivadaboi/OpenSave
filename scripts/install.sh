@@ -134,27 +134,92 @@ say "Installing…"
 install_one opensave-cli
 install_one opensave-relay
 
+# `opensave` is the name the docs, the man page and the tool's own help use,
+# and what the Windows installer has always produced. `opensave-cli` stays as
+# the real file because the systemd units, the .deb/.rpm layout and the Steam
+# Deck plugin all look it up by that name.
+link_alias() {
+    alias_name="$1"
+    target="$2"
+    [ -f "$INSTALL_DIR/$target" ] || return 0
+
+    # Never displace an unrelated command that happens to share the name —
+    # "os" is short enough to collide with something the user installed.
+    existing="$(command -v "$alias_name" 2>/dev/null || true)"
+    if [ -n "$existing" ] && [ "$existing" != "$INSTALL_DIR/$alias_name" ]; then
+        say "  (skipped '$alias_name' — already taken by $existing)"
+        return 0
+    fi
+
+    # Symlink where possible; some filesystems (a FAT USB stick, a few
+    # container overlays) refuse them, so fall back to a copy.
+    if ! ln -sf "$target" "$INSTALL_DIR/$alias_name" 2>/dev/null; then
+        cp -f "$INSTALL_DIR/$target" "$INSTALL_DIR/$alias_name"
+    fi
+    say "  $INSTALL_DIR/$alias_name"
+}
+
+link_alias opensave opensave-cli
+link_alias os opensave-cli
+
 installed_version="$("$INSTALL_DIR/opensave-cli" version 2>/dev/null || echo "unknown")"
 say ""
 say "Installed: $installed_version"
 
-# ── Next steps ───────────────────────────────────────────────────────────
+# ── PATH ─────────────────────────────────────────────────────────────────
 
-case ":$PATH:" in
-    *":$INSTALL_DIR:"*) ;;
-    *)
-        say ""
-        say "NOTE: $INSTALL_DIR isn't on your PATH. Add it with:"
-        say "  echo 'export PATH=\"\$PATH:$INSTALL_DIR\"' >> ~/.profile"
-        say "  export PATH=\"\$PATH:$INSTALL_DIR\""
-        ;;
-esac
+# Put the install dir on PATH rather than printing instructions and hoping.
+# Which file to write depends on the login shell: bash reads ~/.bashrc for
+# interactive shells, zsh reads ~/.zshrc, and ~/.profile covers the rest.
+add_to_path() {
+    case ":$PATH:" in
+        *":$INSTALL_DIR:"*) return 0 ;;
+    esac
+
+    line="export PATH=\"\$PATH:$INSTALL_DIR\""
+    case "$(basename "${SHELL:-sh}")" in
+        zsh)  rc="$HOME/.zshrc" ;;
+        bash) rc="$HOME/.bashrc" ;;
+        *)    rc="$HOME/.profile" ;;
+    esac
+
+    # Idempotent: re-running the installer must not stack duplicate lines.
+    if [ -f "$rc" ] && grep -Fq "$INSTALL_DIR" "$rc" 2>/dev/null; then
+        say "PATH already configured in $rc."
+    elif {
+        echo ""
+        echo "# Added by the OpenSave installer"
+        echo "$line"
+    } >> "$rc" 2>/dev/null; then
+        say "Added $INSTALL_DIR to PATH in $rc."
+    else
+        say "warning: could not write $rc — add this line yourself:"
+        say "  $line"
+    fi
+    # This shell too, so the status panel below runs without reopening one.
+    PATH="$PATH:$INSTALL_DIR"
+    export PATH
+    NEW_SHELL_NEEDED=1
+}
+
+NEW_SHELL_NEEDED=0
+add_to_path
+
+# ── Show what it found ───────────────────────────────────────────────────
 
 say ""
+"$INSTALL_DIR/opensave-cli" || true
+
+if [ "$NEW_SHELL_NEEDED" = "1" ]; then
+    say "Open a new terminal (or run: . $rc) for 'opensave' to work everywhere."
+    say ""
+fi
+
 say "Next:"
-say "  opensave-cli scan                 find your game saves"
-say "  opensave-cli daemon start         run the sync service"
-say "  opensave-cli service install      run it automatically on login"
-say "  opensave-cli pair <other-device>  pair another machine"
+say "  opensave scan                 find your game saves"
+say "  opensave daemon start         run the sync service"
+say "  opensave service install      run it automatically on login"
+say "  opensave pair <other-device>  pair another machine"
 say ""
+say "'os' works as a short alias for 'opensave'."
 say "On a Steam Deck, also run: sudo loginctl enable-linger \$USER"
