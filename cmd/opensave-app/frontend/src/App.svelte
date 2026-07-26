@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { initApi, connectWS, native } from './lib/api.js';
-  import { applyMessage, wsConnected, view, appUpdate, toast, showAbout, aboutChangelogOpen } from './lib/stores.js';
+  import { applyMessage, wsConnected, view, appUpdate, toast, showAbout } from './lib/stores.js';
 
   import logoUrl from './assets/logo.png';
   import TitleBar from './components/TitleBar.svelte';
@@ -17,6 +17,8 @@
   import Devices from './views/Devices.svelte';
   import CloudBackup from './views/CloudBackup.svelte';
   import Settings from './views/Settings.svelte';
+  import Changelog from './views/Changelog.svelte';
+  import WhatsNewModal from './components/WhatsNewModal.svelte';
   import ActivityLog from './views/ActivityLog.svelte';
 
   let ready = false;
@@ -50,10 +52,12 @@
   }
 
   let updatedTo = ''; // set when this launch is the first on a new build
+  let updatedFrom = '';
+  let whatsNew = []; // releases newer than the version we came from
+  let showWhatsNew = false;
 
   function openWhatsNew() {
-    aboutChangelogOpen.set(true);
-    showAbout.set(true);
+    showWhatsNew = true;
     updatedTo = '';
   }
 
@@ -66,6 +70,10 @@
       if (g?.updatedFrom) {
         const info = await native.appInfo();
         updatedTo = info?.version ?? '';
+        updatedFrom = g.updatedFrom;
+        // Only what changed since the version they were actually on — a
+        // first-run wall of every historical release is not a greeting.
+        whatsNew = (await native.whatsNew()) ?? [];
       }
     } catch {}
     // Non-blocking: never let an update check affect startup. Re-check
@@ -89,6 +97,7 @@
     internet: Devices,
     cloud: CloudBackup,
     settings: Settings,
+    changelog: Changelog,
     activity: ActivityLog
   };
 </script>
@@ -140,6 +149,14 @@
         <button class="dismiss" on:click={() => (updatedTo = '')} aria-label="Dismiss">✕</button>
       </div>
     </div>
+  {/if}
+  {#if showWhatsNew}
+    <WhatsNewModal
+      releases={whatsNew}
+      version={updatedTo || ''}
+      from={updatedFrom}
+      onClose={() => (showWhatsNew = false)}
+    />
   {/if}
   <div class="body">
     {#if bootError}

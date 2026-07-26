@@ -8,7 +8,8 @@
     { id: 'devices', label: 'Devices', icon: 'M3 6 h9 v7 H3 z M5 15.5 h5 M7.5 13 v2.5 M14 9 h3 v6.5 h-3 z' },
     { id: 'cloud', label: 'Cloud Backup', icon: 'M6 14 a3.5 3.5 0 0 1 0 -7 a4.5 4.5 0 0 1 8.6 1.2 A3 3 0 0 1 14 14 z' },
     { id: 'activity', label: 'Activity', icon: 'M3 10 h3 l2 -5 l3 10 l2 -5 h4' },
-    { id: 'settings', label: 'Settings', icon: 'M10 7 a3 3 0 1 0 0 6 a3 3 0 1 0 0 -6 M10 2.5 v2 M10 15.5 v2 M2.5 10 h2 M15.5 10 h2 M4.6 4.6 l1.4 1.4 M14 14 l1.4 1.4 M15.4 4.6 L14 6 M6 14 l-1.4 1.4' }
+    { id: 'settings', label: 'Settings', icon: 'M10 7 a3 3 0 1 0 0 6 a3 3 0 1 0 0 -6 M10 2.5 v2 M10 15.5 v2 M2.5 10 h2 M15.5 10 h2 M4.6 4.6 l1.4 1.4 M14 14 l1.4 1.4 M15.4 4.6 L14 6 M6 14 l-1.4 1.4' },
+    { id: 'changelog', label: 'Changelog', icon: 'M5 3 h7 l3 3 v11 H5 z M12 3 v3 h3 M7.5 10 h5 M7.5 13 h5' }
   ];
 
   $: deviceName = $settings?.deviceName ?? '…';

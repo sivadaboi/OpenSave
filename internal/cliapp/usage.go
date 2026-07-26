@@ -80,6 +80,7 @@ var commandGroups = []commandGroup{
 		{"service install|uninstall", "Install a systemd --user service (Linux)"},
 		{"completion bash|zsh|fish", "Shell completion script"},
 		{"upnp <port> [--delete]", "Forward or remove a router port via UPnP"},
+		{"update [--check]", "Update this CLI to the latest release"},
 		{"version", "Print the version"},
 	}},
 }

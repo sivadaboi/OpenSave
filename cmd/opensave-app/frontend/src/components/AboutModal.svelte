@@ -1,31 +1,27 @@
 <script>
   import { onMount } from 'svelte';
   import { native } from '../lib/api.js';
-  import { aboutChangelogOpen } from '../lib/stores.js';
+  import { navigate } from '../lib/stores.js';
   import { backdropClose } from '../lib/backdrop.js';
   import logoUrl from '../assets/logo.png';
 
   export let onClose = () => {};
 
   let info = null;
-  let changelog = '';
-  let showChangelog = false;
   onMount(async () => {
-    // Opened from the "updated — what's new?" banner: expand the
-    // changelog immediately (one-shot flag).
-    if ($aboutChangelogOpen) {
-      showChangelog = true;
-      aboutChangelogOpen.set(false);
-    }
     try {
       info = await native.appInfo();
     } catch {
       info = { name: 'OpenSave', version: '2.0.0' };
     }
-    try {
-      changelog = await native.changelog();
-    } catch {}
   });
+
+  // The changelog has its own view now; showing a second, raw copy here was
+  // where users met literal markdown.
+  function openChangelog() {
+    onClose();
+    navigate('changelog');
+  }
 
   $: buildLabel =
     info?.buildTime && info.buildTime !== '0' ? new Date(Number(info.buildTime)).toLocaleString() : '';
@@ -52,14 +48,7 @@
       <div><span>Built with</span> {info?.tech ?? 'Go + Wails'}</div>
     </div>
 
-    {#if changelog}
-      <button class="changelog-toggle" on:click={() => (showChangelog = !showChangelog)}>
-        {showChangelog ? '▾ Hide' : '▸ What’s new'}
-      </button>
-      {#if showChangelog}
-        <div class="changelog">{changelog}</div>
-      {/if}
-    {/if}
+    <button class="changelog-toggle" on:click={openChangelog}>View changelog</button>
 
     <p class="copy">{info?.copyright ?? ''}</p>
     <p class="note">Wire-compatible with the original Node.js/Electron OpenSave — Go and JS devices sync together.</p>
@@ -153,20 +142,6 @@
     font-size: 0.84rem;
     padding: 4px 8px;
     margin-bottom: 8px;
-  }
-  .changelog {
-    max-height: 220px;
-    overflow-y: auto;
-    text-align: left;
-    white-space: pre-wrap;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px 14px;
-    font-size: 0.78rem;
-    line-height: 1.55;
-    color: var(--text-dim);
-    margin-bottom: 12px;
   }
   .copy {
     font-size: 0.78rem;

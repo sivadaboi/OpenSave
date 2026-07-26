@@ -1,12 +1,9 @@
 package main
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opensave/opensave/internal/selfupdate"
 	"github.com/opensave/opensave/internal/version"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -52,20 +50,6 @@ func runningInFlatpak() bool {
 const flatpakUpdateMsg = "OpenSave is installed as a Flatpak, which updates through Flatpak itself — " +
 	"run \"flatpak update\", or install the newer OpenSave.flatpak from the GitHub release page."
 
-// dirWritable reports whether the current process can create files in dir.
-// False for Program Files installs running without elevation — the case
-// where the rename-swap self-update cannot work.
-func dirWritable(dir string) bool {
-	probe, err := os.CreateTemp(dir, ".opensave-write-probe-*")
-	if err != nil {
-		return false
-	}
-	name := probe.Name()
-	probe.Close()
-	_ = os.Remove(name)
-	return true
-}
-
 // InstallUpdateFromPeer downloads the newer build a paired peer is running
 // and installs it. Returns immediately; progress and the final outcome
 // arrive over the "app-update" WS broadcast (the app restarts on success).
@@ -82,7 +66,7 @@ func (a *App) InstallUpdateFromPeer(peerID string) string {
 			a.updateEvent("error", 0, err.Error())
 			return
 		}
-		if !dirWritable(filepath.Dir(exe)) {
+		if !selfupdate.DirWritable(filepath.Dir(exe)) {
 			a.updateEvent("error", 0,
 				"OpenSave is installed in a protected folder (like Program Files), which peer updates can't replace. "+
 					"Use the update banner to install from GitHub instead — that path runs the installer with the proper permissions.")
@@ -131,7 +115,7 @@ func (a *App) InstallUpdateFromURL(url string) string {
 		}
 		// Windows Program Files installs can't be swapped unelevated — run
 		// the NSIS installer (with its UAC prompt) instead.
-		if runtime.GOOS == "windows" && !dirWritable(filepath.Dir(exe)) {
+		if runtime.GOOS == "windows" && !selfupdate.DirWritable(filepath.Dir(exe)) {
 			a.installViaInstaller()
 			return
 		}
@@ -157,17 +141,17 @@ func (a *App) InstallUpdateFromURL(url string) string {
 			archive.Close()
 			defer os.Remove(archivePath)
 
-			if err := downloadToFile(url, archivePath, progress); err != nil {
+			if err := selfupdate.Download(url, archivePath, progress); err != nil {
 				a.updateEvent("error", 0, "download failed: "+err.Error())
 				return
 			}
-			if err := extractAppBinary(archivePath, newBinary); err != nil {
+			if err := selfupdate.ExtractFromTarGz(archivePath, "opensave", newBinary); err != nil {
 				a.updateEvent("error", 0, "unpack failed: "+err.Error())
 				return
 			}
 		} else {
 			// Windows portable exe: download straight to the swap file.
-			if err := downloadToFile(url, newBinary, progress); err != nil {
+			if err := selfupdate.Download(url, newBinary, progress); err != nil {
 				a.updateEvent("error", 0, "download failed: "+err.Error())
 				return
 			}
@@ -175,49 +159,6 @@ func (a *App) InstallUpdateFromURL(url string) string {
 		a.finishInstall(newBinary)
 	}()
 	return ""
-}
-
-// extractAppBinary pulls the OpenSave app binary out of a release tarball
-// (opensave-linux/opensave) and writes it to dest, executable.
-func extractAppBinary(tarGzPath, dest string) error {
-	f, err := os.Open(tarGzPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
-	}
-	defer gz.Close()
-
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return fmt.Errorf("app binary not found in archive")
-		}
-		if err != nil {
-			return err
-		}
-		if hdr.Typeflag != tar.TypeReg {
-			continue
-		}
-		// The app binary is named "opensave" (not the cli/relay).
-		base := filepath.Base(hdr.Name)
-		if base != "opensave" {
-			continue
-		}
-		out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
-		if err != nil {
-			return err
-		}
-		if _, err := io.Copy(out, tr); err != nil {
-			out.Close()
-			return err
-		}
-		return out.Close()
-	}
 }
 
 // installViaInstaller fetches the latest release's NSIS installer into the
@@ -241,7 +182,7 @@ func (a *App) installViaInstaller() {
 	dest := tmp.Name()
 	tmp.Close()
 
-	if err := downloadToFile(instURL, dest, func(done, total int64) {
+	if err := selfupdate.Download(instURL, dest, func(done, total int64) {
 		if total > 0 {
 			a.updateEvent("downloading", int(done*100/total), "")
 		}
@@ -250,7 +191,7 @@ func (a *App) installViaInstaller() {
 		a.updateEvent("error", 0, "download failed: "+err.Error())
 		return
 	}
-	if err := validateExecutable(dest); err != nil {
+	if err := selfupdate.ValidateExecutable(dest); err != nil {
 		os.Remove(dest)
 		a.updateEvent("error", 0, err.Error())
 		return
@@ -322,23 +263,11 @@ func (a *App) finishInstall(newExePath string) {
 
 // applyUpdate swaps the running executable for newExePath and restarts.
 func (a *App) applyUpdate(newExePath string) error {
-	if err := validateExecutable(newExePath); err != nil {
-		return err
-	}
-	exe, err := os.Executable()
+	// exe is the path Swap actually replaced — resolved through any symlink,
+	// so relaunch and rollback below act on the same file it moved.
+	exe, old, err := selfupdate.Swap(newExePath)
 	if err != nil {
 		return err
-	}
-	old := exe + ".old"
-	_ = os.Remove(old)
-
-	if err := os.Rename(exe, old); err != nil {
-		return fmt.Errorf("move current build aside: %w", err)
-	}
-	if err := os.Rename(newExePath, exe); err != nil {
-		// Roll back so the app stays launchable.
-		_ = os.Rename(old, exe)
-		return fmt.Errorf("place new build: %w", err)
 	}
 
 	cmd := exec.Command(exe)
@@ -359,89 +288,6 @@ func (a *App) applyUpdate(newExePath string) error {
 	a.updateEvent("restarting", 100, "")
 	a.reallyQuit = true
 	wailsruntime.Quit(a.ctx)
-	return nil
-}
-
-// validateExecutable sanity-checks that the downloaded file is a Windows
-// PE binary of plausible size, so a captive-portal HTML page or truncated
-// download can never replace the app.
-func validateExecutable(path string) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	if info.Size() < 1<<20 {
-		return fmt.Errorf("downloaded file is too small (%d bytes) to be OpenSave", info.Size())
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	head := make([]byte, 4)
-	if _, err := io.ReadFull(f, head); err != nil {
-		return err
-	}
-	// Match the running platform's executable format. This also rejects a
-	// wrong-OS binary from a peer (a Windows PE can't run on Linux, and
-	// vice versa), so peer updates only apply a compatible build.
-	switch runtime.GOOS {
-	case "windows":
-		if head[0] != 'M' || head[1] != 'Z' { // PE/COFF
-			return fmt.Errorf("downloaded file is not a Windows executable")
-		}
-	default:
-		if head[0] != 0x7F || head[1] != 'E' || head[2] != 'L' || head[3] != 'F' { // ELF
-			return fmt.Errorf("downloaded file is not a Linux executable")
-		}
-	}
-	return nil
-}
-
-// downloadToFile streams url to path with progress callbacks.
-func downloadToFile(url, path string, progress func(done, total int64)) error {
-	client := &http.Client{Timeout: 15 * time.Minute}
-	resp, err := client.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server returned %s", resp.Status)
-	}
-
-	out, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	total := resp.ContentLength
-	var done int64
-	buf := make([]byte, 256<<10)
-	lastReport := time.Time{}
-	for {
-		n, readErr := resp.Body.Read(buf)
-		if n > 0 {
-			if _, err := out.Write(buf[:n]); err != nil {
-				return err
-			}
-			done += int64(n)
-			if progress != nil && time.Since(lastReport) > 300*time.Millisecond {
-				lastReport = time.Now()
-				progress(done, total)
-			}
-		}
-		if readErr == io.EOF {
-			break
-		}
-		if readErr != nil {
-			return readErr
-		}
-	}
-	if progress != nil {
-		progress(done, total)
-	}
 	return nil
 }
 
@@ -476,13 +322,7 @@ func stampVersionFile(homeDir string) (updatedFrom string) {
 // single-instance lock.
 func cleanupReplacedBinary() {
 	if old := os.Getenv("OPENSAVE_CLEANUP_OLD"); old != "" {
-		for i := 0; i < 30; i++ { // up to ~15s for the old process to exit
-			err := os.Remove(old)
-			if err == nil || os.IsNotExist(err) {
-				return
-			}
-			time.Sleep(500 * time.Millisecond)
-		}
+		selfupdate.CleanupOld(old)
 		return
 	}
 	// Normal start: sweep any leftover from a previous update.

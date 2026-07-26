@@ -82,6 +82,8 @@ func Run(args []string) int {
 		return cmdService(rest)
 	case "completion":
 		return cmdCompletion(rest)
+	case "update":
+		return cmdUpdate(rest)
 	case "version", "--version", "-v":
 		return cmdVersion(rest)
 	case "help", "--help", "-h":

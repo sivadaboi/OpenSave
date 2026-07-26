@@ -14,6 +14,7 @@ import (
 
 	opensave "github.com/opensave/opensave"
 	"github.com/opensave/opensave/internal/api"
+	"github.com/opensave/opensave/internal/changelog"
 	"github.com/opensave/opensave/internal/daemon"
 	"github.com/opensave/opensave/internal/version"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -158,6 +159,23 @@ func (a *App) AppInfo() map[string]string {
 // view.
 func (a *App) Changelog() string {
 	return opensave.Changelog
+}
+
+// ChangelogReleases returns the changelog parsed into versions and sections,
+// so the UI can lay it out instead of showing raw markdown.
+func (a *App) ChangelogReleases() []changelog.Release {
+	return changelog.Parse(opensave.Changelog)
+}
+
+// WhatsNew returns only the releases newer than the version this install was
+// updated from — what the first launch after an update should greet with.
+// Empty when this isn't the first run on a new build, so the UI has a single
+// condition to check rather than reimplementing the comparison.
+func (a *App) WhatsNew() []changelog.Release {
+	if a.updatedFrom == "" {
+		return nil
+	}
+	return changelog.Since(changelog.Parse(opensave.Changelog), a.updatedFrom)
 }
 
 // UpdateGreeting reports the version this install was just updated FROM

@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"github.com/opensave/opensave/internal/selfupdate"
 	"os"
 	"path/filepath"
 	"testing"
@@ -71,8 +72,8 @@ func TestExtractAppBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(t.TempDir(), "opensave.new")
-	if err := extractAppBinary(archive, dest); err != nil {
-		t.Fatalf("extractAppBinary: %v", err)
+	if err := selfupdate.ExtractFromTarGz(archive, "opensave", dest); err != nil {
+		t.Fatalf("ExtractFromTarGz: %v", err)
 	}
 	got, _ := os.ReadFile(dest)
 	if string(got) != "APP-BINARY-CONTENT" {
