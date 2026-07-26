@@ -177,12 +177,31 @@ jobs:
             -o opensave-linux-arm64/opensave-relay ./cmd/opensave-relay
           cp packaging/man/opensave.1 opensave-linux-arm64/ 2>/dev/null || true
           tar -czf opensave-linux-arm64.tar.gz opensave-linux-arm64
+
+      # Native packages, so `apt install ./opensave.deb` pulls the WebKitGTK
+      # runtime instead of the app installing and then failing to launch.
+      - name: Build .deb and .rpm
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+          V="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/completions
+          cp cmd/opensave-app/build/bin/OpenSave dist/opensave
+          ./dist/opensave-cli completion bash > dist/completions/opensave.bash
+          ./dist/opensave-cli completion zsh  > dist/completions/_opensave
+          ./dist/opensave-cli completion fish > dist/completions/opensave.fish
+
+          ARCH=amd64 VERSION="$V" nfpm package -f packaging/nfpm.yaml -p deb -t .
+          ARCH=amd64 VERSION="$V" nfpm package -f packaging/nfpm.yaml -p rpm -t .
+          ls -la ./*.deb ./*.rpm
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: |
             opensave-linux-amd64.tar.gz
             opensave-linux-arm64.tar.gz
+            *.deb
+            *.rpm
 
   # Flatpak bundle: the only install that works on a stock Steam Deck.
   # SteamOS ships no WebKitGTK and wipes pacman installs on OS updates; the
@@ -269,7 +288,8 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           find windows linux flatpak -type f \
-            \( -name '*.exe' -o -name '*.tar.gz' -o -name '*.flatpak' \) \
+            \( -name '*.exe' -o -name '*.msi' -o -name '*.tar.gz' \
+               -o -name '*.deb' -o -name '*.rpm' -o -name '*.flatpak' \) \
             -exec sha256sum {} + | sed 's| .*/| |' > SHA256SUMS
           cat SHA256SUMS
 
@@ -288,5 +308,7 @@ jobs:
           files: |
             windows/**/*.exe
             linux/*.tar.gz
+            linux/*.deb
+            linux/*.rpm
             flatpak/*.flatpak
             SHA256SUMS

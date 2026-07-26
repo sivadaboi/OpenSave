@@ -1,0 +1,79 @@
+# Native Linux packages (.deb / .rpm), built with nfpm.
+#
+#   nfpm package -f packaging/nfpm.yaml -p deb -t dist/
+#   nfpm package -f packaging/nfpm.yaml -p rpm -t dist/
+#
+# Expects the release build to have staged binaries in dist/ first. The
+# desktop app links against the host's WebKitGTK, which is why the runtime
+# dependencies below matter — a package that installs but won't launch is
+# worse than no package.
+name: opensave
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: games
+priority: optional
+maintainer: Siva Prakash <syncsavedev@gmail.com>
+# Kept plain ASCII: package metadata is rendered by a lot of tools with a lot
+# of encoding assumptions, and a mangled dash in `apt show` looks broken.
+description: |
+  Peer-to-peer game save sync.
+  Keeps game saves in sync between your own machines - no account, no server,
+  no quota. Devices talk directly over the LAN, or through a relay when they
+  are on different networks. Includes a headless daemon and CLI for servers
+  and Steam Decks.
+vendor: OpenSave
+homepage: https://github.com/sivadaboi/OpenSave
+license: MIT
+
+contents:
+  - src: dist/opensave
+    dst: /usr/bin/opensave
+  - src: dist/opensave-cli
+    dst: /usr/bin/opensave-cli
+  - src: dist/opensave-relay
+    dst: /usr/bin/opensave-relay
+
+  - src: cmd/opensave-app/build/linux/opensave.desktop
+    dst: /usr/share/applications/opensave.desktop
+  - src: cmd/opensave-app/build/appicon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/opensave.png
+
+  - src: packaging/man/opensave.1
+    dst: /usr/share/man/man1/opensave.1
+    file_info:
+      mode: 0644
+
+  # Shell completions, installed where each shell already looks.
+  - src: dist/completions/opensave.bash
+    dst: /usr/share/bash-completion/completions/opensave
+  - src: dist/completions/_opensave
+    dst: /usr/share/zsh/site-functions/_opensave
+  - src: dist/completions/opensave.fish
+    dst: /usr/share/fish/vendor_completions.d/opensave.fish
+
+  # A system-wide template for the user service. Users still enable it per
+  # account with `systemctl --user enable --now opensave-daemon`, since the
+  # daemon runs as the logged-in user and reads their save files.
+  # This is the NATIVE variant (ExecStart=/usr/bin/opensave-cli); the Flatpak
+  # ships the `flatpak run` one, which would fail here.
+  - src: packaging/systemd/opensave-daemon-native.service
+    dst: /usr/lib/systemd/user/opensave-daemon.service
+    file_info:
+      mode: 0644
+
+overrides:
+  deb:
+    depends:
+      # The desktop app is a WebKitGTK webview; without these it installs and
+      # then fails to start.
+      - libwebkit2gtk-4.1-0
+      - libgtk-3-0
+    recommends:
+      - xdg-utils
+  rpm:
+    depends:
+      - webkit2gtk4.1
+      - gtk3
+    recommends:
+      - xdg-utils
