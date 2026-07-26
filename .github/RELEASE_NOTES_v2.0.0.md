@@ -34,4 +34,4 @@ OpenSave has been rewritten from the ground up in **Go**. The Electron app is go
 | Linux / Steam Deck | `opensave-linux-amd64.tar.gz` |
 | CLI + relay | included in both platform bundles |
 
-Full details in the [Changelog](https://github.com/sivadaboi/OpenSave/blob/main/CHANGELOG.md) and the [User Guide](https://github.com/sivadaboi/OpenSave/blob/main/USER_GUIDE.md).
+Full details in the [Changelog](https://github.com/Liquid-co/OpenSave/blob/main/CHANGELOG.md) and the [User Guide](https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md).

@@ -8,7 +8,7 @@
 
 **OpenSave** syncs your game saves between devices, peer-to-peer — no Steam required, no accounts, no subscriptions. Point it at a folder, pair your devices, and your saves follow you everywhere.
 
-[![Release](https://img.shields.io/github/v/release/sivadaboi/OpenSave?sort=semver)](https://github.com/sivadaboi/OpenSave/releases)
+[![Release](https://img.shields.io/github/v/release/Liquid-co/OpenSave?sort=semver)](https://github.com/Liquid-co/OpenSave/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Steam%20Deck-lightgrey)
@@ -79,7 +79,7 @@ OpenSave gives **every** game the Steam Cloud experience:
 | **Linux** | `opensave-linux-amd64.tar.gz` | extract, then `./opensave` |
 | **Steam Deck / SteamOS** | `OpenSave.flatpak` | see [Steam Deck install](#steam-deck-install) |
 
-Grab the latest from the [**Releases**](https://github.com/sivadaboi/OpenSave/releases) page.
+Grab the latest from the [**Releases**](https://github.com/Liquid-co/OpenSave/releases) page.
 
 ### Steam Deck install
 
@@ -88,7 +88,7 @@ WebKitGTK and wipes manually-installed system packages on OS updates; the
 Flatpak bundles everything and survives updates.
 
 1. Switch to **Desktop Mode** (Steam button → Power → Switch to Desktop).
-2. Download `OpenSave.flatpak` from the [Releases](https://github.com/sivadaboi/OpenSave/releases) page.
+2. Download `OpenSave.flatpak` from the [Releases](https://github.com/Liquid-co/OpenSave/releases) page.
 3. Double-click it to install via Discover, or run
    `flatpak install --user OpenSave.flatpak` in Konsole.
 4. Launch OpenSave from the application menu. Optional: add it to Steam

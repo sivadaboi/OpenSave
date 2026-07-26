@@ -12,7 +12,7 @@ import (
 
 // updateRepo is the GitHub "owner/repo" whose releases are checked for a
 // newer version. Change this one line if the project moves.
-const updateRepo = "sivadaboi/OpenSave"
+const updateRepo = "Liquid-co/OpenSave"
 
 // CheckForUpdate best-effort asks GitHub for the latest published release
 // and reports whether it is newer than the running build. Any failure

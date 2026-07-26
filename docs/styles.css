@@ -81,7 +81,15 @@ code {
 }
 
 /* ---------- ambient glows (subtle — the app is neutral) ---------- */
-.ambient-glow { position: fixed; border-radius: 50%; pointer-events: none; z-index: 0; filter: blur(10px); }
+/* The glows sit at negative offsets (partly off-screen by design). They live
+   inside a fixed, overflow-hidden layer rather than being position:fixed
+   themselves: a fixed element hanging past the right edge is NOT clipped by
+   body{overflow-x:hidden} (fixed elements resolve against the viewport, not
+   the body), so on mobile it widened the layout viewport and zoomed the whole
+   page out. Clipping them in this wrapper fixes that on every engine while
+   keeping them pinned to the viewport during scroll. */
+.ambient-layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.ambient-glow { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(10px); }
 .glow-1 { width: 820px; height: 820px; background: radial-gradient(circle, rgba(138,99,244,0.16) 0%, transparent 60%); top: -340px; right: -220px; }
 .glow-2 { width: 700px; height: 700px; background: radial-gradient(circle, rgba(115,70,230,0.10) 0%, transparent 62%); top: 44%; left: -320px; }
 
@@ -126,6 +134,16 @@ code {
   margin-left: 4px;
 }
 .github-link:hover { border-color: var(--accent-line); background: var(--accent-soft) !important; }
+.donate-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid rgba(233, 79, 133, 0.35);
+  border-radius: 999px !important;
+  padding: 7px 14px !important;
+  color: #f0a3c2 !important;
+  background: rgba(233, 79, 133, 0.1);
+  margin-left: 4px;
+}
+.donate-link:hover { border-color: rgba(233, 79, 133, 0.6); background: rgba(233, 79, 133, 0.18) !important; color: #f6b9d3 !important; }
 .nav-cta {
   background: var(--grad);
   color: #fff !important;
@@ -316,7 +334,13 @@ code {
 .how-arrow { display: flex; align-items: center; color: var(--accent); font-size: 22px; font-weight: 700; }
 
 .arch-panel { display: grid; grid-template-columns: 1.15fr 1fr; gap: 32px; align-items: center; background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 28px; }
-.arch-diagram svg { width: 100%; height: auto; display: block; }
+/* overflow-x + a min-width on the SVG itself (not just width:100%) stops
+   the diagram's text shrinking below legible size on narrow screens —
+   viewBox scaling shrinks EVERYTHING proportionally, so a full-bleed SVG
+   at ~300px wide renders its labels at a few px tall. Same contained-
+   scroll pattern as the comparison table. */
+.arch-diagram { overflow-x: auto; }
+.arch-diagram svg { width: 100%; min-width: 560px; height: auto; display: block; }
 .arch-diagram .d-box { fill: var(--bg); stroke: var(--border-strong); stroke-width: 1.5; }
 .arch-diagram .r-box { fill: var(--accent-soft); stroke: var(--accent-line); stroke-width: 1.5; }
 .arch-diagram .d-title { fill: var(--text); font-family: var(--font-display); font-size: 16px; font-weight: 600; }
@@ -360,6 +384,19 @@ code {
 .dl-upgrade { text-align: center; margin-top: 34px; font-size: 14.5px; color: var(--text-secondary); max-width: 720px; margin-inline: auto; }
 .dl-upgrade strong { color: var(--text); }
 
+/* ---------- comparison page ---------- */
+.compare-hero { padding-bottom: 12px; }
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.compare-table { width: 100%; border-collapse: collapse; min-width: 720px; background: var(--card); }
+.compare-table th, .compare-table td { padding: 14px 18px; text-align: left; font-size: 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.compare-table thead th { font-family: var(--font-display); font-weight: 600; color: var(--text); background: var(--bg-raised); }
+.compare-table tbody td:first-child { color: var(--text); font-weight: 500; white-space: normal; min-width: 260px; }
+.compare-table tbody tr:last-child td { border-bottom: none; }
+.compare-table .col-us { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.compare-table thead th.col-us { color: var(--accent-hover); }
+.compare-table .no { color: var(--text-dim); }
+.table-note { margin-top: 16px; font-size: 13px; color: var(--text-dim); text-align: center; }
+
 /* ---------- faq ---------- */
 .faq-list { display: flex; flex-direction: column; gap: 12px; }
 .faq-item { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -383,6 +420,8 @@ code {
 .footer-links { display: flex; flex-wrap: wrap; gap: 20px; }
 .footer-links a { color: var(--text-secondary); font-size: 14px; }
 .footer-links a:hover { color: var(--accent-hover); }
+.footer-donate { color: #e94f85 !important; font-weight: 600; }
+.footer-donate:hover { color: #f0a3c2 !important; }
 .footer-note { width: 100%; font-size: 13px; color: var(--text-dim); border-top: 1px solid var(--border); padding-top: 20px; }
 
 /* ---------- lightbox ---------- */
@@ -410,11 +449,26 @@ code {
     flex-direction: column; align-items: stretch; gap: 4px;
     background: var(--bg-sidebar); border-bottom: 1px solid var(--border);
     padding: 14px 20px 20px;
-    transform: translateY(-140%); transition: var(--ease); z-index: 99;
+    z-index: 99;
+    /* Fixed-pixel offset + opacity/visibility, not a percentage transform:
+       percentage translateY() resolves against the element's own computed
+       height, which some engines fail to resolve for a fixed-position
+       element sized by content — that left this menu rendered open at its
+       natural position instead of off-screen. visibility (not just
+       opacity) also keeps its links out of tab order while closed. */
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transform: translateY(-10px);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
   }
-  .nav-links.open { transform: translateY(0); }
+  .nav-links.open {
+    opacity: 1; visibility: visible; pointer-events: auto;
+    transform: translateY(0);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
   .nav-links > a { padding: 12px; }
-  .github-link, .nav-cta { margin: 4px 0 0 !important; justify-content: center; }
+  /* justify-content only centers the flex links (donate/github);
+     .nav-cta is a plain anchor, so it needs text-align too. */
+  .donate-link, .github-link, .nav-cta { margin: 4px 0 0 !important; justify-content: center; text-align: center; }
   .nav-toggle { display: flex; }
   .section { padding: 72px 20px; }
   .hero { padding: 116px 20px 24px; }
@@ -424,4 +478,25 @@ code {
   .hero-ctas { flex-direction: column; }
   .hero-ctas .btn-primary, .hero-ctas .btn-secondary { width: 100%; }
   .footer-container { flex-direction: column; align-items: flex-start; }
+
+  /* How-it-works: stack vertically. The arrow is rotated 90deg (from the
+     940px breakpoint); without forcing a column + align-self:center it
+     stays a flex item that STRETCHES to the step's full height, and the
+     rotation turns that height into width — a ~224px-wide box that pushed
+     the whole page wider than the viewport and caused the side-scroll. */
+  .how-steps { flex-direction: column; align-items: stretch; gap: 6px; }
+  .how-step { min-width: 0; width: 100%; }
+  .how-arrow { align-self: center; }
+
+  /* Showcase screenshots are wide desktop captures. object-fit:cover cropped
+     them to fill the card (the "cropped halfway" look). On phones show them
+     whole at natural aspect, scaled to the card width. */
+  .shot-card img,
+  .shot-card.wide img,
+  .shot-card:not(.wide) img {
+    object-fit: contain;
+    height: auto;
+    max-height: none;
+    aspect-ratio: auto;
+  }
 }
