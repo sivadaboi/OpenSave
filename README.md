@@ -43,7 +43,9 @@ OpenSave gives **every** game the Steam Cloud experience:
 - **Snapshot history** — every change creates a versioned snapshot. Roll back a whole save or a single file; branches keep parallel playthroughs (and conflict resolutions) safe.
 - **Smart conflict handling** — diverged saves are detected by **sync lineage**, not wall-clock timestamps. Keep yours, keep theirs, or keep both on a new branch.
 - **Cloud backup** — optional mirroring to Google Drive, Dropbox, OneDrive, WebDAV, a webhook, or a local/NAS folder.
-- **In-app updates** — one-click update from GitHub releases, or pull a newer build straight from a paired device.
+- **Cross-device game matching** — the same title tracked under different names on two machines (a Steam install here, a differently-named folder there) can be matched by Steam App ID or linked by hand. App-ID matching is opt-in, so two separate copies of a game are never merged without asking.
+- **A full command line** — `opensave` does everything the app does, for a Steam Deck in Game Mode or a headless server. See [Command line](#command-line).
+- **In-app updates** — one-click update from GitHub releases, pull a newer build straight from a paired device, or `opensave update` from the terminal.
 - **Privacy-first** — no accounts, no telemetry. The relay only routes encrypted WebSocket frames and never stores your saves.
 
 ## Screenshots
@@ -83,6 +85,11 @@ Grab the latest from the [**Releases**](https://github.com/Liquid-co/OpenSave/re
 
 ### Steam Deck install
 
+> **Use `OpenSave.flatpak`, not `opensave-linux-amd64.tar.gz`.** The tarball's
+> desktop app will not start on a stock Deck: SteamOS ships no WebKitGTK, which
+> it needs to draw its window. This trips people up because the tarball's name
+> reads like the Steam Deck build.
+
 The Flatpak is the build that works on a stock Deck — SteamOS ships no
 WebKitGTK and wipes manually-installed system packages on OS updates; the
 Flatpak bundles everything and survives updates.
@@ -93,6 +100,15 @@ Flatpak bundles everything and survives updates.
    `flatpak install --user OpenSave.flatpak` in Konsole.
 4. Launch OpenSave from the application menu. Optional: add it to Steam
    (right-click → *Add to Steam*) to open it from Game Mode.
+
+If you only want background syncing and no window, the **command line has no
+such constraint** — it needs no WebKitGTK and runs anywhere:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh | sh
+opensave scan && opensave service install
+sudo loginctl enable-linger $USER
+```
 
 Saves on the SD card are found automatically (`/run/media` is visible to
 the app), and Proton game saves are detected inside their `compatdata`
@@ -150,46 +166,89 @@ Need to undo something? Open a game's **history** and roll back a snapshot — t
 
 ## Command line
 
-`opensave-cli` is a complete client, not a companion to the app: it can detect
-saves, pair devices, sync, resolve conflicts and run as a service. A headless
-box — a NAS, a home server, or a Steam Deck that lives in Game Mode — never
-needs the desktop app.
+`opensave` is a complete client, not a companion to the app: auto-detect saves,
+pair devices, sync, resolve conflicts, manage snapshots and branches, back up
+to the cloud, and run as a background service. A headless box — a NAS, a home
+server, or a Steam Deck that lives in Game Mode — never needs the desktop app.
 
 No account, no token, no server to sign up to.
 
+<p align="center">
+  <img src="docs/screenshots/cli-status.png" width="820"
+       alt="The OpenSave CLI status panel: the OpenSave wordmark in white and purple, then the version, whether the daemon is running, the device name, tracked games, paired devices and relay status, followed by suggested next commands.">
+</p>
+
+Run `opensave` on its own and it tells you what is happening right now, and what
+to do next. There is a fuller walkthrough on the
+[website](https://open-save.vercel.app/cli.html).
+
 ### Install
+
+**Linux & Steam Deck**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh | sh
 ```
 
-Installs to `~/.local/bin` (no root). The download is verified against the
-`SHA256SUMS` published with each release. To choose where it lands or pin a
-version:
+**Windows** (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.ps1 | iex
+```
+
+Installs to your user folder — no root, no admin — puts it on your `PATH`, and
+shows the status panel when it is done. Downloads are verified against the
+`SHA256SUMS` published with each release; piping a script into a shell is enough
+trust on its own.
+
+Three names, one program: **`opensave`**, **`os`** as a short alias, and
+`opensave-cli` (the name the Steam Deck plugin and the Linux packages use
+internally). If something on your system already answers to `os`, the installer
+leaves it alone and says so.
+
+To choose where it lands or pin a version:
 
 ```bash
 OPENSAVE_INSTALL_DIR=/usr/local/bin OPENSAVE_VERSION=v2.2.0 sh install.sh
 ```
 
-Or build it: `go build -o opensave-cli ./cmd/opensave-cli`
+Or build it: `go build -o opensave ./cmd/opensave-cli`
+
+### Keeping it current
+
+```bash
+opensave update            # replace this binary with the latest release
+opensave update --check    # just report whether a newer one exists
+```
+
+Pre-releases are never offered automatically — install those yourself from the
+releases page.
 
 ### Getting started
 
 ```bash
-opensave-cli scan                     # what's on this machine
-opensave-cli add "Elden Ring" ~/.local/share/EldenRing
-opensave-cli daemon start &           # the sync service
-opensave-cli pair 192.168.1.42        # pair another device on the LAN
-opensave-cli sync --all
+opensave scan                          # what is on this machine
+opensave add "Elden Ring" ~/.local/share/EldenRing
+opensave daemon start &                # the sync service
+opensave pair 192.168.1.42             # pair another device on the LAN
+opensave sync --all
 ```
+
+Different networks instead of a LAN? Run `opensave relay join <code>` with the
+same made-up code on both devices — no port forwarding, and the relay only
+passes encrypted data through without storing it.
 
 ### Run it permanently
 
 ```bash
-opensave-cli service install
+opensave service install
 systemctl --user enable --now opensave-daemon
 sudo loginctl enable-linger $USER     # Steam Deck: survive Game Mode switches
 ```
+
+That last line matters on a Deck. Without it SteamOS stops your background
+services the moment you switch to Game Mode — which is exactly when you want
+syncing to be happening.
 
 ### Command reference
 
@@ -199,21 +258,26 @@ Every command accepts `--json` for scripting.
 
 | Command | What it does |
 | --- | --- |
-| `scan` | Auto-detect saves: Steam libraries, Proton prefixes, emulators, 20k+ titles via the Ludusavi manifest |
+| `scan` | Auto-detect saves: Steam libraries, Proton and Wine prefixes, emulators, 20k+ titles via the Ludusavi manifest |
 | `add <name> <path>` | Track a save folder or file |
 | `remove <gameId>` | Stop tracking. Save files and snapshots stay on disk |
+| `untrack-all --yes` | Stop tracking everything (snapshots are kept) |
+| `game <gameId> set <key> <value>` | Per-game settings: `path`, `app-id`, `exe-path`, `cover-url`, `auto-sync`, `max-snapshots` |
+| `launch <gameId>` | Start the game |
 | `status` | Tracked games, branches, peers |
 
-**Sync**
+**Sync & devices**
 
 | Command | What it does |
 | --- | --- |
 | `sync [<gameId>\|--all]` | Sync now; everything by default |
 | `peers` | Paired devices, devices found on this network, pending requests |
 | `pair <host[:port]>` | Ask a device on the LAN to pair |
-| `pair requests` | Show incoming requests |
+| `pair requests` | Show incoming requests, and which device sent them |
 | `pair approve\|reject <peerId>` | Answer one |
 | `unpair <peerId>` | Drop a paired device |
+| `probe <host[:port]>` | Check whether a device answers — works before pairing |
+| `forget <peerId>` | Remove a stale device record |
 | `relay join <code>` | Sync across networks — same code on each device |
 | `relay status\|leave` | Show or leave the relay room |
 | `conflicts` | Saves that diverged and are waiting on a decision |
@@ -228,7 +292,27 @@ Every command accepts `--json` for scripting.
 | `rollback <gameId> <snapId>` | Restore a snapshot |
 | `branch <gameId> <name>` | Create a branch for a parallel playthrough |
 | `checkout <gameId> <name>` | Switch branch |
+| `branch-delete <gameId> <name>` | Delete a branch and its snapshots |
+| `snapshot-delete <gameId> <snapId>` | Delete one snapshot |
+| `prune [--apply-default]` | Apply snapshot retention limits now |
+| `files <gameId> <snapId> [path]` | List a snapshot's contents, or restore a single file from it |
 | `export <gameId> <dir>` | Copy the save out exactly as the game wrote it — no archive, no wrapper |
+| `backup export\|import <file.sscb>` | Portable backup archive |
+
+**Cloud backup**
+
+| Command | What it does |
+| --- | --- |
+| `cloud status` | Provider and connection state |
+| `cloud browse` | Everything stored in the cloud |
+| `cloud list <gameId>` | Cloud snapshots for one game |
+| `cloud push <gameId>` | Upload local snapshots |
+| `cloud restore <gameId> <file>` | Pull one back |
+| `cloud delete <gameId> --yes` | Remove a game's cloud copies |
+
+Google Drive, Dropbox and OneDrive need a browser to grant consent, so those are
+connected once in the desktop app. WebDAV, webhook and local/NAS providers work
+entirely from the terminal.
 
 **Configuration**
 
@@ -236,6 +320,7 @@ Every command accepts `--json` for scripting.
 | --- | --- |
 | `config [list]` | Show settings |
 | `config set <key> <value>` | `device-name`, `match-by-app-id`, `snapshot-limit`, `relay-url` |
+| `scanpath list\|add\|remove <path>` | Extra folders for auto-scan to check |
 | `exclude list\|add\|remove <path>` | Folders auto-scan should skip |
 | `link <gameId> <otherId>` | Treat two tracked games as the same game |
 | `unlink <aliasId>` / `links <gameId>` | Undo a link / show linked ids |
@@ -249,14 +334,15 @@ Every command accepts `--json` for scripting.
 | `service install\|uninstall\|status` | Manage the `systemd --user` unit (Linux) |
 | `completion bash\|zsh\|fish` | Shell completion script |
 | `upnp <port> [--delete]` | Forward a router port via UPnP |
+| `update [--check]` | Update this binary from the latest release |
 | `version` | Print the version |
 
 ### Scripting
 
 ```bash
-opensave-cli daemon status --json | jq .gameCount
-opensave-cli snapshots elden-ring --json | jq -r '.[0].id'
-opensave-cli conflicts --json | jq 'keys'
+opensave daemon status --json | jq .gameCount
+opensave snapshots elden-ring --json | jq -r '.[0].id'
+opensave conflicts --json | jq 'keys'
 ```
 
 Failures exit non-zero and, with `--json`, print `{"error": "..."}`.
@@ -299,7 +385,7 @@ PORT=10000 ./opensave-relay          # custom port
 docker build -f relay/Dockerfile .   # or as a container
 ```
 
-Point **Settings → Internet Sync → Relay server** at your instance. `opensave-cli upnp 8386` forwards the port on UPnP-capable routers.
+Point **Settings → Internet Sync → Relay server** at your instance. `opensave upnp 8386` forwards the port on UPnP-capable routers.
 
 ## Architecture
 
