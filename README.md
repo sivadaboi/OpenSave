@@ -150,21 +150,123 @@ Need to undo something? Open a game's **history** and roll back a snapshot — t
 
 ## Command line
 
-The headless daemon ships with a CLI for servers, scripts, and Steam Deck:
+`opensave-cli` is a complete client, not a companion to the app: it can detect
+saves, pair devices, sync, resolve conflicts and run as a service. A headless
+box — a NAS, a home server, or a Steam Deck that lives in Game Mode — never
+needs the desktop app.
+
+No account, no token, no server to sign up to.
+
+### Install
 
 ```bash
-opensave-cli scan                    # auto-detect installed game saves
-opensave-cli add <path>              # track a folder or file
-opensave-cli status                  # daemon + sync status for every tracked game
-opensave-cli snapshot <game>         # take a manual snapshot
-opensave-cli rollback <game> <snap>  # restore a snapshot
-opensave-cli branch <game>           # list / create branches
-opensave-cli checkout <game> <branch>
-opensave-cli remove <game>           # stop tracking
-opensave-cli help
+curl -fsSL https://raw.githubusercontent.com/sivadaboi/OpenSave/main/scripts/install.sh | sh
 ```
 
-The daemon exposes a local REST + WebSocket API (P2P on port `8383`) that the desktop UI and CLI both drive, so anything the app can do is scriptable.
+Installs to `~/.local/bin` (no root). The download is verified against the
+`SHA256SUMS` published with each release. To choose where it lands or pin a
+version:
+
+```bash
+OPENSAVE_INSTALL_DIR=/usr/local/bin OPENSAVE_VERSION=v2.2.0 sh install.sh
+```
+
+Or build it: `go build -o opensave-cli ./cmd/opensave-cli`
+
+### Getting started
+
+```bash
+opensave-cli scan                     # what's on this machine
+opensave-cli add "Elden Ring" ~/.local/share/EldenRing
+opensave-cli daemon start &           # the sync service
+opensave-cli pair 192.168.1.42        # pair another device on the LAN
+opensave-cli sync --all
+```
+
+### Run it permanently
+
+```bash
+opensave-cli service install
+systemctl --user enable --now opensave-daemon
+sudo loginctl enable-linger $USER     # Steam Deck: survive Game Mode switches
+```
+
+### Command reference
+
+Every command accepts `--json` for scripting.
+
+**Games**
+
+| Command | What it does |
+| --- | --- |
+| `scan` | Auto-detect saves: Steam libraries, Proton prefixes, emulators, 20k+ titles via the Ludusavi manifest |
+| `add <name> <path>` | Track a save folder or file |
+| `remove <gameId>` | Stop tracking. Save files and snapshots stay on disk |
+| `status` | Tracked games, branches, peers |
+
+**Sync**
+
+| Command | What it does |
+| --- | --- |
+| `sync [<gameId>\|--all]` | Sync now; everything by default |
+| `peers` | Paired devices, devices found on this network, pending requests |
+| `pair <host[:port]>` | Ask a device on the LAN to pair |
+| `pair requests` | Show incoming requests |
+| `pair approve\|reject <peerId>` | Answer one |
+| `unpair <peerId>` | Drop a paired device |
+| `relay join <code>` | Sync across networks — same code on each device |
+| `relay status\|leave` | Show or leave the relay room |
+| `conflicts` | Saves that diverged and are waiting on a decision |
+| `resolve <gameId> <choice>` | `keep-both` (safest), `keep-local`, `keep-remote` |
+
+**History**
+
+| Command | What it does |
+| --- | --- |
+| `snapshot <gameId> [comment]` | Snapshot the current save |
+| `snapshots <gameId>` | List snapshots, newest first |
+| `rollback <gameId> <snapId>` | Restore a snapshot |
+| `branch <gameId> <name>` | Create a branch for a parallel playthrough |
+| `checkout <gameId> <name>` | Switch branch |
+| `export <gameId> <dir>` | Copy the save out exactly as the game wrote it — no archive, no wrapper |
+
+**Configuration**
+
+| Command | What it does |
+| --- | --- |
+| `config [list]` | Show settings |
+| `config set <key> <value>` | `device-name`, `match-by-app-id`, `snapshot-limit`, `relay-url` |
+| `exclude list\|add\|remove <path>` | Folders auto-scan should skip |
+| `link <gameId> <otherId>` | Treat two tracked games as the same game |
+| `unlink <aliasId>` / `links <gameId>` | Undo a link / show linked ids |
+
+**Service**
+
+| Command | What it does |
+| --- | --- |
+| `daemon start [--port N]` | Run the daemon in the foreground |
+| `daemon status` / `daemon stop` | Check on, or stop, a daemon started by the CLI |
+| `service install\|uninstall\|status` | Manage the `systemd --user` unit (Linux) |
+| `completion bash\|zsh\|fish` | Shell completion script |
+| `upnp <port> [--delete]` | Forward a router port via UPnP |
+| `version` | Print the version |
+
+### Scripting
+
+```bash
+opensave-cli daemon status --json | jq .gameCount
+opensave-cli snapshots elden-ring --json | jq -r '.[0].id'
+opensave-cli conflicts --json | jq 'keys'
+```
+
+Failures exit non-zero and, with `--json`, print `{"error": "..."}`.
+
+Full details: `man opensave` (shipped in the Linux tarball), or
+[`packaging/man/opensave.1`](packaging/man/opensave.1).
+
+The daemon exposes a local REST + WebSocket API (P2P on port `8383`) that the
+desktop UI, the CLI and the Steam Deck plugin all drive, so anything the app
+can do is scriptable.
 
 ## Build from source
 

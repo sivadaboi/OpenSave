@@ -12,7 +12,7 @@ import (
 // has to be registered for the shells to know about it.
 var topLevelCommands = []string{
 	"scan", "add", "remove", "status",
-	"sync", "peers", "pair", "unpair", "relay",
+	"sync", "peers", "pair", "unpair", "relay", "conflicts", "resolve",
 	"snapshot", "snapshots", "rollback", "branch", "checkout", "export",
 	"exclude", "link", "unlink", "links", "config",
 	"daemon", "service", "upnp", "version", "help",
@@ -21,6 +21,7 @@ var topLevelCommands = []string{
 var subCommands = map[string][]string{
 	"pair":    {"requests", "approve", "reject"},
 	"relay":   {"status", "join", "leave"},
+	"resolve": {"keep-both", "keep-local", "keep-remote"},
 	"daemon":  {"start", "status", "stop"},
 	"service": {"install", "uninstall", "status"},
 	"exclude": {"list", "add", "remove"},
@@ -109,7 +110,8 @@ func fishCompletion() string {
 		"scan": "Auto-detect game saves", "add": "Track a save folder",
 		"remove": "Stop tracking a game", "status": "Show tracked games and peers",
 		"sync": "Sync now", "peers": "List devices", "pair": "Pair a device",
-		"unpair": "Drop a paired device", "relay": "Internet sync",
+		"unpair": "Drop a paired device", "relay": "Internet sync", "conflicts": "Saves needing a decision",
+		"resolve": "Settle a conflict",
 		"snapshot": "Create a snapshot", "snapshots": "List snapshots",
 		"rollback": "Restore a snapshot", "branch": "Create a branch",
 		"checkout": "Switch branch", "export": "Copy a save out",

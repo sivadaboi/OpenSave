@@ -47,6 +47,132 @@ func cmdSync(args []string) int {
 	return 0
 }
 
+// cmdConflicts lists saves that diverged on two devices and are waiting on a
+// decision. Until one is made that game stops syncing, so a headless machine
+// needs to see and settle them without a desktop.
+func cmdConflicts(args []string) int {
+	asJSON, _ := jsonFlag(args)
+
+	conflicts, err := fetchConflicts()
+	if err != nil {
+		return fail(asJSON, err)
+	}
+	if asJSON {
+		return emitJSON(conflicts)
+	}
+	if len(conflicts) == 0 {
+		fmt.Println("No conflicts. Everything is in sync.")
+		return 0
+	}
+	fmt.Printf("%d save(s) need a decision:\n\n", len(conflicts))
+	for gameID, c := range conflicts {
+		fmt.Printf("  %s\n", gameID)
+		fmt.Printf("    diverged from: %s\n", c.Peer.Name)
+		if c.DiffTotal > 0 {
+			fmt.Printf("    files differing: %d\n", c.DiffTotal)
+		}
+		switch {
+		case c.LocalStats.LatestMtimeMs > c.RemoteStats.LatestMtimeMs:
+			fmt.Printf("    newer side: this device\n")
+		case c.RemoteStats.LatestMtimeMs > c.LocalStats.LatestMtimeMs:
+			fmt.Printf("    newer side: %s\n", c.Peer.Name)
+		default:
+			fmt.Printf("    newer side: same age\n")
+		}
+		fmt.Println()
+	}
+	fmt.Println("Settle one with:")
+	fmt.Println("  opensave resolve <gameId> keep-both     # safest: keeps both, theirs on a branch")
+	fmt.Println("  opensave resolve <gameId> keep-local    # this device's save wins")
+	fmt.Println("  opensave resolve <gameId> keep-remote   # the other device's save wins")
+	return 0
+}
+
+// cmdResolve settles one conflict. The peer id is looked up from the conflict
+// itself, so the user never has to find and type a node id.
+func cmdResolve(args []string) int {
+	asJSON, args := jsonFlag(args)
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, resolveUsage)
+		return 1
+	}
+	gameID, choice := args[0], args[1]
+
+	// "keep-both" is what the app calls this; merge-branch is the wire name.
+	resolution := choice
+	if choice == "keep-both" {
+		resolution = "merge-branch"
+	}
+	switch resolution {
+	case "keep-local", "keep-remote", "merge-branch":
+	default:
+		return fail(asJSON, fmt.Errorf("unknown resolution %q\n\n%s", choice, resolveUsage))
+	}
+
+	conflicts, err := fetchConflicts()
+	if err != nil {
+		return fail(asJSON, err)
+	}
+	c, ok := conflicts[gameID]
+	if !ok {
+		return fail(asJSON, fmt.Errorf("no active conflict for %q — run `opensave conflicts`", gameID))
+	}
+
+	if _, err := daemonRequest("POST", "/api/games/"+gameID+"/resolve-conflict", map[string]any{
+		"peerId":     c.Peer.ID,
+		"resolution": resolution,
+	}); err != nil {
+		return fail(asJSON, err)
+	}
+
+	if asJSON {
+		return emitJSON(map[string]any{"game": gameID, "resolution": resolution, "applying": true})
+	}
+	// Applying can pull the peer's whole save, so the daemon does it in the
+	// background; the request only confirms it was accepted.
+	fmt.Printf("Resolving %q (%s). This runs in the background — watch `opensave conflicts`.\n",
+		gameID, choice)
+	return 0
+}
+
+const resolveUsage = `usage: opensave resolve <gameId> keep-both|keep-local|keep-remote
+
+  keep-both     Keep both saves; the peer's lands on a separate branch (safest)
+  keep-local    This device's save wins
+  keep-remote   The other device's save wins`
+
+// conflictInfo mirrors the conflict shape /api/status reports.
+type conflictInfo struct {
+	Peer struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"peer"`
+	LocalStats struct {
+		LatestMtimeMs int64 `json:"latestMtimeMs"`
+	} `json:"localStats"`
+	RemoteStats struct {
+		LatestMtimeMs int64 `json:"latestMtimeMs"`
+	} `json:"remoteStats"`
+	DiffTotal int `json:"diffTotal"`
+}
+
+func fetchConflicts() (map[string]conflictInfo, error) {
+	raw, err := daemonRequest("GET", "/api/status", nil)
+	if err != nil {
+		return nil, err
+	}
+	var st struct {
+		Conflicts map[string]conflictInfo `json:"conflicts"`
+	}
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return nil, err
+	}
+	if st.Conflicts == nil {
+		st.Conflicts = map[string]conflictInfo{}
+	}
+	return st.Conflicts, nil
+}
+
 // cmdPeers lists paired devices and their status.
 func cmdPeers(args []string) int {
 	asJSON, _ := jsonFlag(args)

@@ -37,6 +37,8 @@ Sync:
   opensave pair requests|approve|reject  Handle incoming pairing requests
   opensave unpair <peerId>               Drop a paired device
   opensave relay status|join|leave       Internet sync between networks
+  opensave conflicts                     Saves waiting on a decision
+  opensave resolve <gameId> <choice>     Settle a conflict
 
 History:
   opensave snapshot <gameId> [comment]   Create a snapshot
@@ -92,6 +94,10 @@ func Run(args []string) int {
 		return cmdUnpair(rest)
 	case "relay":
 		return cmdRelay(rest)
+	case "conflicts":
+		return cmdConflicts(rest)
+	case "resolve":
+		return cmdResolve(rest)
 	case "service":
 		return cmdService(rest)
 	case "completion":
