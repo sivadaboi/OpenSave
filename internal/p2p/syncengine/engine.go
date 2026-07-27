@@ -230,6 +230,31 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	// 4. Conflict detection (lineage + skew-tolerant mtimes).
 	lastSyncMs := e.lastSyncTimeMs(peer.ID)
 	agreedHash := e.Store.GetAgreedHash(gameID, peer.ID)
+
+	// Self-heal a stale merge-base before judging anything against it.
+	//
+	// After a push this side deliberately leaves the base behind (see the
+	// ratchet at the end of this function): the peer is the one that ends up
+	// holding the new state, so convergence is recorded when it reports back
+	// via sync-complete. That report travels the network, and if it is lost
+	// the base stays frozen at a state neither side holds any more.
+	//
+	// A frozen base does not merely delay a conflict, it manufactures one.
+	// DetectConflict asks whether BOTH sides moved off the base; once the
+	// base is behind both of them, the answer is yes forever — so the next
+	// ordinary one-sided edit reads as a two-way divergence and prompts on a
+	// save the peer never touched.
+	//
+	// When the two sides hold the same files, that is a convergence provable
+	// right here from data we already have, without waiting to be told. Bank
+	// it. Directory-only differences count: they are not disagreements about
+	// save content, and the sync creates the missing folder anyway.
+	if agreedHash != "" && agreedHash != localManifest.ManifestHash() &&
+		sameFiles(localManifest, remoteData.Manifest) {
+		_ = e.Store.SetAgreedHash(gameID, peer.ID, localManifest.ManifestHash())
+		agreedHash = localManifest.ManifestHash()
+	}
+
 	if DetectConflict(localManifest, remoteData.Manifest, lastSyncMs, agreedHash) {
 		e.registerConflict(gameID, peer, localManifest, remoteData)
 		return Result{Status: "conflict", PeerID: peer.ID, PeerName: peer.Name}, nil
