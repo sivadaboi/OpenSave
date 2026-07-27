@@ -104,14 +104,20 @@ type WanClient struct {
 	// downSince is when the current outage began, so a routine relay cycle
 	// (back within seconds) can stay quiet while a real outage escalates.
 	downSince time.Time
+
+	// staleWarned holds the peer IDs we have already reported as a likely
+	// reinstall of a device we are still paired with, so the warning lands
+	// once rather than on every hello.
+	staleWarned map[string]bool
 }
 
 func newWanClient(e *Engine) *WanClient {
 	return &WanClient{
-		engine:     e,
-		state:      "disconnected",
-		discovered: map[string]WanPeer{},
-		pending:    map[string]chan RelayMessage{},
+		engine:      e,
+		state:       "disconnected",
+		discovered:  map[string]WanPeer{},
+		pending:     map[string]chan RelayMessage{},
+		staleWarned: map[string]bool{},
 	}
 }
 
@@ -159,6 +165,7 @@ func (w *WanClient) Disconnect() {
 	w.state = "disconnected"
 	w.lastError = ""
 	w.discovered = map[string]WanPeer{}
+	w.staleWarned = map[string]bool{}
 	w.failures = 0
 	w.downSince = time.Time{}
 	w.mu.Unlock()
@@ -514,6 +521,18 @@ func (w *WanClient) Status() map[string]any {
 		"localPeerId": w.localPeerID(),
 		"peers":       peers,
 	}
+}
+
+// HasDiscovered reports whether a peer is currently present in the relay
+// room — i.e. it has sent something within the expiry window. LAN discovery
+// uses this to tell "this peer is gone" apart from "this peer left the LAN
+// but is still reachable over the relay".
+func (w *WanClient) HasDiscovered(id string) bool {
+	cutoff := time.Now().Add(-wanPeerExpiry).UnixMilli()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	p, ok := w.discovered[id]
+	return ok && p.LastSeen >= cutoff
 }
 
 // DiscoveredWanPeers returns the current room members.

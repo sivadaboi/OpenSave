@@ -15,8 +15,8 @@ All notable changes to OpenSave are documented here. This project adheres to
   title tracked as "The First Berserker: Khazan" on one machine and a
   repack's folder name on another can now be linked, either automatically by
   Steam App ID or by linking the two entries yourself. App-ID matching is
-  off by default, so a cracked and a legitimate copy of the same game are
-  never merged without you asking.
+  off by default, so two separate copies of the same game are never merged
+  without you asking.
 - **A completely rebuilt command line.** `opensave` is now a full headless
   client rather than a helper: auto-scan, tracking, pairing and approval,
   sync, conflict resolution, snapshots and branches, cloud backup, snapshot
@@ -67,6 +67,30 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- **A device could stay online in the room while receiving nothing at all.**
+  The relay gives every connected client a writer that drains its outbound
+  queue. That writer stopped on any write error — including the send timeout
+  a briefly stalled peer trips — while the reader kept accepting messages for
+  it. Nothing drained the queue after that, so it filled, and every message
+  bound for that device was dropped from then on. The device showed a healthy
+  connection, kept sending its own heartbeats, and saw no peers and no syncs
+  until something else closed the socket. The connection now closes when its
+  writer stops, so the client reconnects instead of going quietly deaf.
+- **A reinstalled device showed as offline forever.** Clearing a device's data
+  gives it a new identity, and the pairing on the other machine still points
+  at the old one — so its messages never match, and it sits at "offline"
+  while plainly online and in the same room. Only unpairing and pairing again
+  fixed it, with nothing on screen to suggest why. OpenSave now recognises
+  this and says so, naming the device and the fix. It deliberately does not
+  re-point the pairing on its own: pairing is what stops an unknown device
+  reaching your saves, and adopting whatever turns up under a familiar name
+  would give that away.
+- **A paired device on both Wi-Fi and the internet relay could drop to
+  offline while still connected.** Local discovery overwrote how the device
+  was reached, quietly moving it out of the relay's care; when the local
+  sighting then aged out, the device was marked offline even though the relay
+  connection was live. Losing sight of a device on the local network now
+  falls back to the relay instead of declaring it gone.
 - **Auto-scan tracked the folder around your saves rather than the saves.**
   Steam and every Steam emulator keep the real save files in a `remote/`
   subfolder, with sync bookkeeping, achievements and playtime counters

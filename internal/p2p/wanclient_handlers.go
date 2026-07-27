@@ -45,6 +45,9 @@ func (w *WanClient) handleMessage(ctx context.Context, msg RelayMessage) {
 			w.engine.Log("warn", fmt.Sprintf("WAN peer %s thinks we're paired but we unpaired — notifying", msg.From))
 			w.send(RelayMessage{Type: "unpair-notify", To: msg.From, From: localID})
 		}
+		if pairedErr != nil {
+			w.warnIfStalePairing(msg)
+		}
 
 		// Reply so they discover us immediately.
 		settings, err := w.engine.Store.GetSettings()
@@ -184,6 +187,44 @@ func (w *WanClient) trackPresence(msg RelayMessage) {
 		w.discovered[msg.From] = p
 	}
 	w.mu.Unlock()
+}
+
+// warnIfStalePairing explains the one failure this protocol cannot repair on
+// its own. A device that is wiped and reinstalled generates a fresh node ID,
+// so the pairing row we still hold — keyed on the old one — can never match
+// its messages again: trackPresence looks the sender up by ID, misses, and
+// the old row sits at "offline" forever while the device is plainly online
+// and sitting in the same room. Nothing about that is visible to the user,
+// who sees a live device reported as dead.
+//
+// Recognising it by device name and re-pointing the pairing at the new ID
+// automatically would be the friendly fix, and it is the wrong one: pairing
+// is this app's trust boundary, and any device that claims the right name
+// would inherit it. So say what happened and let the user decide.
+func (w *WanClient) warnIfStalePairing(msg RelayMessage) {
+	if msg.DeviceName == "" {
+		return
+	}
+	peers, err := w.engine.Store.ListPeers()
+	if err != nil {
+		return
+	}
+	for _, p := range peers {
+		if p.ID == msg.From || !strings.EqualFold(p.Name, msg.DeviceName) {
+			continue
+		}
+		w.mu.Lock()
+		already := w.staleWarned[msg.From]
+		w.staleWarned[msg.From] = true
+		w.mu.Unlock()
+		if !already {
+			w.engine.Log("warn", fmt.Sprintf(
+				"%q is online but paired under an old identity, so it shows as offline — "+
+					"this happens when a device is reinstalled or its data is cleared. "+
+					"Unpair it and pair again to reconnect.", p.Name))
+		}
+		return
+	}
 }
 
 func (w *WanClient) recordDiscovered(msg RelayMessage) {

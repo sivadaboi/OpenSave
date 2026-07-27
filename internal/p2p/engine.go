@@ -166,7 +166,18 @@ func (e *Engine) StartDiscovery() error {
 		OnExpired: func(d discovery.Discovered) {
 			peer, err := e.Store.GetPeer(d.ID)
 			if err == nil && peer.Status == "online" && peer.Address != "relay" {
-				peer.Status = "offline"
+				// A peer reachable both ways has its Address rewritten to the
+				// LAN one by OnPeerSeen above, which quietly moves it out of
+				// the relay heartbeat's care and into this callback's. If the
+				// LAN sighting expires while the relay still has it in the
+				// room, it is not offline — it just left the LAN. Hand it back
+				// rather than reporting a live device as gone.
+				if e.Wan != nil && e.Wan.HasDiscovered(d.ID) {
+					peer.Address = "relay"
+					peer.LastSeenMs = time.Now().UnixMilli()
+				} else {
+					peer.Status = "offline"
+				}
 				_ = e.Store.UpsertPeer(peer)
 			}
 			e.notifyPeerUpdate()

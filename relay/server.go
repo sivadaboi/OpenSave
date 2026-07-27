@@ -274,7 +274,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Writer: drains the send channel.
+	//
+	// Closing the connection on the way out is load-bearing. If this
+	// goroutine stops while the reader is still running — a write error, or
+	// the 10s timeout below firing on a stalled peer — nothing drains
+	// c.send again. It fills its slots, enqueue then refuses everything
+	// forever, and the client sits there looking perfectly connected while
+	// receiving not one message: no peers, no pings, no syncs, until
+	// something else tears the socket down. Closing here makes the reader
+	// fail too, so the client notices and reconnects.
 	go func() {
+		defer conn.Close(websocket.StatusInternalError, "writer stopped")
 		for {
 			select {
 			case <-ctx.Done():
