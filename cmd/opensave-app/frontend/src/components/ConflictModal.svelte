@@ -136,7 +136,10 @@
                 <span class="diff-icon" data-status={d.status}>{diffIcon(d.status)}</span>
                 <span class="diff-path" title={d.path}>{d.path}</span>
                 <span class="diff-meta">{diffLabel(d.status)}</span>
-                <span class="diff-sizes">{fmtSize(d.localSize)} → {fmtSize(d.remoteSize)}</span>
+                <!-- Folders carry no sizes; "— → —" reads as a bug. -->
+                {#if d.localSize >= 0 || d.remoteSize >= 0}
+                  <span class="diff-sizes">{fmtSize(d.localSize)} → {fmtSize(d.remoteSize)}</span>
+                {/if}
               </div>
             {/each}
             {#if conflict.diffTotal > conflict.diffFiles.length}

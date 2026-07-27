@@ -29,6 +29,16 @@ func DetectConflict(local, remote delta.Manifest, lastSyncTimeMs int64, agreedHa
 	if local.ManifestHash() == remote.ManifestHash() {
 		return false
 	}
+	// The manifest hash covers directories as well as files, so a folder
+	// present on one side only makes the hashes differ. That is not a
+	// conflict: no save content disagrees, and Compute already resolves it
+	// by creating the folder on the other side. Raising one here stops the
+	// sync dead over a difference the user cannot act on — the modal lists
+	// what differs from the *file* diff, which in this case is empty, so it
+	// asks them to choose between two sides it shows as identical.
+	if sameFiles(local, remote) {
+		return false
+	}
 	// Content-based detection when a convergence point is known (the
 	// manifest hash both sides verifiably held — a merge-base): conflict
 	// only when BOTH sides changed relative to it. No clocks involved, so
@@ -43,6 +53,23 @@ func DetectConflict(local, remote delta.Manifest, lastSyncTimeMs int64, agreedHa
 	localModified := int64(local.LatestMtime) > lastSyncTimeMs+clockSkewToleranceMs
 	remoteModified := int64(remote.LatestMtime) > lastSyncTimeMs+clockSkewToleranceMs
 	return localModified && remoteModified
+}
+
+// sameFiles reports whether both manifests hold exactly the same paths with
+// exactly the same content hashes — i.e. every difference between them is a
+// directory one. Deliberately ignores mtimes: the same bytes written at
+// different times are the same save.
+func sameFiles(local, remote delta.Manifest) bool {
+	if len(local.Files) != len(remote.Files) {
+		return false
+	}
+	for p, lf := range local.Files {
+		rf, ok := remote.Files[p]
+		if !ok || lf.Hash != rf.Hash {
+			return false
+		}
+	}
+	return true
 }
 
 // Decision is the complete plan for one game/peer sync run.

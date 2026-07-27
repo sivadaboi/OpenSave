@@ -67,6 +67,19 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- **Saves could be reported as conflicting when nothing about them
+  disagreed.** A save's fingerprint covers its folders as well as its files,
+  so a folder that existed on only one device was enough to make two
+  otherwise identical saves look diverged — and a conflict would be raised
+  asking which version to keep. There was nothing to choose between: the
+  dialog had no differing file to name, so it listed none, and both sides
+  showed the same file count, the same size and the same last-change time.
+  A folder on one side only is now recognised for what it is and simply
+  created on the other, as it always should have been. This is also why
+  conflicts were appearing when the other device hadn't been touched.
+- **The conflict dialog couldn't account for folders.** Where a real
+  conflict involves a folder that exists on one side only, it is now listed
+  alongside the differing files instead of being left out of the summary.
 - **A device could stay online in the room while receiving nothing at all.**
   The relay gives every connected client a writer that drains its outbound
   queue. That writer stopped on any write error — including the send timeout

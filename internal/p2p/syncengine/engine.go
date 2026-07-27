@@ -531,6 +531,30 @@ func diffManifests(local, remote delta.Manifest) []DiffFile {
 			out = append(out, DiffFile{Path: p, Status: "only-remote", LocalSize: -1, RemoteSize: rf.Size})
 		}
 	}
+
+	// Directories count towards the manifest hash, so a conflict can involve
+	// them; listing only files left the modal unable to account for part of
+	// what it was asking about. Sizes stay -1 — a folder has none — which
+	// the UI already renders as "—".
+	localDirs := make(map[string]struct{}, len(local.Dirs))
+	for _, d := range local.Dirs {
+		localDirs[d] = struct{}{}
+	}
+	remoteDirs := make(map[string]struct{}, len(remote.Dirs))
+	for _, d := range remote.Dirs {
+		remoteDirs[d] = struct{}{}
+	}
+	for _, d := range local.Dirs {
+		if _, ok := remoteDirs[d]; !ok {
+			out = append(out, DiffFile{Path: d + "/", Status: "only-local", LocalSize: -1, RemoteSize: -1})
+		}
+	}
+	for _, d := range remote.Dirs {
+		if _, ok := localDirs[d]; !ok {
+			out = append(out, DiffFile{Path: d + "/", Status: "only-remote", LocalSize: -1, RemoteSize: -1})
+		}
+	}
+
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
 }
