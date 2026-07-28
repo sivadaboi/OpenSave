@@ -3,7 +3,7 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [2.2.0] — 2026-07-26
+## [2.2.0] — 2026-07-28
 
 ### Added
 
