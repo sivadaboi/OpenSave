@@ -384,6 +384,35 @@ code {
 .dl-upgrade { text-align: center; margin-top: 34px; font-size: 14.5px; color: var(--text-secondary); max-width: 720px; margin-inline: auto; }
 .dl-upgrade strong { color: var(--text); }
 
+/* A known failure someone is actively stuck on, so it reads as a notice
+   rather than another line of prose. max-width matches .dl-upgrade; the
+   left rule and tinted panel are the only things separating them. */
+.dl-callout {
+  margin-top: 34px;
+  margin-inline: auto;
+  max-width: 720px;
+  padding: 16px 20px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+.dl-callout strong { color: var(--text); }
+.dl-callout code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.92em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text);
+  /* A Windows path has no spaces to break at, so without this it forces the
+     panel wider than the page on a narrow screen. */
+  overflow-wrap: anywhere;
+}
+
 /* ---------- comparison page ---------- */
 .compare-hero { padding-bottom: 12px; }
 .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
