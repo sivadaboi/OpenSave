@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -152,6 +154,16 @@ func (a *App) InstallUpdateFromURL(url string) string {
 		} else {
 			// Windows portable exe: download straight to the swap file.
 			if err := selfupdate.Download(url, newBinary, progress); err != nil {
+				// The probe above said this directory was writable and it
+				// wasn't. Controlled Folder Access, an antivirus rule, or an
+				// ACL that allows creating a randomly-named temp file but not
+				// an .exe will all do that. The installer elevates and does
+				// not care, so take that route rather than handing the user a
+				// raw "Access is denied" they can do nothing with.
+				if runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission) {
+					a.installViaInstaller()
+					return
+				}
 				a.updateEvent("error", 0, "download failed: "+err.Error())
 				return
 			}
