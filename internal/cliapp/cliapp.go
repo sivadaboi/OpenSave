@@ -80,6 +80,8 @@ func Run(args []string) int {
 		return cmdForget(rest)
 	case "service":
 		return cmdService(rest)
+	case "install":
+		return cmdInstall(rest)
 	case "completion":
 		return cmdCompletion(rest)
 	case "update":

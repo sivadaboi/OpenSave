@@ -112,15 +112,47 @@ try {
 
     # ── PATH ─────────────────────────────────────────────────────────────
 
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    if ($userPath -notlike "*$InstallDir*") {
-        $newPath = if ([string]::IsNullOrEmpty($userPath)) { $InstallDir }
-                   else { "$userPath;$InstallDir" }
-        [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+    # Read and write HKCU\Environment directly rather than going through
+    # [Environment]::SetEnvironmentVariable. That API returns the EXPANDED
+    # value on read and always writes back a plain REG_SZ, so a PATH built
+    # from %USERPROFILE% or %JAVA_HOME% gets those references baked into
+    # whatever they happened to resolve to right then — and stops tracking
+    # the variable from that point on. Preserving the value's original type
+    # is the difference between adding one entry and quietly rewriting
+    # somebody's whole PATH.
+    $envKey  = Get-Item 'HKCU:\Environment'
+    $kind    = try { $envKey.GetValueKind('Path') } catch { [Microsoft.Win32.RegistryValueKind]::ExpandString }
+    $userPath = [string]$envKey.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+
+    # Compare whole entries, not substrings: "*$InstallDir*" also matches an
+    # unrelated "...\OpenSave\bin-old" and would then skip an update that was
+    # actually needed.
+    $already = $false
+    foreach ($entry in ($userPath -split ';')) {
+        if ($entry.Trim().TrimEnd('\','/') -ieq $InstallDir.TrimEnd('\','/')) { $already = $true; break }
+    }
+
+    if (-not $already) {
+        $newPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $InstallDir }
+                   else { $userPath.TrimEnd(';') + ';' + $InstallDir }
+        New-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -Value $newPath -PropertyType $kind -Force | Out-Null
+
+        # Tell running programs the environment moved, so newly launched
+        # shells pick it up without a sign-out. Already-open consoles copied
+        # their environment at startup and never see it, hence the note below.
+        $sig = 'using System;using System.Runtime.InteropServices;public class OSEnv{[DllImport("user32.dll",SetLastError=true,CharSet=CharSet.Auto)]public static extern IntPtr SendMessageTimeout(IntPtr hWnd,uint Msg,UIntPtr wParam,string lParam,uint fuFlags,uint uTimeout,out UIntPtr lpdwResult);}'
+        try {
+            if (-not ('OSEnv' -as [type])) { Add-Type -TypeDefinition $sig -ErrorAction Stop }
+            $res = [UIntPtr]::Zero
+            [void][OSEnv]::SendMessageTimeout([IntPtr]0xFFFF, 0x1A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$res)
+        } catch { }
+
         # Also update this session, so it works without reopening the terminal.
         $env:Path = "$env:Path;$InstallDir"
         Write-Host "==> Added $InstallDir to your user PATH."
         Write-Host '    Open a new terminal for it to apply everywhere.' -ForegroundColor Yellow
+    } else {
+        Write-Host "==> $InstallDir is already on your PATH."
     }
 
     $installed = & $dest version 2>$null

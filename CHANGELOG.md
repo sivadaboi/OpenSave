@@ -26,6 +26,13 @@ All notable changes to OpenSave are documented here. This project adheres to
   installer on Windows and Linux, `--json` on every command for scripting,
   and `opensave update` to update itself. A Steam Deck in Game Mode or a
   headless server never needs the desktop app.
+- **`opensave install` puts the CLI on your PATH from the binary itself.**
+  The install scripts already did this, but the release also publishes the
+  bare executable, and downloading that left you with a loose file to place
+  and a PATH to edit by hand. Running `opensave install` now copies it
+  somewhere permanent, sets up the `os` and `opensave-cli` aliases, and adds
+  the directory to your PATH, so `opensave` works from any new terminal.
+  `--dir` picks a different location.
 - **Select several games at once.** Multi-select in the library for batch
   untracking, plus a "reset tracking" option that clears the library without
   touching your saves or snapshots.
@@ -67,6 +74,14 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- **The Windows installer could rewrite unrelated parts of your PATH.** It
+  set PATH through an API that hands back the *expanded* value and always
+  writes a plain string back, so a PATH built from `%USERPROFILE%` or
+  `%JAVA_HOME%` had those references replaced by whatever they pointed at
+  during the install, and stopped following the variable afterwards. It also
+  matched its own directory as a substring, so an unrelated folder with a
+  similar name could convince it there was nothing to add. It now edits only
+  the entry it owns and leaves the rest of the value as it found it.
 - **Saves could be reported as conflicting when nothing about them
   disagreed.** A save's fingerprint covers its folders as well as its files,
   so a folder that existed on only one device was enough to make two
