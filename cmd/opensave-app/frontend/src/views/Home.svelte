@@ -18,6 +18,40 @@
     if (dir) newPath = dir;
   }
 
+  // Dismissing a scan result. The exclude list already existed, but only as a
+  // folder picker buried in Settings — which meant answering "stop offering
+  // me this" required leaving the scan, then finding and re-typing a path you
+  // were just looking at. The decision is made here, looking at the result,
+  // so it should be actionable here.
+  let excluding = null;
+  async function excludeResult(item) {
+    if (excluding) return;
+    const ok = await askConfirm(
+      `Stop offering "${item.name}" in future scans? Nothing on disk is touched — this only tells the scanner to skip ${item.savePath}. You can undo it under Settings → Excluded folders.`,
+      { title: 'Exclude from scans?', confirmText: 'Exclude' }
+    );
+    if (!ok) return;
+    excluding = item.id;
+    try {
+      // Read-modify-write against current settings rather than a stored copy:
+      // the scan overlay can be open for a while, and clobbering a change
+      // made elsewhere in the meantime would be a silent settings loss.
+      const current = await api.get('/api/settings');
+      const paths = current.excludePaths ?? [];
+      if (!paths.includes(item.savePath)) {
+        await api.post('/api/settings', { excludePaths: [...paths, item.savePath] });
+      }
+      scanResults = (scanResults ?? []).filter((r) => r.id !== item.id);
+      selected.delete(item.id);
+      selected = selected;
+      toast(`"${item.name}" won't be offered again`, 'success');
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      excluding = null;
+    }
+  }
+
   async function addGame() {
     if (!newName || !newPath || adding) return;
     adding = true;
@@ -341,6 +375,14 @@
                   {:else}
                     <div class="cover-hover">
                       <button class="btn small primary" on:click|stopPropagation={() => trackDetected(item)}>Track</button>
+                      <button
+                        class="btn small"
+                        disabled={excluding === item.id}
+                        title="Stop offering this location in future scans"
+                        on:click|stopPropagation={() => excludeResult(item)}
+                      >
+                        {excluding === item.id ? 'Excluding…' : 'Exclude'}
+                      </button>
                     </div>
                   {/if}
                 </div>
@@ -697,12 +739,21 @@
     inset: 0;
     z-index: 3;
     display: flex;
-    align-items: flex-end;
-    justify-content: center;
+    /* Stacked, not side by side: a cover tile is portrait and narrow, and
+       two buttons in a row wrap raggedly at the smaller grid sizes. */
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 6px;
     padding: 12px;
     opacity: 0;
     background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent 55%);
     transition: opacity 0.12s;
+  }
+  /* The overlay only appears on hover, so a keyboard user tabbing to these
+     buttons would otherwise be operating something invisible. */
+  .cover-hover:focus-within {
+    opacity: 1;
   }
   .cover-tile:hover .cover-hover {
     opacity: 1;
