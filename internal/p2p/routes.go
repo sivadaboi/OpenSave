@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -32,6 +33,7 @@ func (e *Engine) RegisterRoutes(r chi.Router) {
 		r.Post("/api/p2p/unpair", e.handleUnpair)
 		r.Post("/api/p2p/untrack", e.handlePeerUntrack)
 		r.Post("/api/p2p/retrack", e.handlePeerRetrack)
+		r.Get("/api/p2p/games", e.handlePeerGameList)
 		r.Get("/api/p2p/manifest/{gameId}", e.handleManifest)
 		r.Post("/api/p2p/blocks/{gameId}", e.handleBlocks)
 		r.Post("/api/p2p/delete-file/{gameId}", e.handleDeleteFile)
@@ -212,6 +214,89 @@ func (e *Engine) handleUnpair(w http.ResponseWriter, r *http.Request) {
 	_ = e.Store.UnpairPeer(body.PeerID)
 	e.notifyPeerUpdate()
 	jsonOK(w, map[string]any{"success": true})
+}
+
+// PeerGame is one entry in the list a device offers a paired peer so the
+// user can link two differently-named copies of the same game together.
+type PeerGame struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	SavePath string `json:"savePath"`
+	AppID    string `json:"appId,omitempty"`
+}
+
+// PeerGameList returns the games tracked here, for a paired peer to show in
+// its "link a game" picker.
+//
+// Deliberately not folded into the games map carried by ping and hello:
+// that goes out every few seconds to every peer, and names and save paths
+// would put a device's whole library on the wire continuously to say
+// nothing that changes. This is asked for once, when a human opens the
+// picker.
+func (e *Engine) PeerGameList() []PeerGame {
+	games, err := e.Store.ListGames()
+	if err != nil {
+		return []PeerGame{}
+	}
+	out := make([]PeerGame, 0, len(games))
+	for _, g := range games {
+		out = append(out, PeerGame{ID: g.ID, Name: g.Name, SavePath: g.SavePath, AppID: g.AppID})
+	}
+	return out
+}
+
+func (e *Engine) handlePeerGameList(w http.ResponseWriter, r *http.Request) {
+	jsonOK(w, e.PeerGameList())
+}
+
+// FetchPeerGames asks a paired peer what it is tracking, over whichever
+// transport that peer is currently reachable on.
+func (e *Engine) FetchPeerGames(ctx context.Context, peerID string) ([]PeerGame, error) {
+	peer, err := e.Store.GetPeer(peerID)
+	if err != nil {
+		return nil, fmt.Errorf("peer not found: %w", err)
+	}
+
+	if peer.Address == "relay" {
+		if e.Wan == nil {
+			return nil, fmt.Errorf("no relay connection")
+		}
+		raw, err := e.Wan.Request(ctx, peerID, "/games", "GET", nil)
+		if err != nil {
+			return nil, err
+		}
+		var out []PeerGame
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return nil, fmt.Errorf("peer sent an unreadable game list: %w", err)
+		}
+		return out, nil
+	}
+
+	settings, err := e.Store.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	u := fmt.Sprintf("http://%s:%d/api/p2p/games?from=%s",
+		peer.Address, peer.Port, url.QueryEscape(settings.NodeID))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := lanClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("peer returned %d", resp.StatusCode)
+	}
+	var out []PeerGame
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("peer sent an unreadable game list: %w", err)
+	}
+	return out, nil
 }
 
 // handlePeerUntrack / handlePeerRetrack mirror a paired peer's game op.

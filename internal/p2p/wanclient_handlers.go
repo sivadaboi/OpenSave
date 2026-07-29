@@ -270,6 +270,7 @@ func (w *WanClient) routeRequest(ctx context.Context, msg RelayMessage) (int, an
 		strings.HasPrefix(route, "/snapshot/") ||
 		strings.HasPrefix(route, "/sync/trigger/") ||
 		strings.HasPrefix(route, "/delete-file/") ||
+		route == "/games" ||
 		route == "/unpair"
 
 	_, pairedErr := w.engine.Store.GetPeer(from)
@@ -335,6 +336,9 @@ func (w *WanClient) routeRequest(ctx context.Context, msg RelayMessage) (int, an
 		_ = w.engine.Store.UnpairPeer(body.PeerID)
 		w.engine.notifyPeerUpdate()
 		return 200, map[string]any{"success": true, "message": "Unpaired successfully."}
+
+	case route == "/games":
+		return 200, w.engine.PeerGameList()
 
 	case strings.HasPrefix(route, "/manifest/"):
 		return w.serveManifest(route)

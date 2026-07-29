@@ -148,6 +148,46 @@
   $: if (game && tab === 'danger' && aliasesFor !== game.id) loadAliases();
   $: otherGames = Object.values($games).filter((g) => g.id !== params.gameId);
 
+  // Games tracked on paired devices. Without these the picker can only offer
+  // entries from this machine, which merges local duplicates but can never
+  // connect a title tracked under one name here and another name there —
+  // the case App-ID matching can't cover, because a save sitting in
+  // AppData\<company>\<game> carries no App ID anywhere in its path.
+  let peerGames = [];
+  let peerGamesFor = null;
+  let peerGamesLoading = false;
+  $: if (game && tab === 'danger' && peerGamesFor !== game.id) loadPeerGames();
+
+  async function loadPeerGames() {
+    peerGamesFor = game.id;
+    peerGamesLoading = true;
+    peerGames = [];
+    try {
+      const peers = await api.get('/api/peers');
+      // Ask each device separately and keep whatever answers: one being
+      // offline must not cost you the ability to link against the others.
+      const results = await Promise.allSettled(
+        (peers ?? []).map(async (p) => ({
+          peer: p,
+          games: await api.get(`/api/peers/${p.id}/games`),
+        }))
+      );
+      const local = new Set(Object.keys($games));
+      peerGames = results
+        .filter((r) => r.status === 'fulfilled')
+        .flatMap((r) =>
+          (r.value.games ?? [])
+            // An id we already track is the same entry, not a link target.
+            .filter((g) => !local.has(g.id))
+            .map((g) => ({ ...g, peerName: r.value.peer.name }))
+        );
+    } catch {
+      peerGames = [];
+    } finally {
+      peerGamesLoading = false;
+    }
+  }
+
   async function loadAliases() {
     aliasesFor = game.id;
     try {
@@ -159,10 +199,18 @@
   async function linkGame() {
     if (!linkTarget) return;
     const other = $games[linkTarget];
-    const ok = await askConfirm(
-      `Link "${other?.name ?? linkTarget}" into "${game.name}"? They'll be treated as the same game when syncing across devices. "${other?.name ?? linkTarget}" is removed from your library here — its save files and snapshots on disk are kept.`,
-      { title: 'Link games?', confirmText: 'Link' }
-    );
+    const remote = peerGames.find((g) => g.id === linkTarget);
+
+    // Two different operations behind one button, and the difference matters
+    // to the user: merging a local entry removes it from this library, while
+    // linking another device's entry changes nothing here at all. Saying
+    // "removed from your library" for the second would be a lie about a
+    // destructive step that isn't happening.
+    const message = remote
+      ? `Link "${remote.name}" on ${remote.peerName} to "${game.name}"? The two will be treated as the same game when these devices sync. Nothing on either device is removed.`
+      : `Link "${other?.name ?? linkTarget}" into "${game.name}"? They'll be treated as the same game when syncing across devices. "${other?.name ?? linkTarget}" is removed from your library here — its save files and snapshots on disk are kept.`;
+
+    const ok = await askConfirm(message, { title: 'Link games?', confirmText: 'Link' });
     if (!ok) return;
     const canonicalId = game.id;
     await run('Games linked', () => api.post(`/api/games/${canonicalId}/link`, { alias: linkTarget }));
@@ -480,21 +528,40 @@
           {/each}
         </div>
       {/if}
-      {#if otherGames.length > 0}
+      {#if otherGames.length > 0 || peerGames.length > 0}
         <div class="link-row">
           <select bind:value={linkTarget}>
-            <option value="">Choose a tracked game to merge in…</option>
-            {#each otherGames as g}
-              <!-- Same-named entries are normal now that one game can be
-                   tracked at several save locations, so show the path too —
-                   otherwise duplicates are indistinguishable in this list. -->
-              <option value={g.id}>{g.name} — {g.savePath}</option>
-            {/each}
+            <option value="">Choose a game to link…</option>
+            {#if otherGames.length > 0}
+              <optgroup label="On this device (merges the entry)">
+                {#each otherGames as g}
+                  <!-- Same-named entries are normal now that one game can be
+                       tracked at several save locations, so show the path too —
+                       otherwise duplicates are indistinguishable in this list. -->
+                  <option value={g.id}>{g.name} — {g.savePath}</option>
+                {/each}
+              </optgroup>
+            {/if}
+            {#if peerGames.length > 0}
+              <optgroup label="On a paired device (nothing is removed)">
+                {#each peerGames as g}
+                  <option value={g.id}>{g.name} — {g.peerName}</option>
+                {/each}
+              </optgroup>
+            {/if}
           </select>
           <button class="btn small primary" disabled={busy || !linkTarget} on:click={linkGame}>Link</button>
         </div>
+        {#if peerGamesLoading}
+          <p class="danger-desc">Checking paired devices…</p>
+        {/if}
+      {:else if peerGamesLoading}
+        <p class="danger-desc">Checking paired devices…</p>
       {:else}
-        <p class="danger-desc">No other tracked games to link — track the other copy first, then come back here.</p>
+        <p class="danger-desc">
+          Nothing to link to. Track the other copy on this device, or pair the device that
+          has it and make sure it's online — its games appear here once it answers.
+        </p>
       {/if}
     </div>
 

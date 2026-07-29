@@ -23,6 +23,7 @@ func (s *Server) peerRoutes(r chi.Router) {
 	r.Post("/api/peers/unpair", s.handleUnpairPeer)
 	r.Delete("/api/peers/{peerId}", s.handleDeletePeer)
 	r.Post("/api/peers/probe", s.handleProbePeer)
+	r.Get("/api/peers/{peerId}/games", s.handlePeerGames)
 
 	r.Post("/api/games/sync-all", s.handleSyncAll)
 	r.Post("/api/games/{gameId}/sync", s.handleSyncGame)
@@ -32,6 +33,28 @@ func (s *Server) peerRoutes(r chi.Router) {
 	r.Get("/api/relay/health", s.handleRelayHealth)
 	r.Get("/api/relay/ips", s.handleRelayIPs)
 	r.Post("/api/relay/reconnect", s.handleRelayReconnect)
+}
+
+// handlePeerGames lists what a paired device is tracking, so the user can
+// point one of its entries at a local game when the two were tracked under
+// different names and there is no App ID to match them on.
+func (s *Server) handlePeerGames(w http.ResponseWriter, r *http.Request) {
+	peerID := chi.URLParam(r, "peerId")
+	if peerID == "" {
+		writeError(w, http.StatusBadRequest, "peerId is required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+
+	games, err := s.Daemon.P2P.FetchPeerGames(ctx, peerID)
+	if err != nil {
+		// Offline or unreachable is the ordinary case here, not a fault: the
+		// picker asks every paired device and shows whichever answered.
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, games)
 }
 
 // handleRelayReconnect forces a fresh relay connection attempt. Saving
