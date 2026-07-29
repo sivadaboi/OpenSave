@@ -286,6 +286,36 @@
     await run('Save path updated', () => api.patch(`/api/games/${game.id}`, { savePath: pathDraft }));
     editPath = false;
   }
+
+  // Steam App ID. Detected automatically where the save path or the game's
+  // name gives it away, but a save under AppData\<company>\<game> carries no
+  // App ID anywhere and may not be in the manifest either — leaving no way to
+  // turn on matching for exactly the games that need it most. Setting it also
+  // gets the cover art, which the backend re-derives when this changes.
+  let editAppID = false;
+  let appIDDraft = '';
+  let appIDError = '';
+
+  function startEditAppID() {
+    appIDDraft = game.appId ?? '';
+    appIDError = '';
+    editAppID = true;
+  }
+
+  async function saveAppID() {
+    const value = appIDDraft.trim();
+    // Steam App IDs are digits. Catching this here beats saving something
+    // that silently matches nothing and looks like the feature is broken.
+    if (value !== '' && !/^\d+$/.test(value)) {
+      appIDError = 'A Steam App ID is digits only — the number in the store URL.';
+      return;
+    }
+    appIDError = '';
+    await run(value === '' ? 'App ID cleared' : 'App ID set', () =>
+      api.patch(`/api/games/${game.id}`, { appId: value })
+    );
+    editAppID = false;
+  }
 </script>
 
 {#if !game}
@@ -331,6 +361,27 @@
         📂 Open folder
       </button>
       <button class="btn small" on:click={() => { pathDraft = game.savePath; editPath = true; }}>Edit</button>
+    {/if}
+  </div>
+
+  <div class="path-line">
+    {#if editAppID}
+      <input
+        class="path-input appid-input"
+        bind:value={appIDDraft}
+        placeholder="e.g. 1245620"
+        on:keydown={(e) => e.key === 'Enter' && saveAppID()}
+      />
+      <button class="btn small primary" on:click={saveAppID}>Save</button>
+      <button class="btn small" on:click={() => (editAppID = false)}>Cancel</button>
+      {#if appIDError}<span class="appid-error">{appIDError}</span>{/if}
+    {:else}
+      <span class="path" title="Steam App ID — used to match this game across devices">
+        Steam App ID: {game.appId ? game.appId : '—'}
+      </span>
+      <button class="btn small" on:click={startEditAppID}>
+        {game.appId ? 'Edit' : 'Set'}
+      </button>
     {/if}
   </div>
 
@@ -632,6 +683,19 @@
     color: var(--text);
     font-size: 0.82rem;
     outline: none;
+  }
+  /* The App ID is a second detail line about the same game, so it reads as
+     part of the header block rather than a separate section. */
+  .path-line + .path-line {
+    margin-top: -12px;
+  }
+  /* An App ID is a short number; a full-width box invites pasting a path. */
+  .appid-input {
+    flex: 0 0 170px;
+  }
+  .appid-error {
+    font-size: 0.78rem;
+    color: var(--danger);
   }
   .tabs {
     margin-bottom: 18px;

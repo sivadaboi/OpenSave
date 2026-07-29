@@ -1,6 +1,9 @@
 package presets
 
-import "strings"
+import (
+	"strings"
+	"sync"
+)
 
 // popularSteamGames is the offline fallback dictionary of well-known
 // Steam AppIDs, resolving names instantly without hitting the Store API.
@@ -95,10 +98,53 @@ func nameToAppIDIndex() map[string]string {
 	return index
 }
 
-// inferAppIDFromName matches a discovered folder/game name against the
-// popular-games index: exact match first, then bidirectional substring
-// containment (folder "EldenRing Backup" matches "elden ring", and vice
-// versa), matching the JS heuristic.
+// normalizeGameName reduces a name to a comparison key, so the spellings the
+// same title arrives under all land on one value.
+//
+// A save folder rarely carries the store's exact punctuation. Repack folders
+// use separators instead of spaces ("Mina.The.Howler"), apostrophes are
+// dropped as often as they are kept ("Baldurs Gate 3"), and trademark marks
+// come and go. None of those are different games, and comparing raw strings
+// treats every one of them as unknown.
+func normalizeGameName(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	lastSpace := true // leading separators collapse away
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			lastSpace = false
+		case r == ' ' || r == '.' || r == '_' || r == '-' || r == ':' || r == '+':
+			// Separators, not content: collapse runs to one space.
+			if !lastSpace {
+				b.WriteByte(' ')
+				lastSpace = true
+			}
+		default:
+			// Apostrophes, ™, ®, and anything else: drop without joining
+			// words, so "baldur's" and "baldurs" agree.
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// inferAppIDFromName resolves a discovered folder/game name to a Steam App ID.
+//
+// Order is by confidence, not convenience:
+//
+//  1. exact match in the curated list, which is hand-maintained;
+//  2. exact match in the Ludusavi manifest, tens of thousands of titles and
+//     the reason a game outside the curated list can be recognised at all;
+//  3. substring containment, curated list only.
+//
+// Containment stays off the manifest deliberately. Over a handful of curated
+// names it usefully matches "EldenRing Backup" to "elden ring"; over tens of
+// thousands it starts claiming that "Portal" is "Portal Knights" and that
+// every folder called "Data" is something. An exact hit on the manifest is
+// evidence; a substring hit across all of it is a coin toss, and this feeds
+// App-ID matching, which decides whether two devices' saves are the same
+// game.
 func inferAppIDFromName(name string, index map[string]string) string {
 	// Strip parenthesized suffixes like "(Epic/Unreal Save)".
 	key := strings.ToLower(name)
@@ -113,6 +159,17 @@ func inferAppIDFromName(name string, index map[string]string) string {
 	if appID, ok := index[key]; ok {
 		return appID
 	}
+
+	norm := normalizeGameName(key)
+	if norm != "" {
+		if appID, ok := index[norm]; ok {
+			return appID
+		}
+		if appID, ok := manifestNameIndex()[norm]; ok {
+			return appID
+		}
+	}
+
 	for indexName, appID := range index {
 		// Containment only for reasonably long keys — short aliases like
 		// "b1" (Wukong's codename) must only ever match exactly, or they'd
@@ -126,3 +183,33 @@ func inferAppIDFromName(name string, index map[string]string) string {
 	}
 	return ""
 }
+
+// manifestNameIndex is the normalized-name -> Steam App ID lookup built from
+// the bundled Ludusavi manifest. Built once: the manifest holds tens of
+// thousands of entries and a scan asks about every discovery it found.
+//
+// Ambiguity is dropped rather than guessed. Several distinct titles normalize
+// to the same key (re-releases, regional variants), and picking one would
+// hand App-ID matching a confident wrong answer — which is worse here than no
+// answer, because no answer just means the user links the pair by hand.
+var manifestNameIndex = sync.OnceValue(func() map[string]string {
+	games := loadEmbeddedIndex()
+	index := make(map[string]string, len(games))
+	ambiguous := map[string]bool{}
+	for _, g := range games {
+		if g.SteamID == "" || g.Name == "" {
+			continue
+		}
+		key := normalizeGameName(g.Name)
+		if key == "" || ambiguous[key] {
+			continue
+		}
+		if existing, seen := index[key]; seen && existing != g.SteamID {
+			delete(index, key)
+			ambiguous[key] = true
+			continue
+		}
+		index[key] = g.SteamID
+	}
+	return index
+})
