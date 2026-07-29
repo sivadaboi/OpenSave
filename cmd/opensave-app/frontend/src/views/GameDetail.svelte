@@ -223,16 +223,28 @@
   }
 
   // ── Configuration ────────────────────────────────────────────────
-  const saveConfig = () =>
-    run('Configuration saved', () =>
+  // A Steam App ID is digits. Saving something else stores a value that
+  // matches nothing, launches nothing and fetches no art, with no complaint
+  // at any point — which reads as the features being broken rather than the
+  // field being wrong. Catch it at the edit instead.
+  let appIdError = '';
+  async function saveConfig() {
+    const appId = (cfg.appId ?? '').trim();
+    if (appId !== '' && !/^\d+$/.test(appId)) {
+      appIdError = 'A Steam App ID is digits only — the number in the store URL.';
+      return;
+    }
+    appIdError = '';
+    await run('Configuration saved', () =>
       api.patch(`/api/games/${game.id}`, {
-        appId: cfg.appId,
+        appId,
         exePath: cfg.exePath,
         coverUrl: cfg.coverUrl,
         autoSync: cfg.autoSync,
         maxSnapshots: Number(cfg.maxSnapshots)
       })
     );
+  }
 
   async function browseExe() {
     const file = await native.selectFile('Select the game executable');
@@ -287,35 +299,6 @@
     editPath = false;
   }
 
-  // Steam App ID. Detected automatically where the save path or the game's
-  // name gives it away, but a save under AppData\<company>\<game> carries no
-  // App ID anywhere and may not be in the manifest either — leaving no way to
-  // turn on matching for exactly the games that need it most. Setting it also
-  // gets the cover art, which the backend re-derives when this changes.
-  let editAppID = false;
-  let appIDDraft = '';
-  let appIDError = '';
-
-  function startEditAppID() {
-    appIDDraft = game.appId ?? '';
-    appIDError = '';
-    editAppID = true;
-  }
-
-  async function saveAppID() {
-    const value = appIDDraft.trim();
-    // Steam App IDs are digits. Catching this here beats saving something
-    // that silently matches nothing and looks like the feature is broken.
-    if (value !== '' && !/^\d+$/.test(value)) {
-      appIDError = 'A Steam App ID is digits only — the number in the store URL.';
-      return;
-    }
-    appIDError = '';
-    await run(value === '' ? 'App ID cleared' : 'App ID set', () =>
-      api.patch(`/api/games/${game.id}`, { appId: value })
-    );
-    editAppID = false;
-  }
 </script>
 
 {#if !game}
@@ -361,27 +344,6 @@
         📂 Open folder
       </button>
       <button class="btn small" on:click={() => { pathDraft = game.savePath; editPath = true; }}>Edit</button>
-    {/if}
-  </div>
-
-  <div class="path-line">
-    {#if editAppID}
-      <input
-        class="path-input appid-input"
-        bind:value={appIDDraft}
-        placeholder="e.g. 1245620"
-        on:keydown={(e) => e.key === 'Enter' && saveAppID()}
-      />
-      <button class="btn small primary" on:click={saveAppID}>Save</button>
-      <button class="btn small" on:click={() => (editAppID = false)}>Cancel</button>
-      {#if appIDError}<span class="appid-error">{appIDError}</span>{/if}
-    {:else}
-      <span class="path" title="Steam App ID — used to match this game across devices">
-        Steam App ID: {game.appId ? game.appId : '—'}
-      </span>
-      <button class="btn small" on:click={startEditAppID}>
-        {game.appId ? 'Edit' : 'Set'}
-      </button>
     {/if}
   </div>
 
@@ -530,7 +492,14 @@
           <div class="field">
             <label for="c-appid">Steam App ID</label>
             <input id="c-appid" placeholder="e.g. 1091500" bind:value={cfg.appId} />
-            <span class="hint">Used to launch via Steam and fetch cover art automatically.</span>
+            <span class="hint">
+              Launches via Steam, fetches cover art, and — with “Match games by Steam App ID”
+              turned on in Settings — lets this game sync with a copy tracked under a different
+              name on another device. Filled in automatically when it can be worked out; a save
+              under <code>AppData</code> often has nothing to work it out from, so you can set it
+              here. It's the number in the game's Steam store URL.
+            </span>
+            {#if appIdError}<span class="hint hint-error">{appIdError}</span>{/if}
           </div>
           <div class="field">
             <label for="c-exe">Executable path (non-Steam)</label>
@@ -684,17 +653,7 @@
     font-size: 0.82rem;
     outline: none;
   }
-  /* The App ID is a second detail line about the same game, so it reads as
-     part of the header block rather than a separate section. */
-  .path-line + .path-line {
-    margin-top: -12px;
-  }
-  /* An App ID is a short number; a full-width box invites pasting a path. */
-  .appid-input {
-    flex: 0 0 170px;
-  }
-  .appid-error {
-    font-size: 0.78rem;
+  .hint-error {
     color: var(--danger);
   }
   .tabs {
