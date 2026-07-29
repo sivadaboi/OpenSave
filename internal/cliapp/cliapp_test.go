@@ -348,3 +348,36 @@ func TestEveryDocumentedCommandDispatches(t *testing.T) {
 		}
 	}
 }
+
+// TestDecodeSnapshotFilesReadsRealPayload pins the field names against what
+// /api/games/{id}/snapshot/{id}/files actually emits. The CLI read
+// "sizeBytes" here — the name the cloud endpoints use — which unmarshals to
+// zero silently, so every snapshot listed its files as 0 B with no error to
+// notice. Anything that decodes to zero from this literal is that bug again.
+func TestDecodeSnapshotFilesReadsRealPayload(t *testing.T) {
+	raw := []byte(`[
+	  {"path":"slot1.sav","size":15,"isDir":false},
+	  {"path":"sub/","size":0,"isDir":true},
+	  {"path":"sub/deep.dat","size":7,"isDir":false}
+	]`)
+
+	files, err := decodeSnapshotFiles(raw)
+	if err != nil {
+		t.Fatalf("decodeSnapshotFiles error = %v", err)
+	}
+	if len(files) != 3 {
+		t.Fatalf("decoded %d entries, want 3", len(files))
+	}
+	if files[0].Path != "slot1.sav" || files[0].Size != 15 {
+		t.Errorf("first entry = %+v, want slot1.sav at 15 bytes", files[0])
+	}
+	if files[0].IsDir {
+		t.Error("slot1.sav decoded as a directory")
+	}
+	if !files[1].IsDir {
+		t.Errorf("sub/ decoded as a file: %+v", files[1])
+	}
+	if files[2].Size != 7 {
+		t.Errorf("nested file size = %d, want 7", files[2].Size)
+	}
+}

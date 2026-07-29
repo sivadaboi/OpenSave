@@ -271,6 +271,28 @@ func cloudDelete(asJSON bool, args []string) int {
 
 // cmdFiles lists what's inside a snapshot, and can restore a single file —
 // the app's snapshot browser, which had no CLI equivalent.
+// snapshotFile is one entry from a snapshot's contents listing.
+//
+// The field names are the whole point of this type existing. The snapshot
+// listing sends "size", while the cloud endpoints in this same file send
+// "sizeBytes" — and reading the wrong one unmarshals to zero without an
+// error, so the listing printed every save as 0 B and looked like the
+// snapshots were empty rather than like a decoding mistake. Extracted so a
+// literal of the real payload can hold the names still.
+type snapshotFile struct {
+	Path  string `json:"path"`
+	Size  int64  `json:"size"`
+	IsDir bool   `json:"isDir"`
+}
+
+func decodeSnapshotFiles(raw []byte) ([]snapshotFile, error) {
+	var files []snapshotFile
+	if err := json.Unmarshal(raw, &files); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
 func cmdFiles(args []string) int {
 	asJSON, args := jsonFlag(args)
 	if len(args) < 2 {
@@ -281,9 +303,11 @@ func cmdFiles(args []string) int {
 
 	// Third argument means "restore just this file".
 	if len(args) >= 3 {
+		// The field is relPath; sending "path" made every single-file restore
+		// fail with "relPath is required" and restore nothing.
 		raw, err := daemonRequest("POST",
 			fmt.Sprintf("/api/games/%s/snapshot/%s/restore-file", gameID, snapID),
-			map[string]any{"path": args[2]})
+			map[string]any{"relPath": args[2]})
 		if err != nil {
 			return fail(asJSON, err)
 		}
@@ -303,11 +327,8 @@ func cmdFiles(args []string) int {
 		return emitRawJSON(raw)
 	}
 
-	var files []struct {
-		Path      string `json:"path"`
-		SizeBytes int64  `json:"sizeBytes"`
-	}
-	if json.Unmarshal(raw, &files) != nil {
+	files, err := decodeSnapshotFiles(raw)
+	if err != nil {
 		return emitRawJSON(raw)
 	}
 	if len(files) == 0 {
@@ -320,7 +341,13 @@ func cmdFiles(args []string) int {
 	section(fmt.Sprintf("%s %s %d file(s)", snapID, symDot(), len(files)))
 	t := newTable("size", "path")
 	for _, f := range files {
-		t.add(faint(humanBytes(f.SizeBytes)), f.Path)
+		// A directory has no size worth printing, and "0 B" next to one reads
+		// as an empty file rather than a folder.
+		size := humanBytes(f.Size)
+		if f.IsDir {
+			size = sym("—", "-")
+		}
+		t.add(faint(size), f.Path)
 	}
 	t.render()
 	hint(fmt.Sprintf("opensave files %s %s <path>     restore just one file", gameID, snapID))
