@@ -212,12 +212,58 @@ func TestSwapRejectsBadCandidateAndLeavesOriginalAlone(t *testing.T) {
 	}
 }
 
-func TestDirWritable(t *testing.T) {
-	if !DirWritable(t.TempDir()) {
-		t.Error("a temp dir should be writable")
+// CanStageUpdate decides whether the in-place swap is attempted or the
+// elevating installer runs instead. Getting it wrong in the optimistic
+// direction is what shipped: the old check created a randomly named temp file
+// in the same folder, that succeeded, and writing <exe>.new then failed with
+// "Access is denied" — leaving the user on the old version with a filesystem
+// error they could do nothing about.
+func TestCanStageUpdate(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "opensave.exe")
+	if err := os.WriteFile(exe, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if DirWritable(filepath.Join(t.TempDir(), "does-not-exist")) {
-		t.Error("a missing directory reported as writable — the swap would fail later instead of refusing up front")
+
+	if !CanStageUpdate(exe) {
+		t.Error("a writable location reported as unstageable — the app would send the user to the installer for no reason")
+	}
+
+	// It must probe, not litter: a staging file left behind would be picked
+	// up as a half-finished update.
+	if _, err := os.Stat(exe + ".new"); !os.IsNotExist(err) {
+		t.Errorf("the probe left %s behind", exe+".new")
+	}
+
+	// A binary whose directory does not exist cannot be staged.
+	missing := filepath.Join(dir, "no-such-dir", "opensave.exe")
+	if CanStageUpdate(missing) {
+		t.Error("a missing directory reported as stageable — the swap would fail later instead of refusing up front")
+	}
+}
+
+// A leftover staging file from an interrupted update must not make the probe
+// report failure: that would send every subsequent update to the installer
+// until someone deleted a file they cannot see.
+func TestCanStageUpdateOverwritesLeftoverStagingFile(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "opensave.exe")
+	if err := os.WriteFile(exe, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe+".new", []byte("interrupted download"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if !CanStageUpdate(exe) {
+		t.Error("a leftover .new file made the probe report the location unwritable")
+	}
+	if _, err := os.Stat(exe + ".new"); !os.IsNotExist(err) {
+		t.Error("the leftover staging file survived the probe")
+	}
+	// The real binary must be untouched by any of this.
+	if raw, err := os.ReadFile(exe); err != nil || string(raw) != "binary" {
+		t.Errorf("the probe modified the binary itself: %q, %v", raw, err)
 	}
 }
 
@@ -242,4 +288,35 @@ func timeoutAfterSeconds(n int) <-chan struct{} {
 		close(ch)
 	}()
 	return ch
+}
+
+// The distinction that matters, made concrete: a directory can be perfectly
+// writable while the one path the update needs is not usable. Here <exe>.new
+// already exists as a directory, so creating it as a file cannot succeed —
+// yet creating a differently-named file alongside it succeeds happily, which
+// is precisely what the old probe did and why it passed while the real write
+// failed.
+func TestCanStageUpdateCatchesWhatAProbeFileWouldMiss(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "opensave.exe")
+	if err := os.WriteFile(exe, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(exe+".new", 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// The old approach: any temp file in the same directory. Still fine.
+	probe, err := os.CreateTemp(dir, ".probe-*")
+	if err != nil {
+		t.Fatalf("the directory is not writable, so this test proves nothing: %v", err)
+	}
+	probe.Close()
+	_ = os.Remove(probe.Name())
+
+	// The real question, asked about the real path.
+	if CanStageUpdate(exe) {
+		t.Error("reported stageable when <exe>.new cannot be created as a file — " +
+			"this is the shape of the 2.1.1 update failure: writable folder, unusable target")
+	}
 }

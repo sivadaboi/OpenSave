@@ -194,6 +194,29 @@ jobs:
           ARCH=amd64 VERSION="$V" nfpm package -f packaging/nfpm.yaml -p deb -t .
           ARCH=amd64 VERSION="$V" nfpm package -f packaging/nfpm.yaml -p rpm -t .
           ls -la ./*.deb ./*.rpm
+
+      # The Decky plugin shipped nowhere: the only documented way to get it was
+      # to clone the repo, run npm on a dev machine and scp four files to the
+      # Deck. Package it here so a Deck user can unzip it into
+      # ~/homebrew/plugins and be done.
+      - name: Build the Decky plugin
+        working-directory: opensave-decky-plugin
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          test -s dist/index.js || { echo "::error::plugin build produced no dist/index.js"; exit 1; }
+      - name: Package the Decky plugin
+        run: |
+          # Exactly what Decky loads — node_modules, src and the source map
+          # are not part of an installed plugin.
+          mkdir -p decky-pkg/OpenSave/dist
+          cp opensave-decky-plugin/plugin.json  decky-pkg/OpenSave/
+          cp opensave-decky-plugin/package.json decky-pkg/OpenSave/
+          cp opensave-decky-plugin/main.py      decky-pkg/OpenSave/
+          cp opensave-decky-plugin/dist/index.js decky-pkg/OpenSave/dist/
+          (cd decky-pkg && zip -r ../OpenSave-decky-plugin.zip OpenSave)
+          unzip -l OpenSave-decky-plugin.zip
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -202,6 +225,7 @@ jobs:
             opensave-linux-arm64.tar.gz
             *.deb
             *.rpm
+            OpenSave-decky-plugin.zip
 
   # Flatpak bundle: the only install that works on a stock Steam Deck.
   # SteamOS ships no WebKitGTK and wipes pacman installs on OS updates; the
@@ -289,7 +313,8 @@ jobs:
         run: |
           find windows linux flatpak -type f \
             \( -name '*.exe' -o -name '*.msi' -o -name '*.tar.gz' \
-               -o -name '*.deb' -o -name '*.rpm' -o -name '*.flatpak' \) \
+               -o -name '*.deb' -o -name '*.rpm' -o -name '*.flatpak' \
+               -o -name '*.zip' \) \
             -exec sha256sum {} + | sed 's| .*/| |' > SHA256SUMS
           cat SHA256SUMS
 
@@ -310,5 +335,6 @@ jobs:
             linux/*.tar.gz
             linux/*.deb
             linux/*.rpm
+            linux/OpenSave-decky-plugin.zip
             flatpak/*.flatpak
             SHA256SUMS

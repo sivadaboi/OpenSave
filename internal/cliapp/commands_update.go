@@ -109,8 +109,11 @@ func cmdUpdate(args []string) int {
 	// Refuse before downloading rather than after: a system-wide install is
 	// the common case for the CLI, and finding out at the swap would mean a
 	// pointless download and a scarier-looking failure.
-	if !selfupdate.DirWritable(filepath.Dir(exe)) {
-		warning("%s isn't writable by this user.", filepath.Dir(exe))
+	if !selfupdate.CanStageUpdate(exe) {
+		// Names the binary, not just its folder: the folder can be writable
+		// while this particular file is not, which is the case that made the
+		// old check pass and the update fail anyway.
+		warning("%s can't be replaced by this user.", exe)
 		note("Re-run with sudo, or reinstall with the install script.")
 		hint("curl -fsSL https://raw.githubusercontent.com/" + updateRepo + "/main/scripts/install.sh | sh")
 		fmt.Println()

@@ -23,6 +23,25 @@ sync service without dropping to Desktop Mode.
    supported route on a stock Deck; install it in Desktop Mode first, and track
    at least one game there.
 
+## Install (the normal way)
+
+Every release publishes **`OpenSave-decky-plugin.zip`** on the
+[releases page](https://github.com/Liquid-co/OpenSave/releases). On the Deck,
+in Desktop Mode:
+
+```bash
+cd ~/homebrew/plugins
+unzip ~/Downloads/OpenSave-decky-plugin.zip
+sudo systemctl restart plugin_loader
+```
+
+That's it — the zip already contains the `OpenSave/` folder with the four
+files Decky needs, so it unzips straight into place. The plugin appears in the
+Decky menu after the restart.
+
+Everything below is for working on the plugin itself; you don't need any of it
+to use it.
+
 ## Build
 
 Run on your dev machine (not the Deck):

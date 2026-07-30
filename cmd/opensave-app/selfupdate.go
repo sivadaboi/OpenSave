@@ -68,7 +68,7 @@ func (a *App) InstallUpdateFromPeer(peerID string) string {
 			a.updateEvent("error", 0, err.Error())
 			return
 		}
-		if !selfupdate.DirWritable(filepath.Dir(exe)) {
+		if !selfupdate.CanStageUpdate(exe) {
 			a.updateEvent("error", 0,
 				"OpenSave is installed in a protected folder (like Program Files), which peer updates can't replace. "+
 					"Use the update banner to install from GitHub instead — that path runs the installer with the proper permissions.")
@@ -117,7 +117,7 @@ func (a *App) InstallUpdateFromURL(url string) string {
 		}
 		// Windows Program Files installs can't be swapped unelevated — run
 		// the NSIS installer (with its UAC prompt) instead.
-		if runtime.GOOS == "windows" && !selfupdate.DirWritable(filepath.Dir(exe)) {
+		if runtime.GOOS == "windows" && !selfupdate.CanStageUpdate(exe) {
 			a.installViaInstaller()
 			return
 		}

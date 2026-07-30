@@ -185,17 +185,30 @@ func Swap(newExePath string) (exePath, oldPath string, err error) {
 	return exe, old, nil
 }
 
-// DirWritable reports whether this process can create files in dir — false
-// for a Program Files or /usr/local install without the rights to change it,
-// which is exactly when a swap must not be attempted.
-func DirWritable(dir string) bool {
-	probe, err := os.CreateTemp(dir, ".opensave-write-probe-*")
+// CanStageUpdate reports whether the update can be written beside the running
+// binary — false for a Program Files or /usr/local install without the rights
+// to change it, which is when the swap must not be attempted and the elevating
+// installer should run instead.
+//
+// It attempts the exact operation the update performs: create <exe>.new, with
+// the same flags, at the same path. The previous check created a randomly
+// named temp file in the same directory and inferred the rest, which is not
+// the same question. A user updating 2.1.1 to 2.2.0 had that check pass and
+// the real write fail with "Access is denied" — Controlled Folder Access,
+// antivirus rules and inherited ACLs can all permit an innocuous temp file and
+// refuse an executable, and the difference only shows up if you ask about the
+// file you actually intend to write.
+//
+// Truncating an existing <exe>.new is deliberate: it is either leftover from
+// an interrupted update, or about to be overwritten by this one anyway.
+func CanStageUpdate(exePath string) bool {
+	staged := exePath + ".new"
+	f, err := os.OpenFile(staged, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o755)
 	if err != nil {
 		return false
 	}
-	name := probe.Name()
-	probe.Close()
-	_ = os.Remove(name)
+	_ = f.Close()
+	_ = os.Remove(staged)
 	return true
 }
 
