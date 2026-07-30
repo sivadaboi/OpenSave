@@ -24,5 +24,11 @@ jobs:
         run: mkdir -p cmd/opensave-app/frontend/dist && echo stub > cmd/opensave-app/frontend/dist/.stub
       - name: Vet
         run: go vet ./...
+      # -p 2 and a longer timeout because the e2e package now starts real
+      # daemons, binds real ports and spawns the CLI as a subprocess. Run at
+      # full package parallelism alongside everything else it saturates the
+      # runner, and the failures that produces look like real regressions:
+      # build steps failing in packages the change never touched. Reproduced
+      # locally — the same suite passes with -p 1 and fails without it.
       - name: Test (race detector)
-        run: go test ./... -race -timeout 600s
+        run: go test ./... -race -p 2 -timeout 1800s

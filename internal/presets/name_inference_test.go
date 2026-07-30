@@ -1,6 +1,7 @@
 package presets
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -98,5 +99,57 @@ func BenchmarkInferAppIDFromName(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		inferAppIDFromName("Mina.The.Howler", index)
+	}
+}
+
+// Folder names lose their word boundaries constantly — repack folders, Unity
+// company directories, anything a human typed without spaces. Matching those
+// is the difference between a game's cover art and App ID appearing on its
+// own and the user being told nothing could be worked out.
+func TestInferAppIDFromNameMatchesSquashedNames(t *testing.T) {
+	index := nameToAppIDIndex()
+
+	for _, tc := range []struct{ name, want string }{
+		{"Mina the Hollower", "1875580"},
+		{"Mina.the.Hollower", "1875580"},
+		{"MinaTheHollower", "1875580"},
+		{"MINATHEHOLLOWER", "1875580"},
+		{"ELDENRING", "1245620"},
+		{"hollowknight", "367520"},
+		{"ANIMALWELL", "813230"},
+	} {
+		if got := inferAppIDFromName(tc.name, index); got != tc.want {
+			t.Errorf("%q -> %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	// Compaction removes information, so it must not start matching things
+	// that are merely short or generic. A wrong App ID is worse than none:
+	// App-ID matching acts on it and would merge two unrelated saves.
+	for _, junk := range []string{
+		"New folder", "Data", "Saves", "temp", "backup", "save1",
+		"Mina the Howler", // a real title misspelt is not a match
+	} {
+		if got := inferAppIDFromName(junk, index); got != "" {
+			t.Errorf("%q resolved to %q — compaction is matching too loosely", junk, got)
+		}
+	}
+}
+
+// The compact index must actually be built, and must drop names that collide
+// once their spaces are gone rather than picking a winner.
+func TestManifestCompactIndexIsBuiltAndDeduped(t *testing.T) {
+	full, compact := manifestNameIndex(), manifestCompactIndex()
+	if len(compact) < 1000 {
+		t.Fatalf("compact index holds %d entries — expected thousands", len(compact))
+	}
+	if len(compact) > len(full) {
+		t.Errorf("compact index (%d) is larger than the index it derives from (%d)", len(compact), len(full))
+	}
+	for key := range compact {
+		if strings.Contains(key, " ") {
+			t.Fatalf("compact index key %q still contains a space", key)
+		}
+		break
 	}
 }

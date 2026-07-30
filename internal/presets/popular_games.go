@@ -168,6 +168,20 @@ func inferAppIDFromName(name string, index map[string]string) string {
 		if appID, ok := manifestNameIndex()[norm]; ok {
 			return appID
 		}
+		// Folder names lose their word boundaries all the time —
+		// "MinaTheHollower", "ELDENRING", "hollowknight". Comparing with the
+		// spaces taken out of both sides catches those without loosening
+		// anything else: this is still an exact match, just of a string that
+		// has had one kind of noise removed.
+		if compact := strings.ReplaceAll(norm, " ", ""); compact != norm {
+			if appID, ok := manifestCompactIndex()[compact]; ok {
+				return appID
+			}
+		} else if appID, ok := manifestCompactIndex()[norm]; ok {
+			// The discovery has no spaces to begin with, so it can only match
+			// a manifest name whose spaces were removed.
+			return appID
+		}
 	}
 
 	for indexName, appID := range index {
@@ -192,6 +206,30 @@ func inferAppIDFromName(name string, index map[string]string) string {
 // to the same key (re-releases, regional variants), and picking one would
 // hand App-ID matching a confident wrong answer — which is worse here than no
 // answer, because no answer just means the user links the pair by hand.
+// manifestCompactIndex is the same lookup with spaces removed, for folder
+// names that never had them: "MinaTheHollower", "ELDENRING". Kept separate
+// from manifestNameIndex rather than merged into it, because compaction
+// collides more readily — "Portal 2" and "Portal2" are the same game, but so
+// are a lot of pairs that are not — and the ambiguity rule below has to be
+// applied over the compacted keys to be worth anything.
+var manifestCompactIndex = sync.OnceValue(func() map[string]string {
+	index := map[string]string{}
+	ambiguous := map[string]bool{}
+	for key, appID := range manifestNameIndex() {
+		compact := strings.ReplaceAll(key, " ", "")
+		if compact == "" || ambiguous[compact] {
+			continue
+		}
+		if existing, seen := index[compact]; seen && existing != appID {
+			delete(index, compact)
+			ambiguous[compact] = true
+			continue
+		}
+		index[compact] = appID
+	}
+	return index
+})
+
 var manifestNameIndex = sync.OnceValue(func() map[string]string {
 	games := loadEmbeddedIndex()
 	index := make(map[string]string, len(games))
