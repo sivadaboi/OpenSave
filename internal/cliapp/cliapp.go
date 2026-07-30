@@ -106,7 +106,7 @@ func Run(args []string) int {
 	case "add":
 		return cmdAdd(d, rest)
 	case "status":
-		return cmdStatus(d)
+		return cmdStatus(d, rest)
 	case "snapshot":
 		return cmdSnapshot(d, rest)
 	case "rollback":
@@ -309,11 +309,77 @@ func cmdAdd(d *daemon.Daemon, args []string) int {
 	return 0
 }
 
-func cmdStatus(d *daemon.Daemon) int {
+// statusReport is the machine-readable form of the status panel. Named
+// fields rather than the raw store rows, so the shape stays a deliberate
+// contract instead of whatever the database happens to hold.
+type statusReport struct {
+	Device string             `json:"device"`
+	Games  []statusReportGame `json:"games"`
+	Peers  []statusReportPeer `json:"peers"`
+}
+
+type statusReportGame struct {
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	SavePath     string         `json:"savePath"`
+	AppID        string         `json:"appId,omitempty"`
+	ActiveBranch string         `json:"activeBranch"`
+	AutoSync     bool           `json:"autoSync"`
+	Branches     map[string]int `json:"branches"` // branch -> snapshot count
+}
+
+type statusReportPeer struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"deviceType"`
+	Address string `json:"address"`
+	Port    int    `json:"port"`
+	Status  string `json:"status"`
+}
+
+// cmdStatus is the bare-command overview. It took no arguments at all, which
+// meant `--json` was accepted and silently ignored — the flag is advertised on
+// every command, and a script asking for JSON got a drawn table with box
+// characters in it and no error to notice.
+func cmdStatus(d *daemon.Daemon, args []string) int {
+	asJSON, _ := jsonFlag(args)
+
 	games, err := d.Store.ListGames()
 	if err != nil {
+		if asJSON {
+			return fail(asJSON, err)
+		}
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
+	}
+
+	if asJSON {
+		report := statusReport{Games: []statusReportGame{}, Peers: []statusReportPeer{}}
+		if settings, err := d.Store.GetSettings(); err == nil {
+			report.Device = settings.DeviceName
+		}
+		for _, g := range games {
+			entry := statusReportGame{
+				ID: g.ID, Name: g.Name, SavePath: g.SavePath, AppID: g.AppID,
+				ActiveBranch: g.ActiveBranch, AutoSync: g.AutoSync,
+				Branches: map[string]int{},
+			}
+			branches, _ := d.Store.ListBranches(g.ID)
+			for _, b := range branches {
+				snaps, _ := d.Store.ListSnapshots(g.ID, b)
+				entry.Branches[b] = len(snaps)
+			}
+			report.Games = append(report.Games, entry)
+		}
+		if peers, err := d.Store.ListPeers(); err == nil {
+			for _, p := range peers {
+				report.Peers = append(report.Peers, statusReportPeer{
+					ID: p.ID, Name: p.Name, Type: p.DeviceType,
+					Address: p.Address, Port: p.Port, Status: p.Status,
+				})
+			}
+		}
+		return emitJSON(report)
 	}
 
 	if len(games) == 0 {
