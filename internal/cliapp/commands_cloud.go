@@ -4,16 +4,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
-// Cloud backup from the terminal.
+// Cloud backup from the terminal, including sign-in.
 //
-// One deliberate omission: connecting a provider that uses OAuth (Google
-// Drive, Dropbox, OneDrive) needs a browser to complete the consent flow, so
-// it can't be done headlessly and isn't pretended otherwise. Set those up once
-// in the desktop app; WebDAV, a webhook, or a local/NAS folder can be
-// configured entirely from here with `opensave cloud setup`.
+// This file used to say OAuth providers could not be connected headlessly and
+// had to be set up in the desktop app. That was never true of the flow, only
+// of the CLI: the app calls /api/auth/start, sends a human to a browser, and
+// posts the returned code to /api/auth/callback. Nothing in that requires the
+// browser to be on the same machine — the redirect goes to a localhost URL
+// that simply fails to load elsewhere, leaving the code visible in the address
+// bar to copy back.
+//
+// It also claimed WebDAV and friends were configurable "entirely from here"
+// with `opensave cloud setup`, a command that did not exist. Both are now
+// real, so a headless server or a Deck in Game Mode can set up cloud backup
+// without a desktop anywhere in the process.
 
 func cmdCloud(args []string) int {
 	asJSON, args := jsonFlag(args)
@@ -23,6 +31,12 @@ func cmdCloud(args []string) int {
 	}
 
 	switch args[0] {
+	case "connect":
+		return cloudConnect(asJSON, args[1:])
+	case "setup":
+		return cloudSetup(asJSON, args[1:])
+	case "disconnect":
+		return cloudDisconnect(asJSON)
 	case "status":
 		return cloudStatus(asJSON)
 	case "list":
@@ -42,6 +56,9 @@ func cmdCloud(args []string) int {
 }
 
 const cloudUsage = `usage:
+  opensave cloud connect <provider>       Sign in to Google Drive, Dropbox or OneDrive
+  opensave cloud setup <provider> [opts]  Configure WebDAV, a webhook, or a local folder
+  opensave cloud disconnect               Forget the current provider
   opensave cloud status                   Provider, and whether it's connected
   opensave cloud browse                   Everything stored in the cloud
   opensave cloud list <gameId>            Cloud snapshots for one game
@@ -49,9 +66,220 @@ const cloudUsage = `usage:
   opensave cloud restore <gameId> <file>  Pull a cloud snapshot back
   opensave cloud delete <gameId>          Remove a game's cloud copies
 
-  Google Drive, Dropbox and OneDrive need a browser to authorise, so connect
-  those once in the desktop app. WebDAV, webhook and local/NAS folders work
-  entirely from here.`
+  providers: google-drive, dropbox, onedrive, webdav, webhook, local
+
+  Signing in needs a browser, but not this machine's browser — connect prints
+  a link you can open anywhere and paste the code back.`
+
+// providerID maps the names people type to the ids the daemon uses. The
+// stored value is google_drive; nobody types an underscore.
+func providerID(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "google-drive", "google_drive", "google", "drive", "gdrive":
+		return "google_drive"
+	case "dropbox":
+		return "dropbox"
+	case "onedrive", "one-drive":
+		return "onedrive"
+	case "webdav":
+		return "webdav"
+	case "webhook":
+		return "webhook"
+	case "local", "folder", "nas":
+		return "local"
+	default:
+		return ""
+	}
+}
+
+// cloudConnect runs the OAuth sign-in from a terminal.
+//
+// This was described as desktop-only, and it never needed to be. The flow the
+// app uses is two daemon calls with a browser in between, and the browser does
+// not have to be on this machine: the redirect lands on http://localhost/callback,
+// which will fail to load on a phone or another PC, but the code is sitting in
+// the address bar of that failed page. Paste it back and the exchange happens
+// here. That is the difference between a headless server or a Deck in Game Mode
+// being able to use cloud backup and not.
+func cloudConnect(asJSON bool, args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr,
+			"usage: opensave cloud connect <google-drive|dropbox|onedrive>\n"+
+				"  For WebDAV, a webhook or a local folder use `opensave cloud setup`.")
+		return 1
+	}
+	provider := providerID(args[0])
+	switch provider {
+	case "google_drive", "dropbox", "onedrive":
+	case "":
+		return fail(asJSON, fmt.Errorf("unknown provider %q", args[0]))
+	default:
+		return fail(asJSON, fmt.Errorf("%s does not sign in — configure it with `opensave cloud setup %s`", args[0], args[0]))
+	}
+
+	raw, err := daemonRequest("POST", "/api/auth/start", map[string]any{"provider": provider})
+	if err != nil {
+		return fail(asJSON, err)
+	}
+	var start struct {
+		AuthURL      string `json:"authUrl"`
+		AutoCallback bool   `json:"autoCallback"`
+	}
+	if err := json.Unmarshal(raw, &start); err != nil || start.AuthURL == "" {
+		return fail(asJSON, fmt.Errorf("the daemon did not return a sign-in link"))
+	}
+
+	if asJSON {
+		// Scripted use gets the link and stops: the next step needs a human
+		// at a browser, and pretending otherwise would just hang.
+		return emitJSON(map[string]any{
+			"provider": provider, "authUrl": start.AuthURL,
+			"autoCallback": start.AutoCallback,
+			"next":         "open authUrl, approve, then: opensave cloud connect " + args[0] + " --code <code>",
+		})
+	}
+
+	// A code passed up front is the second half of the flow, for anyone who
+	// already has one from a previous invocation.
+	if code := flagValue(args[1:], "--code"); code != "" {
+		return cloudFinishAuth(asJSON, code)
+	}
+
+	section("Connect " + provider)
+	fmt.Println()
+	fmt.Println("  1. Open this link and approve access:")
+	fmt.Println()
+	fmt.Printf("     %s\n", accent(start.AuthURL))
+	fmt.Println()
+	if start.AutoCallback {
+		note("This machine is listening for the redirect, so if you open the link here it may finish on its own.")
+		hint("opensave cloud status     check whether it completed")
+		fmt.Println()
+	}
+	fmt.Println("  2. The browser lands on a localhost page that won't load. That's expected —")
+	fmt.Println("     the part you need is in its address bar: code=<something>")
+	fmt.Println()
+	fmt.Println("  3. Paste it back:")
+	fmt.Println()
+	fmt.Printf("     %s\n", faint("opensave cloud connect "+args[0]+" --code <code>"))
+	fmt.Println()
+	return 0
+}
+
+func cloudFinishAuth(asJSON bool, code string) int {
+	raw, err := daemonRequest("POST", "/api/auth/callback", map[string]any{"code": code})
+	if err != nil {
+		return fail(asJSON, err)
+	}
+	if asJSON {
+		return emitRawJSON(raw)
+	}
+	var res struct {
+		UserEmail string `json:"userEmail"`
+	}
+	_ = json.Unmarshal(raw, &res)
+	if res.UserEmail != "" {
+		success("Connected as %s", bold(res.UserEmail))
+	} else {
+		success("Connected.")
+	}
+	hint("opensave cloud push <gameId>")
+	return 0
+}
+
+// cloudSetup configures the providers that need settings rather than a
+// sign-in. The comment at the top of this file has claimed since it was
+// written that these "work entirely from here" via `opensave cloud setup` —
+// the command did not exist.
+func cloudSetup(asJSON bool, args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, cloudSetupUsage)
+		return 1
+	}
+	provider := providerID(args[0])
+	rest := args[1:]
+
+	patch := map[string]any{"enabled": true, "provider": provider}
+	switch provider {
+	case "local":
+		path := flagValue(rest, "--path")
+		if path == "" {
+			return fail(asJSON, fmt.Errorf("a local destination needs --path <folder>"))
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return fail(asJSON, err)
+		}
+		patch["url"] = abs
+
+	case "webdav":
+		u := flagValue(rest, "--url")
+		if u == "" {
+			return fail(asJSON, fmt.Errorf("webdav needs --url <https://...>"))
+		}
+		patch["url"] = u
+		if v := flagValue(rest, "--user"); v != "" {
+			patch["username"] = v
+		}
+		if v := flagValue(rest, "--password"); v != "" {
+			patch["password"] = v
+		}
+
+	case "webhook":
+		u := flagValue(rest, "--url")
+		if u == "" {
+			return fail(asJSON, fmt.Errorf("a webhook needs --url <https://...>"))
+		}
+		patch["url"] = u
+		if v := flagValue(rest, "--headers"); v != "" {
+			patch["headers"] = v
+		}
+
+	case "google_drive", "dropbox", "onedrive":
+		return fail(asJSON, fmt.Errorf("%s signs in rather than being configured — use `opensave cloud connect %s`", args[0], args[0]))
+	default:
+		return fail(asJSON, fmt.Errorf("unknown provider %q\n\n%s", args[0], cloudSetupUsage))
+	}
+
+	if _, err := daemonRequest("POST", "/api/settings", map[string]any{"cloudSync": patch}); err != nil {
+		return fail(asJSON, err)
+	}
+	if asJSON {
+		return emitJSON(map[string]any{"provider": provider, "configured": true})
+	}
+	success("Cloud backup set to %s", bold(provider))
+	hint("opensave cloud status", "opensave cloud push <gameId>")
+	return 0
+}
+
+const cloudSetupUsage = `usage:
+  opensave cloud setup local   --path <folder>
+  opensave cloud setup webdav  --url <url> [--user <u>] [--password <p>]
+  opensave cloud setup webhook --url <url> [--headers '<json>']
+
+  Google Drive, Dropbox and OneDrive sign in instead:
+  opensave cloud connect <provider>`
+
+func cloudDisconnect(asJSON bool) int {
+	if _, err := daemonRequest("POST", "/api/auth/disconnect", map[string]any{}); err != nil {
+		return fail(asJSON, err)
+	}
+	if asJSON {
+		return emitJSON(map[string]any{"disconnected": true})
+	}
+	success("Disconnected. Snapshots already in the cloud are left alone.")
+	return 0
+}
+
+// flagValue reads "--name value" out of an argument list.
+func flagValue(args []string, name string) string {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == name {
+			return args[i+1]
+		}
+	}
+	return ""
+}
 
 func cloudSettings() (map[string]any, error) {
 	raw, err := daemonRequest("GET", "/api/settings", nil)
@@ -118,16 +346,19 @@ func cloudBrowse(asJSON bool) int {
 		return emitRawJSON(raw)
 	}
 
-	var entries []struct {
-		Name      string `json:"name"`
-		GameID    string `json:"gameId"`
-		Branch    string `json:"branch"`
-		SizeBytes int64  `json:"sizeBytes"`
-	}
-	if json.Unmarshal(raw, &entries) != nil {
+	// The endpoint groups by game — {gameId, gameName, count, totalSize,
+	// snapshots:[…]} — and this decoded a flat list of files. Only gameId sat
+	// where it was looking, so every row printed a game with no filename, no
+	// branch and 0 B. Nothing errored: the fields simply were not there.
+	games, err := decodeCloudBrowse(raw)
+	if err != nil {
 		return emitRawJSON(raw)
 	}
-	if len(entries) == 0 {
+	total := 0
+	for _, g := range games {
+		total += len(g.Snapshots)
+	}
+	if total == 0 {
 		section("Cloud backup")
 		note("Nothing stored in the cloud yet.")
 		hint("opensave cloud push <gameId>")
@@ -135,14 +366,47 @@ func cloudBrowse(asJSON bool) int {
 		return 0
 	}
 
-	section(fmt.Sprintf("Cloud backup %s %d file(s)", symDot(), len(entries)))
+	section(fmt.Sprintf("Cloud backup %s %d file(s) across %d game(s)", symDot(), total, len(games)))
 	t := newTable("game", "branch", "size", "file")
-	for _, e := range entries {
-		t.add(bold(e.GameID), faint(e.Branch), humanBytes(e.SizeBytes), faint(e.Name))
+	for _, g := range games {
+		label := g.GameName
+		if label == "" {
+			label = g.GameID
+		}
+		for _, s := range g.Snapshots {
+			t.add(bold(label), faint(s.Branch), humanBytes(s.SizeBytes), faint(s.Name))
+		}
 	}
 	t.render()
+	hint("opensave cloud restore <gameId> <file>")
 	fmt.Println()
 	return 0
+}
+
+// cloudBrowseGame is one game's group in the browse listing. Extracted with
+// its decoder so a literal of the real payload can hold the shape still —
+// this is the third place the CLI has read field names the daemon does not
+// send, and every one of them failed silently rather than erroring.
+type cloudBrowseGame struct {
+	GameID    string `json:"gameId"`
+	GameName  string `json:"gameName"`
+	Count     int    `json:"count"`
+	TotalSize int64  `json:"totalSize"`
+	Snapshots []struct {
+		Name        string `json:"name"`
+		SizeBytes   int64  `json:"sizeBytes"`
+		Branch      string `json:"branch"`
+		SnapshotID  string `json:"snapshotId"`
+		CreatedTime string `json:"createdTime"`
+	} `json:"snapshots"`
+}
+
+func decodeCloudBrowse(raw []byte) ([]cloudBrowseGame, error) {
+	var games []cloudBrowseGame
+	if err := json.Unmarshal(raw, &games); err != nil {
+		return nil, err
+	}
+	return games, nil
 }
 
 func cloudList(asJSON bool, args []string) int {
@@ -158,8 +422,12 @@ func cloudList(asJSON bool, args []string) int {
 		return emitRawJSON(raw)
 	}
 
+	// The field is "name", not "fileName". Reading the wrong one left the
+	// FILE column blank — and that column is the argument `cloud restore`
+	// takes, so the restore flow could not be completed from here at all:
+	// the hint told you to pass a filename the listing declined to show.
 	var snaps []struct {
-		FileName   string `json:"fileName"`
+		FileName   string `json:"name"`
 		SnapshotID string `json:"snapshotId"`
 		Branch     string `json:"branch"`
 		SizeBytes  int64  `json:"sizeBytes"`

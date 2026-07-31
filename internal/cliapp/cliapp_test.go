@@ -381,3 +381,91 @@ func TestDecodeSnapshotFilesReadsRealPayload(t *testing.T) {
 		t.Errorf("nested file size = %d, want 7", files[2].Size)
 	}
 }
+
+// TestDecodeCloudBrowseReadsRealPayload pins the browse listing's shape. The
+// endpoint groups by game and the CLI decoded a flat list of files, so only
+// gameId landed where it was looking: every row printed with no filename, no
+// branch and 0 B. Like the snapshot-listing bug before it, nothing errored —
+// absent fields decode to zero values.
+func TestDecodeCloudBrowseReadsRealPayload(t *testing.T) {
+	raw := []byte(`[{
+	  "gameId":"cloud-test","gameName":"Cloud Test","count":1,"totalSize":163,
+	  "snapshots":[{
+	    "name":"cloud-test__main__snap_1785487380793.zip","sizeBytes":163,
+	    "createdTime":"2026-07-31T08:43:00Z","branch":"main",
+	    "snapshotId":"snap_1785487380793"}]
+	}]`)
+
+	games, err := decodeCloudBrowse(raw)
+	if err != nil {
+		t.Fatalf("decodeCloudBrowse error = %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("decoded %d games, want 1", len(games))
+	}
+	g := games[0]
+	if g.GameName != "Cloud Test" || g.GameID != "cloud-test" {
+		t.Errorf("game decoded as %+v", g)
+	}
+	if len(g.Snapshots) != 1 {
+		t.Fatalf("decoded %d snapshots, want 1", len(g.Snapshots))
+	}
+	s := g.Snapshots[0]
+	if s.SizeBytes != 163 {
+		t.Errorf("size = %d, want 163 — the browse listing is reading the wrong field again", s.SizeBytes)
+	}
+	if s.Branch != "main" {
+		t.Errorf("branch = %q, want main", s.Branch)
+	}
+	if s.Name == "" {
+		t.Error("snapshot filename decoded empty — this is the value `cloud restore` takes")
+	}
+}
+
+// TestProviderIDAcceptsWhatPeopleType maps typed names to the ids the daemon
+// stores. google_drive is the stored value and nobody types an underscore.
+func TestProviderIDAcceptsWhatPeopleType(t *testing.T) {
+	for in, want := range map[string]string{
+		"google-drive": "google_drive",
+		"google_drive": "google_drive",
+		"Google Drive": "",
+		"gdrive":       "google_drive",
+		"GOOGLE":       "google_drive",
+		"dropbox":      "dropbox",
+		"  Dropbox  ":  "dropbox",
+		"onedrive":     "onedrive",
+		"one-drive":    "onedrive",
+		"webdav":       "webdav",
+		"webhook":      "webhook",
+		"local":        "local",
+		"nas":          "local",
+		"nonsense":     "",
+		"":             "",
+	} {
+		if got := providerID(in); got != want {
+			t.Errorf("providerID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// flagValue parses the --name value pairs cloud setup takes.
+func TestFlagValue(t *testing.T) {
+	args := []string{"webdav", "--url", "https://example.com/dav", "--user", "me", "--password", "-secret-"}
+	if got := flagValue(args, "--url"); got != "https://example.com/dav" {
+		t.Errorf("--url = %q", got)
+	}
+	if got := flagValue(args, "--user"); got != "me" {
+		t.Errorf("--user = %q", got)
+	}
+	// A value that looks like a flag is still that flag's value.
+	if got := flagValue(args, "--password"); got != "-secret-" {
+		t.Errorf("--password = %q", got)
+	}
+	if got := flagValue(args, "--missing"); got != "" {
+		t.Errorf("absent flag returned %q", got)
+	}
+	// A trailing flag with no value must not read past the end.
+	if got := flagValue([]string{"--url"}, "--url"); got != "" {
+		t.Errorf("trailing flag returned %q", got)
+	}
+}

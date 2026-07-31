@@ -60,6 +60,9 @@ var commandGroups = []commandGroup{
 		{"backup import <file.sscb>", "Read one back"},
 	}},
 	{"Cloud backup", []commandEntry{
+		{"cloud connect <provider>", "Sign in to Google Drive, Dropbox or OneDrive"},
+		{"cloud setup <provider>", "Configure WebDAV, a webhook, or a local folder"},
+		{"cloud disconnect", "Forget the current provider"},
 		{"cloud status", "Provider and connection state"},
 		{"cloud browse", "Everything stored in the cloud"},
 		{"cloud list <gameId>", "Cloud snapshots for one game"},

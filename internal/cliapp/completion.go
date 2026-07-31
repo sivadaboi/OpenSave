@@ -21,7 +21,7 @@ var subCommands = map[string][]string{
 	"exclude":  {"list", "add", "remove"},
 	"scanpath": {"list", "add", "remove"},
 	"game":     {"set"},
-	"cloud":    {"status", "browse", "list", "push", "restore", "delete"},
+	"cloud":    {"connect", "setup", "disconnect", "status", "browse", "list", "push", "restore", "delete"},
 	"backup":  {"export", "import"},
 	"config":  {"list", "set"},
 }
