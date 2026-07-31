@@ -25,6 +25,7 @@ var commandGroups = []commandGroup{
 	{"Games", []commandEntry{
 		{"scan", "Auto-detect game saves on this machine"},
 		{"add <name> <path>", "Track a game save folder or file"},
+		{"add <number>", "Track one of the last scan's results"},
 		{"remove <gameId>", "Stop tracking a game"},
 		{"untrack-all --yes", "Stop tracking everything (keeps snapshots)"},
 		{"game <gameId> set <key> <value>", "Per-game settings (path, app-id, auto-sync…)"},
@@ -34,6 +35,7 @@ var commandGroups = []commandGroup{
 	{"Sync", []commandEntry{
 		{"sync [<gameId>|--all]", "Sync now (everything by default)"},
 		{"peers", "Paired, discovered and pending devices"},
+		{"peers games <peerId>", "What that device is tracking"},
 		{"pair <host[:port]>", "Ask a device on your LAN to pair"},
 		{"pair requests|approve|reject", "Handle incoming pairing requests"},
 		{"unpair <peerId>", "Drop a paired device"},

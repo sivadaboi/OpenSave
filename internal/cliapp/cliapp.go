@@ -5,10 +5,12 @@ package cliapp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -269,6 +271,10 @@ func cmdScan(d *daemon.Daemon) int {
 		{"game", "Games"}, {"emulator", "Emulators"}, {"repack", "Repacks"},
 	}
 
+	// Collected in display order so the numbers printed are the numbers
+	// `add <n>` resolves.
+	var numbered []presets.DiscoveredSave
+
 	section(fmt.Sprintf("Auto-scan %s %d save location(s)", symDot(), len(found)))
 	for _, l := range labels {
 		list := byType[l.kind]
@@ -277,21 +283,93 @@ func cmdScan(d *daemon.Daemon) int {
 		}
 		fmt.Printf("\n  %s %s\n", faint(strings.ToUpper(l.title)), faint(fmt.Sprintf("(%d)", len(list))))
 		for _, f := range list {
-			fmt.Printf("    %s %s\n", symBullet(), bold(f.Name))
+			numbered = append(numbered, f)
+			fmt.Printf("    %s %s\n", accent(fmt.Sprintf("[%d]", len(numbered))), bold(f.Name))
 			fmt.Printf("        %s\n", faint(f.SavePath))
 		}
 	}
-	hint("opensave add <name> <path>     track one of these")
+
+	// Persist what was shown so `opensave add <n>` means the entry the user is
+	// looking at. Re-scanning to resolve the number would be simpler and
+	// wrong: the numbering has to survive a save appearing or disappearing
+	// between the two commands, and a path retyped by hand from a screen is
+	// the papercut this exists to remove.
+	saveScanResults(d.Paths.HomeDir, numbered)
+
+	hint("opensave add <number>          track one of these",
+		"opensave add <name> <path>     track something else")
 	fmt.Println()
 	return 0
 }
 
+// scanResultsPath is where the last listing is remembered for `add <n>`.
+func scanResultsPath(homeDir string) string {
+	return filepath.Join(homeDir, "last-scan.json")
+}
+
+type scanChoice struct {
+	Name     string `json:"name"`
+	SavePath string `json:"savePath"`
+	AppID    string `json:"appId,omitempty"`
+}
+
+func saveScanResults(homeDir string, found []presets.DiscoveredSave) {
+	out := make([]scanChoice, 0, len(found))
+	for _, f := range found {
+		out = append(out, scanChoice{Name: f.Name, SavePath: f.SavePath, AppID: f.AppID})
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return // best effort: the two-argument form still works
+	}
+	_ = os.WriteFile(scanResultsPath(homeDir), raw, 0o666)
+}
+
+func loadScanResults(homeDir string) []scanChoice {
+	raw, err := os.ReadFile(scanResultsPath(homeDir))
+	if err != nil {
+		return nil
+	}
+	var out []scanChoice
+	if json.Unmarshal(raw, &out) != nil {
+		return nil
+	}
+	return out
+}
+
 func cmdAdd(d *daemon.Daemon, args []string) int {
+	// A single numeric argument means "the nth thing the last scan showed".
+	// Unambiguous against the two-argument form, so a game genuinely called
+	// "3" is still trackable by naming its path.
+	if len(args) == 1 {
+		n, err := strconv.Atoi(strings.TrimSpace(args[0]))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "usage: opensave add <name> <path>\n       opensave add <number>   (from the last `opensave scan`)")
+			return 1
+		}
+		choices := loadScanResults(d.Paths.HomeDir)
+		if len(choices) == 0 {
+			fmt.Fprintln(os.Stderr, "error: no scan results to pick from — run `opensave scan` first")
+			return 1
+		}
+		if n < 1 || n > len(choices) {
+			fmt.Fprintf(os.Stderr, "error: %d is out of range — the last scan found %d location(s)\n", n, len(choices))
+			return 1
+		}
+		pick := choices[n-1]
+		return trackGame(d, pick.Name, pick.SavePath)
+	}
+
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: opensave add <name> <path>")
+		fmt.Fprintln(os.Stderr, "usage: opensave add <name> <path>\n       opensave add <number>   (from the last `opensave scan`)")
 		return 1
 	}
-	name, savePath := args[0], args[1]
+	return trackGame(d, args[0], args[1])
+}
+
+// trackGame is the shared tail of both `add` forms, so picking a scan result
+// and typing a path by hand cannot drift apart in what they report.
+func trackGame(d *daemon.Daemon, name, savePath string) int {
 	abs, err := filepath.Abs(savePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

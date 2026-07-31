@@ -3,6 +3,7 @@ package cliapp
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -47,6 +48,35 @@ func cmdSync(args []string) int {
 	return 0
 }
 
+// conflictSideLabel says which side a difference is on, naming the peer
+// rather than saying "remote" — the user knows their devices by name.
+func conflictSideLabel(status, peerName string) string {
+	switch status {
+	case "only-local":
+		return "only here"
+	case "only-remote":
+		return "only " + peerName
+	default:
+		return "differs"
+	}
+}
+
+// conflictSizeNote renders the two sizes when both exist, and one when the
+// file is on a single side. Directories carry -1 on both and get nothing:
+// "0 B" beside a folder name reads as an empty file.
+func conflictSizeNote(d conflictDiffFile) string {
+	switch {
+	case d.LocalSize >= 0 && d.RemoteSize >= 0:
+		return fmt.Sprintf("(%s / %s)", humanBytes(d.LocalSize), humanBytes(d.RemoteSize))
+	case d.LocalSize >= 0:
+		return "(" + humanBytes(d.LocalSize) + ")"
+	case d.RemoteSize >= 0:
+		return "(" + humanBytes(d.RemoteSize) + ")"
+	default:
+		return ""
+	}
+}
+
 // cmdConflicts lists saves that diverged on two devices and are waiting on a
 // decision. Until one is made that game stops syncing, so a headless machine
 // needs to see and settle them without a desktop.
@@ -86,6 +116,42 @@ func cmdConflicts(args []string) int {
 		t.add(bold(gameID), c.Peer.Name, newer, files)
 	}
 	t.render()
+
+	// Then what differs, per game. Capped: a conflict over a save with
+	// hundreds of files should not bury the resolve hints below it, and the
+	// count in the table above is already the honest total.
+	const maxShown = 12
+	for gameID, c := range conflicts {
+		if len(c.DiffFiles) == 0 {
+			continue
+		}
+		fmt.Printf("\n  %s %s\n", symBullet(), bold(gameID))
+
+		// Width from the labels actually being printed: "only <device>" is as
+		// long as the device is named, so a fixed column either wastes space
+		// or fails to align the moment someone's PC is called something.
+		labelWidth := 0
+		for i, d := range c.DiffFiles {
+			if i == maxShown {
+				break
+			}
+			if n := len(conflictSideLabel(d.Status, c.Peer.Name)); n > labelWidth {
+				labelWidth = n
+			}
+		}
+
+		for i, d := range c.DiffFiles {
+			if i == maxShown {
+				fmt.Printf("      %s\n", faint(fmt.Sprintf("…and %d more", len(c.DiffFiles)-maxShown)))
+				break
+			}
+			fmt.Printf("      %s  %s %s\n",
+				faint(padRight(conflictSideLabel(d.Status, c.Peer.Name), labelWidth)),
+				d.Path,
+				faint(conflictSizeNote(d)))
+		}
+	}
+
 	hint(
 		"opensave resolve <game> keep-both      keeps both, theirs on a branch (safest)",
 		"opensave resolve <game> keep-local     this device's save wins",
@@ -162,6 +228,20 @@ type conflictInfo struct {
 		LatestMtimeMs int64 `json:"latestMtimeMs"`
 	} `json:"remoteStats"`
 	DiffTotal int `json:"diffTotal"`
+	// DiffFiles is what actually differs. The count alone tells you a
+	// decision is needed but nothing about which way to decide, which is the
+	// question in front of the user — the app has shown this list since the
+	// conflict dialog was rebuilt; the CLI was decoding the count beside it
+	// and dropping the rest of the payload on the floor.
+	DiffFiles []conflictDiffFile `json:"diffFiles"`
+}
+
+type conflictDiffFile struct {
+	Path string `json:"path"`
+	// changed | only-local | only-remote
+	Status     string `json:"status"`
+	LocalSize  int64  `json:"localSize"`
+	RemoteSize int64  `json:"remoteSize"`
 }
 
 func fetchConflicts() (map[string]conflictInfo, error) {
@@ -182,8 +262,72 @@ func fetchConflicts() (map[string]conflictInfo, error) {
 }
 
 // cmdPeers lists paired devices and their status.
+// cmdPeerGames lists what a paired device is tracking.
+//
+// `opensave link` already accepts a peer's game id — LinkGames records the
+// alias and leaves the local library alone when the id isn't one of ours — so
+// a cross-device link was possible from here, but only if you already knew an
+// id the CLI had no way to show you. The desktop picker listed them; this is
+// the same list.
+func cmdPeerGames(args []string) int {
+	asJSON, args := jsonFlag(args)
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr,
+			"usage: opensave peers games <peerId>\n"+
+				"  Lists what that device is tracking, so you can link one of its\n"+
+				"  entries to a game here with `opensave link`.\n"+
+				"  Device ids come from `opensave peers`.")
+		return 1
+	}
+	peerID := args[0]
+
+	raw, err := daemonRequest("GET", "/api/peers/"+url.PathEscape(peerID)+"/games", nil)
+	if err != nil {
+		return fail(asJSON, err)
+	}
+	if asJSON {
+		return emitRawJSON(raw)
+	}
+
+	var games []struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		SavePath string `json:"savePath"`
+		AppID    string `json:"appId"`
+	}
+	if json.Unmarshal(raw, &games) != nil {
+		return emitRawJSON(raw)
+	}
+	if len(games) == 0 {
+		section(peerID)
+		note("That device isn't tracking anything.")
+		fmt.Println()
+		return 0
+	}
+
+	section(fmt.Sprintf("%s %s %d game(s)", peerID, symDot(), len(games)))
+	t := newTable("id", "name", "app id", "path")
+	for _, g := range games {
+		appID := faint("—")
+		if g.AppID != "" {
+			appID = g.AppID
+		}
+		t.add(accent(g.ID), bold(g.Name), appID, faint(g.SavePath))
+	}
+	t.render()
+	hint("opensave link <localGameId> <theirGameId>     treat them as the same game")
+	fmt.Println()
+	return 0
+}
+
 func cmdPeers(args []string) int {
-	asJSON, _ := jsonFlag(args)
+	asJSON, rest := jsonFlag(args)
+
+	// `peers games <id>` asks a device what it holds; bare `peers` lists the
+	// devices themselves.
+	if len(rest) > 0 && rest[0] == "games" {
+		return cmdPeerGames(args[1:])
+	}
 
 	raw, err := daemonRequest("GET", "/api/peers", nil)
 	if err != nil {
