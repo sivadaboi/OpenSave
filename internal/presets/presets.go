@@ -28,6 +28,18 @@ type preset struct {
 	Path      string   // Windows path, with %VAR% placeholders
 	LinuxPath []string // Linux candidates (~ and XDG-relative); empty = not on Linux
 	IsWrapper bool     // wrapper dirs hold one subfolder per game/AppID
+	// SwitchNAND marks the yuzu-lineage save root, which is
+	// nand/user/save/<account>/<profile-uuid>/<title-id>/. Offering that root
+	// as one save folder puts the profile uuid inside the synced tree, and
+	// that uuid is generated per install — so the copy arriving on the other
+	// device sits under a profile its emulator has never heard of, and Eden
+	// and Yuzu both report "a save file without an associated profile".
+	// Reported on a Steam Deck paired with a PC, where the two profile ids
+	// were simply different strings.
+	//
+	// Descending to the title folder syncs one game's save and leaves the
+	// profile id out of it entirely, which is what makes the two ends line up.
+	SwitchNAND bool
 }
 
 var presetDefs = []preset{
@@ -36,17 +48,17 @@ var presetDefs = []preset{
 	{ID: "ryujinx", Name: "Ryujinx Switch Emulator", Type: "emulator", Path: "%APPDATA%/Ryujinx/bis/user/save",
 		LinuxPath: []string{"~/.config/Ryujinx/bis/user/save", "~/.var/app/org.ryujinx.Ryujinx/config/Ryujinx/bis/user/save"}},
 	{ID: "yuzu", Name: "Yuzu Switch Emulator", Type: "emulator", Path: "%APPDATA%/yuzu/nand/user/save",
-		LinuxPath: []string{"~/.local/share/yuzu/nand/user/save", "~/.var/app/org.yuzu_emu.yuzu/data/yuzu/nand/user/save"}},
+		LinuxPath: []string{"~/.local/share/yuzu/nand/user/save", "~/.var/app/org.yuzu_emu.yuzu/data/yuzu/nand/user/save"}, SwitchNAND: true},
 	// Yuzu-lineage forks: identical Switch NAND layout (nand/user/save),
 	// only the config dir name differs. Same detection, different homes.
 	{ID: "suyu", Name: "Suyu Switch Emulator", Type: "emulator", Path: "%APPDATA%/suyu/nand/user/save",
-		LinuxPath: []string{"~/.local/share/suyu/nand/user/save", "~/.var/app/dev.suyu_emu.suyu/data/suyu/nand/user/save"}},
+		LinuxPath: []string{"~/.local/share/suyu/nand/user/save", "~/.var/app/dev.suyu_emu.suyu/data/suyu/nand/user/save"}, SwitchNAND: true},
 	{ID: "sudachi", Name: "Sudachi Switch Emulator", Type: "emulator", Path: "%APPDATA%/sudachi/nand/user/save",
-		LinuxPath: []string{"~/.local/share/sudachi/nand/user/save", "~/.var/app/org.sudachi_emu.sudachi/data/sudachi/nand/user/save"}},
+		LinuxPath: []string{"~/.local/share/sudachi/nand/user/save", "~/.var/app/org.sudachi_emu.sudachi/data/sudachi/nand/user/save"}, SwitchNAND: true},
 	{ID: "citron", Name: "Citron Switch Emulator", Type: "emulator", Path: "%APPDATA%/citron/nand/user/save",
-		LinuxPath: []string{"~/.local/share/citron/nand/user/save", "~/.var/app/org.citron_emu.citron/data/citron/nand/user/save"}},
+		LinuxPath: []string{"~/.local/share/citron/nand/user/save", "~/.var/app/org.citron_emu.citron/data/citron/nand/user/save"}, SwitchNAND: true},
 	{ID: "eden", Name: "Eden Switch Emulator", Type: "emulator", Path: "%APPDATA%/eden/nand/user/save",
-		LinuxPath: []string{"~/.local/share/eden/nand/user/save", "~/.var/app/dev.eden_emu.eden/data/eden/nand/user/save"}},
+		LinuxPath: []string{"~/.local/share/eden/nand/user/save", "~/.var/app/dev.eden_emu.eden/data/eden/nand/user/save"}, SwitchNAND: true},
 	{ID: "citra", Name: "Citra 3DS Emulator", Type: "emulator", Path: "%APPDATA%/Citra/sdmc/Nintendo 3DS",
 		LinuxPath: []string{"~/.local/share/citra-emu/sdmc/Nintendo 3DS", "~/.var/app/org.citra_emu.citra/data/citra-emu/sdmc/Nintendo 3DS"}},
 	{ID: "dolphin", Name: "Dolphin GameCube/Wii Emulator", Type: "emulator", Path: "%USERPROFILE%/Documents/Dolphin Emulator",

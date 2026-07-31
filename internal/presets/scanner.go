@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -127,6 +128,20 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 					}
 					discovered = append(discovered, d)
 				}
+			} else if titles := switchNANDTitles(resolved); p.SwitchNAND && len(titles) > 0 {
+				// Per-title entries when the NAND layout is recognised. When
+				// it is not, this falls through to offering the root below:
+				// forks and versions vary, and a layout guess that misses
+				// would take detection away entirely, which is a worse
+				// failure than the profile-id problem this avoids.
+				for _, title := range titles {
+					discovered = append(discovered, DiscoveredSave{
+						ID:       p.ID + "-" + filepath.Base(title),
+						Name:     fmt.Sprintf("%s - Title ID: %s", p.Name, filepath.Base(title)),
+						Type:     p.Type,
+						SavePath: title,
+					})
+				}
 			} else {
 				discovered = append(discovered, DiscoveredSave{
 					ID:       p.ID,
@@ -196,7 +211,7 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 			}
 			seen[p] = true
 			discovered = append(discovered, DiscoveredSave{
-				ID: "savedir-" + a.AppID + "-" + sanitizeID(filepath.Base(p)),
+				ID:   "savedir-" + a.AppID + "-" + sanitizeID(filepath.Base(p)),
 				Name: a.Name, Type: "game", SavePath: p, AppID: a.AppID,
 			})
 		}
@@ -575,4 +590,61 @@ func toLowerASCII(s string) string {
 		}
 	}
 	return string(b)
+}
+
+// switchNANDTitles finds the per-game save folders under a yuzu-lineage NAND
+// save root, whose layout is:
+//
+//	nand/user/save/<account>/<profile-uuid>/<title-id>/
+//
+// The profile uuid is generated when the emulator first runs, so it differs
+// on every install. Tracking the root above it puts that uuid inside the
+// synced tree, and the copy landing on the other device sits under a profile
+// its emulator does not have — which is reported as "a save file without an
+// associated profile" rather than as anything to do with syncing.
+//
+// Returning the title folders instead means each game syncs on its own and
+// the uuid stays a local detail, which is the only arrangement where two
+// installs can agree.
+//
+// Deliberately tolerant about the two levels above the title: account folders
+// are usually all-zero and profile ids are usually 32 hex characters, but
+// forks vary and a layout that does not match exactly should degrade to
+// finding nothing rather than to guessing.
+func switchNANDTitles(root string) []string {
+	var out []string
+	for _, account := range listSubdirs(root) {
+		accountDir := filepath.Join(root, account)
+		for _, profile := range listSubdirs(accountDir) {
+			profileDir := filepath.Join(accountDir, profile)
+			for _, title := range listSubdirs(profileDir) {
+				if !isSwitchTitleID(title) {
+					continue
+				}
+				titleDir := filepath.Join(profileDir, title)
+				// Empty title folders are created by the emulator before a
+				// game has ever saved; offering them is noise.
+				if entries, err := os.ReadDir(titleDir); err == nil && len(entries) > 0 {
+					out = append(out, titleDir)
+				}
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// isSwitchTitleID reports whether a folder name looks like a Switch title id:
+// 16 hex digits. Checking the shape keeps stray folders (backups, "temp") out
+// of the results without needing a list of every game.
+func isSwitchTitleID(name string) bool {
+	if len(name) != 16 {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
