@@ -304,9 +304,14 @@ func (s *Server) handleCloudSyncLocal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	remoteNames := map[string]bool{}
+	// Sizes, not just names. Skipping on the name alone means an archive that
+	// arrived truncated stays truncated forever: it is present, so every later
+	// push passes over it. Uploads interrupted partway do happen — a snapshot
+	// taken by a short-lived CLI process used to die mid-copy — and the file
+	// left behind looks like a backup while containing nothing.
+	remoteSizes := map[string]int64{}
 	for _, f := range remote {
-		remoteNames[f.Name] = true
+		remoteSizes[f.Name] = f.SizeBytes
 	}
 
 	branches, err := s.Daemon.Store.ListBranches(gameID)
@@ -331,9 +336,17 @@ func (s *Server) handleCloudSyncLocal(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, snap := range snaps {
 			remoteName := fmt.Sprintf("%s__%s__%s.zip", gameID, branch, snap.ID)
-			if remoteNames[remoteName] {
+			if size, present := remoteSizes[remoteName]; present && size == snap.SizeBytes {
 				skipped++
 				continue
+			} else if present {
+				// Present but the wrong size: re-upload over it. A provider
+				// that does not report sizes returns 0, which reads as a
+				// mismatch and costs one redundant upload — the safe way to
+				// be wrong about this.
+				s.Daemon.Log.Log("warn", fmt.Sprintf(
+					"cloud copy of %s is %d bytes, local is %d — re-uploading",
+					remoteName, size, snap.SizeBytes))
 			}
 			pending = append(pending, pendingUpload{zipPath: snap.ZipPath, remoteName: remoteName, snapID: snap.ID})
 		}
