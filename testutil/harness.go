@@ -7,11 +7,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +29,9 @@ type TestDaemon struct {
 	Addr    string // host:port
 	Port    int
 	SaveDir string
+	// LastError holds the response body of the most recent 4xx/5xx, so a
+	// failure reports why rather than only that it happened.
+	LastError string
 }
 
 // NewTestDaemon boots a daemon with an isolated home dir and API server on
@@ -96,7 +101,7 @@ func (td *TestDaemon) API(method, path string, body any, out any) {
 	td.T.Helper()
 	status := td.apiRaw(method, path, body, out)
 	if status >= 400 {
-		td.T.Fatalf("%s %s -> %d", method, path, status)
+		td.T.Fatalf("%s %s -> %d: %s", method, path, status, td.LastError)
 	}
 }
 
@@ -131,8 +136,22 @@ func (td *TestDaemon) apiRaw(method, path string, body any, out any) int {
 		td.T.Fatalf("%s %s: %v", method, path, err)
 	}
 	defer resp.Body.Close()
-	if out != nil {
-		_ = json.NewDecoder(resp.Body).Decode(out)
+
+	// Read the body first so a failure can be reported with the reason in it.
+	// Decoding straight into out discarded the error payload on a 4xx/5xx,
+	// which left "POST /api/... -> 500" as the entire diagnosis — enough to
+	// know something broke and nothing else.
+	raw, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		td.T.Fatalf("%s %s: reading response: %v", method, path, readErr)
+	}
+	if resp.StatusCode >= 400 {
+		td.LastError = strings.TrimSpace(string(raw))
+	} else {
+		td.LastError = ""
+	}
+	if out != nil && len(raw) > 0 {
+		_ = json.Unmarshal(raw, out)
 	}
 	return resp.StatusCode
 }

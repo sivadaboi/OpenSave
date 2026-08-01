@@ -16,6 +16,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/opensave/opensave/internal/store"
@@ -37,6 +39,12 @@ type Manager struct {
 	Log func(level, msg string)
 	// now is swappable for tests; defaults to time.Now.
 	now func() time.Time
+	// idMu serialises snapshot id selection against insertion; see
+	// claimAndInsert.
+	idMu sync.Mutex
+	// stagingSeq names the in-progress archive uniquely, independently of
+	// the clock.
+	stagingSeq atomic.Uint64
 }
 
 // New creates a snapshot Manager.
@@ -95,22 +103,23 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 		return store.Snapshot{}, fmt.Errorf("create backup dir: %w", err)
 	}
 
-	ts := m.now()
-	snapshotID := "snap_" + strconv.FormatInt(ts.UnixMilli(), 10)
-	zipPath := filepath.Join(backupDir, snapshotID+".zip")
-
-	skipped, err := ZipPath(game.SavePath, zipPath)
+	// Zip under a staging name, then claim an id and rename. Naming the zip
+	// after the id up front would mean choosing the id before the slow part,
+	// and the id cannot be chosen safely until it is about to be inserted.
+	// Uniqueness must not come from m.now: that clock is swappable and tests
+	// freeze it, which handed every concurrent snapshot the same staging name
+	// and made them fight over one file. A counter cannot be frozen.
+	stagingPath := filepath.Join(backupDir,
+		fmt.Sprintf(".staging-%d-%d.zip", os.Getpid(), m.stagingSeq.Add(1)))
+	skipped, err := ZipPath(game.SavePath, stagingPath)
 	if err != nil {
-		os.Remove(zipPath)
+		os.Remove(stagingPath)
 		return store.Snapshot{}, fmt.Errorf("zip save data: %w", err)
 	}
+	defer os.Remove(stagingPath) // no-op once renamed
 	if len(skipped) > 0 && m.Log != nil {
 		sample := skipped[0]
 		m.Log("warn", fmt.Sprintf("snapshot of %q skipped %d unreadable file(s), e.g. %s", game.Name, len(skipped), sample))
-	}
-	info, err := os.Stat(zipPath)
-	if err != nil {
-		return store.Snapshot{}, err
 	}
 
 	if comment == "" {
@@ -121,20 +130,11 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 		}
 	}
 
-	snap := store.Snapshot{
-		ID:           snapshotID,
-		GameID:       gameID,
-		BranchName:   game.ActiveBranch,
-		Timestamp:    ts.UTC().Format("2006-01-02T15:04:05.000Z"),
-		Comment:      comment,
-		IsSystemAuto: isSystemAuto,
-		ZipPath:      zipPath,
-		SizeBytes:    info.Size(),
-	}
-	if err := m.Store.CreateSnapshot(snap); err != nil {
-		os.Remove(zipPath)
+	snap, zipPath, err := m.claimAndInsert(gameID, game.ActiveBranch, backupDir, stagingPath, comment, isSystemAuto)
+	if err != nil {
 		return store.Snapshot{}, err
 	}
+	snapshotID := snap.ID
 
 	m.pruneRetention(game)
 
@@ -174,6 +174,72 @@ func zipFileCount(zipPath string) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+// claimAndInsert picks a free snapshot id, moves the staged zip into place
+// under that name, and records it — as one operation, under a lock.
+//
+// Ids are snap_<unix-millis>, so two snapshots taken in the same millisecond
+// want the same id. That is not hypothetical: a sync snapshotting several
+// games at once, or the automatic backup before a rollback landing beside a
+// manual one, does it on any reasonably fast machine. It surfaced as
+// "UNIQUE constraint failed: snapshots.id" and the snapshot did not happen —
+// a backup that silently did not get taken.
+//
+// Checking whether an id is free and then inserting it is not enough on its
+// own: between the two, another goroutine claims the same id. The lock closes
+// that window, and the insert is still retried on a collision so a second
+// process (the CLI daemon alongside the app) cannot slip through either.
+//
+// Walking forward a millisecond keeps the id numeric, which snapIDToTimestamp
+// relies on to read the time back out of it. Being a millisecond out is
+// meaningless; not existing is not.
+func (m *Manager) claimAndInsert(gameID, branch, backupDir, stagingPath, comment string, isSystemAuto bool) (store.Snapshot, string, error) {
+	info, err := os.Stat(stagingPath)
+	if err != nil {
+		return store.Snapshot{}, "", err
+	}
+	size := info.Size()
+
+	m.idMu.Lock()
+	defer m.idMu.Unlock()
+
+	ms := m.now().UnixMilli()
+	for attempt := 0; attempt < 1000; attempt++ {
+		id := "snap_" + strconv.FormatInt(ms, 10)
+		if _, err := m.Store.GetSnapshot(id); err == nil {
+			ms++
+			continue // already taken
+		}
+
+		zipPath := filepath.Join(backupDir, id+".zip")
+		if err := os.Rename(stagingPath, zipPath); err != nil {
+			return store.Snapshot{}, "", fmt.Errorf("name snapshot archive: %w", err)
+		}
+
+		snap := store.Snapshot{
+			ID:           id,
+			GameID:       gameID,
+			BranchName:   branch,
+			Timestamp:    time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z"),
+			Comment:      comment,
+			IsSystemAuto: isSystemAuto,
+			ZipPath:      zipPath,
+			SizeBytes:    size,
+		}
+		if err := m.Store.CreateSnapshot(snap); err != nil {
+			// Lost a race with another process. Put the archive back under
+			// the staging name and try the next millisecond.
+			if renameErr := os.Rename(zipPath, stagingPath); renameErr != nil {
+				os.Remove(zipPath)
+				return store.Snapshot{}, "", err
+			}
+			ms++
+			continue
+		}
+		return snap, zipPath, nil
+	}
+	return store.Snapshot{}, "", fmt.Errorf("could not find a free snapshot id near %d", ms)
 }
 
 // pruneRetention deletes the oldest snapshots (metadata + zip file,

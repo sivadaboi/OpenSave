@@ -3,6 +3,7 @@ package snapshot
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -464,5 +465,132 @@ func TestCleanupSweepsAbandonedConflictBranches(t *testing.T) {
 	}
 	if snaps, _ := env.store.ListSnapshots("game1", "main"); len(snaps) != 1 {
 		t.Errorf("main branch lost its snapshot: %d remain", len(snaps))
+	}
+}
+
+// Snapshot ids are snap_<unix-millis>, so two taken in the same millisecond
+// collided on the primary key and the second simply failed — a backup that
+// silently did not happen, which is the worst way for this to fail.
+//
+// The harness above hides it with a monotonic fake clock, which is why this
+// only ever appeared in e2e, on the real clock, as an intermittent
+// "UNIQUE constraint failed: snapshots.id". Freezing the clock reproduces it
+// on demand.
+func TestCreateSnapshotsWithinOneMillisecond(t *testing.T) {
+	env := setup(t)
+
+	// A separate game with generous retention: game1 keeps only 3, and
+	// pruning frees an id that the next snapshot may legitimately reuse,
+	// which would measure retention rather than collision handling.
+	if err := env.store.CreateGame(store.Game{
+		ID: "burst", Name: "Burst", SavePath: env.saveDir, MaxSnapshots: 50,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A clock that does not advance at all: every snapshot claims the same
+	// millisecond, which is what a fast machine does anyway.
+	frozen := time.Now()
+	env.mgr.now = func() time.Time { return frozen }
+
+	writeSave(t, env.saveDir, "slot1.sav", "one")
+
+	ids := map[string]bool{}
+	for i := 0; i < 5; i++ {
+		snap, err := env.mgr.Create("burst", "same instant", false)
+		if err != nil {
+			t.Fatalf("snapshot %d failed: %v — two snapshots in one millisecond must both succeed", i+1, err)
+		}
+		if ids[snap.ID] {
+			t.Fatalf("snapshot %d reused id %s", i+1, snap.ID)
+		}
+		ids[snap.ID] = true
+	}
+
+	if len(ids) != 5 {
+		t.Errorf("got %d distinct ids from 5 snapshots", len(ids))
+	}
+
+	// The id must stay parseable as a timestamp: the app reads the time back
+	// out of it, so a suffix or any non-numeric tail would break history.
+	for id := range ids {
+		msStr := strings.TrimPrefix(id, "snap_")
+		if _, err := strconv.ParseInt(msStr, 10, 64); err != nil {
+			t.Errorf("id %q is not snap_<millis> any more: %v", id, err)
+		}
+	}
+}
+
+// The sequential case above is only half of it. Choosing an id and inserting
+// it are two steps, and between them another goroutine can claim the same id
+// — which is what actually happened: syncs snapshot in background goroutines,
+// so the collision survived a fix that only checked for a free id first.
+func TestConcurrentSnapshotsInOneMillisecond(t *testing.T) {
+	env := setup(t)
+	if err := env.store.CreateGame(store.Game{
+		ID: "race", Name: "Race", SavePath: env.saveDir, MaxSnapshots: 100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeSave(t, env.saveDir, "slot1.sav", "one")
+
+	frozen := time.Now()
+	env.mgr.now = func() time.Time { return frozen }
+
+	const n = 12
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	ids := make([]string, n)
+	start := make(chan struct{})
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start // release together, to actually contend
+			snap, err := env.mgr.Create("race", "concurrent", false)
+			errs[i], ids[i] = err, snap.ID
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	seen := map[string]bool{}
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("concurrent snapshot %d failed: %v", i, err)
+			continue
+		}
+		if seen[ids[i]] {
+			t.Errorf("id %s was handed out twice", ids[i])
+		}
+		seen[ids[i]] = true
+	}
+	if len(seen) != n {
+		t.Errorf("got %d distinct ids from %d concurrent snapshots", len(seen), n)
+	}
+
+	// Every recorded snapshot must have its archive on disk under its own
+	// name — a rename that lost a race would leave a row pointing at nothing.
+	for id := range seen {
+		snap, err := env.store.GetSnapshot(id)
+		if err != nil {
+			t.Errorf("snapshot %s is not in the store: %v", id, err)
+			continue
+		}
+		if _, err := os.Stat(snap.ZipPath); err != nil {
+			t.Errorf("snapshot %s records %s, which does not exist: %v", id, snap.ZipPath, err)
+		}
+	}
+
+	// And no staging files left behind.
+	entries, err := os.ReadDir(filepath.Join(env.backups, "race", "main"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".staging-") {
+			t.Errorf("staging archive left behind: %s", e.Name())
+		}
 	}
 }

@@ -107,6 +107,57 @@ var presetDefs = []preset{
 	{ID: "scummvm", Name: "ScummVM", Type: "emulator", Path: "%APPDATA%/ScummVM/Saved games",
 		LinuxPath: []string{"~/.local/share/scummvm/saves", "~/.var/app/org.scummvm.ScummVM/data/scummvm/saves"}},
 
+	// ── Standalone retro emulators ───────────────────────────────────────
+	//
+	// RetroArch already covers these systems through its cores, and its save
+	// directories are detected above — so this is for people running the
+	// standalone emulators instead, which plenty do.
+	//
+	// A caveat that applies to most of this group and does not to anything
+	// above it: several default to writing the save beside the ROM rather
+	// than into a fixed directory. There is no path to detect in that case,
+	// because it is wherever the user keeps their ROMs. The entries here find
+	// the configured-directory setups; anyone using the next-to-ROM default
+	// tracks their ROM folder by hand, which works fine and is what
+	// `opensave add` is for. Adding a preset cannot fix an unfixed location.
+
+	// N64. Missing from every roadmap I have been handed, which is odd for a
+	// console this size. Project64 keeps saves in Save/ next to the binary
+	// (portable) and mupen64plus follows XDG.
+	{ID: "project64", Name: "Project64 N64 Emulator", Type: "emulator", Path: "%APPDATA%/Project64/Save"},
+	{ID: "mupen64plus", Name: "Mupen64Plus N64 Emulator", Type: "emulator", Path: "%APPDATA%/Mupen64Plus/save",
+		LinuxPath: []string{"~/.local/share/mupen64plus/save", "~/.var/app/io.github.simple64.simple64/data/mupen64plus/save"}},
+	{ID: "simple64", Name: "simple64 N64 Emulator", Type: "emulator", Path: "%APPDATA%/simple64/saves",
+		LinuxPath: []string{"~/.local/share/simple64/saves"}},
+
+	// Nintendo DS.
+	{ID: "melonds", Name: "melonDS Nintendo DS Emulator", Type: "emulator", Path: "%APPDATA%/melonDS",
+		LinuxPath: []string{"~/.config/melonDS", "~/.var/app/net.kuribo64.melonDS/config/melonDS"}},
+	{ID: "desmume", Name: "DeSmuME Nintendo DS Emulator", Type: "emulator", Path: "%APPDATA%/DeSmuME/Battery",
+		LinuxPath: []string{"~/.config/desmume", "~/.var/app/org.desmume.DeSmuME/config/desmume"}},
+
+	// Game Boy / Game Boy Advance.
+	{ID: "mgba", Name: "mGBA Game Boy Emulator", Type: "emulator", Path: "%APPDATA%/mGBA",
+		LinuxPath: []string{"~/.config/mgba", "~/.var/app/io.mgba.mGBA/config/mgba"}},
+	{ID: "sameboy", Name: "SameBoy Game Boy Emulator", Type: "emulator", Path: "%APPDATA%/SameBoy",
+		LinuxPath: []string{"~/.local/share/sameboy", "~/.config/sameboy"}},
+
+	// SNES.
+	{ID: "snes9x", Name: "Snes9x SNES Emulator", Type: "emulator", Path: "%APPDATA%/Snes9x/Saves",
+		LinuxPath: []string{"~/.config/snes9x", "~/.snes9x", "~/.var/app/com.snes9x.Snes9x/config/snes9x"}},
+	{ID: "bsnes", Name: "bsnes SNES Emulator", Type: "emulator", Path: "%LOCALAPPDATA%/bsnes",
+		LinuxPath: []string{"~/.local/share/bsnes", "~/.config/bsnes"}},
+
+	// NES.
+	{ID: "fceux", Name: "FCEUX NES Emulator", Type: "emulator", Path: "%APPDATA%/FCEUX/sav",
+		LinuxPath: []string{"~/.fceux/sav", "~/.config/fceux/sav", "~/.var/app/com.fceux.fceux/config/fceux/sav"}},
+	{ID: "mesen", Name: "Mesen NES Emulator", Type: "emulator", Path: "%APPDATA%/Mesen2/Saves",
+		LinuxPath: []string{"~/.local/share/Mesen2/Saves", "~/.config/Mesen2/Saves"}},
+
+	// Sega Genesis / Mega Drive.
+	{ID: "blastem", Name: "BlastEm Genesis Emulator", Type: "emulator", Path: "%APPDATA%/blastem",
+		LinuxPath: []string{"~/.local/share/blastem", "~/.config/blastem"}},
+
 	// EmuDeck (Steam Deck & co.) relocates every emulator's saves into one
 	// tree: Emulation/saves/<emulator>. Internal storage plus SD card
 	// (SteamOS mounts cards under /run/media/<dev> or /run/media/deck/<label>).
