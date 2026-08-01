@@ -68,7 +68,8 @@ var commandGroups = []commandGroup{
 		{"cloud list <gameId>", "Cloud snapshots for one game"},
 		{"cloud push <gameId>", "Upload local snapshots"},
 		{"cloud restore <id> <file>", "Pull one back"},
-		{"cloud delete <gameId> --yes", "Remove a game's cloud copies"},
+		{"cloud delete <id> <file>", "Remove one cloud snapshot"},
+		{"cloud delete <gameId> --yes", "Remove every cloud copy of a game"},
 	}},
 	{"Configuration", []commandEntry{
 		{"config [set <key> <value>]", "Read or change settings"},

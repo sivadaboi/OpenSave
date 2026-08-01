@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/opensave/opensave/internal/cloud"
@@ -52,6 +53,10 @@ type Daemon struct {
 	// addition to the built-in P2P sync kick). May be reassigned before
 	// Start.
 	OnGameChanged func(gameID string)
+
+	// uploads counts cloud mirrors still running, so Stop can wait for them
+	// rather than letting process exit truncate one.
+	uploads sync.WaitGroup
 }
 
 // New builds the daemon: resolves paths, runs the one-time legacy JSON
@@ -117,6 +122,18 @@ func New(opts Options) (*Daemon, error) {
 	// Every new snapshot mirrors to the configured cloud provider in the
 	// background; failures are logged, never fatal.
 	snaps.OnUpload = func(zipPath, remoteFileName string) {
+		// Tracked so Stop can wait for it. Snapshot fires this in a
+		// goroutine, and in a short-lived process — `opensave snapshot`, or
+		// the automatic backup taken by rollback and checkout — the process
+		// exits before the copy finishes. The destination file has already
+		// been created and truncated by then, so what is left in the cloud
+		// is a zero-byte archive that looks like a backup. `cloud push`
+		// then skips it, because a file of that name exists, so it is never
+		// repaired. Reproduced with a local folder provider: of five
+		// snapshots taken in sequence, the last two uploaded as 0 bytes.
+		d.uploads.Add(1)
+		defer d.uploads.Done()
+
 		if err := d.Cloud.Upload(zipPath, remoteFileName); err != nil {
 			if !cloud.IsNotConfigured(err) {
 				log.Log("error", fmt.Sprintf("cloud upload of %s failed: %v", remoteFileName, err))
@@ -218,7 +235,22 @@ func (d *Daemon) Start() error {
 }
 
 // Stop shuts the daemon down cleanly.
+// uploadDrainTimeout caps how long Stop waits for cloud uploads.
+const uploadDrainTimeout = 30 * time.Second
+
 func (d *Daemon) Stop() {
+	// Let in-flight cloud uploads finish before the process goes away, or
+	// they leave truncated archives behind. Bounded: a wedged provider must
+	// not hold a CLI command open indefinitely, and an upload killed at the
+	// timeout is no worse off than it was before this waited at all.
+	done := make(chan struct{})
+	go func() { d.uploads.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(uploadDrainTimeout):
+		d.Log.Log("warn", "a cloud upload was still running at shutdown; it may be incomplete")
+	}
+
 	d.P2P.Stop()
 	d.Watcher.Stop()
 	d.Store.Close()

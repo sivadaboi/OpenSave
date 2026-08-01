@@ -64,7 +64,8 @@ const cloudUsage = `usage:
   opensave cloud list <gameId>            Cloud snapshots for one game
   opensave cloud push <gameId>            Upload this game's local snapshots
   opensave cloud restore <gameId> <file>  Pull a cloud snapshot back
-  opensave cloud delete <gameId>          Remove a game's cloud copies
+  opensave cloud delete <id> <file>       Remove one cloud snapshot
+  opensave cloud delete <gameId> --yes    Remove every cloud copy of a game
 
   providers: google-drive, dropbox, onedrive, webdav, webhook, local
 
@@ -499,11 +500,73 @@ func cloudRestore(asJSON bool, args []string) int {
 	return 0
 }
 
+const cloudDeleteUsage = `usage:
+  opensave cloud delete <gameId> <fileName>   Remove one cloud snapshot
+  opensave cloud delete <gameId> --yes        Remove every cloud copy of a game
+
+  File names come from ` + "`opensave cloud list <gameId>`" + `.`
+
+// cloudDeleteOne removes a single cloud snapshot.
+//
+// The provider's own file id is passed through when it has one: Drive and
+// Dropbox address files by id rather than by name, and deleting by name alone
+// is ambiguous the moment two uploads share one. The listing already carries
+// it, so it is looked up rather than asked for — the user has a filename in
+// front of them, not an opaque id.
+func cloudDeleteOne(asJSON bool, gameID, fileName string) int {
+	raw, err := daemonRequest("GET", "/api/cloud/snapshots/"+gameID, nil)
+	if err != nil {
+		return fail(asJSON, err)
+	}
+	var snaps []struct {
+		ID       string `json:"id"`
+		FileName string `json:"name"`
+	}
+	if json.Unmarshal(raw, &snaps) != nil {
+		return fail(asJSON, fmt.Errorf("could not read the cloud listing for %s", gameID))
+	}
+
+	var fileID string
+	var found bool
+	for _, s := range snaps {
+		if s.FileName == fileName {
+			fileID, found = s.ID, true
+			break
+		}
+	}
+	if !found {
+		return fail(asJSON, fmt.Errorf(
+			"%s is not a cloud snapshot of %s — run `opensave cloud list %s`", fileName, gameID, gameID))
+	}
+
+	if _, err := daemonRequest("POST", "/api/cloud/delete/"+gameID, map[string]any{
+		"fileName": fileName, "id": fileID,
+	}); err != nil {
+		return fail(asJSON, err)
+	}
+	if asJSON {
+		return emitJSON(map[string]any{"game": gameID, "deleted": fileName})
+	}
+	success("Deleted %s from the cloud", accent(fileName))
+	note("The local snapshot on this device is untouched.")
+	return 0
+}
+
 func cloudDelete(asJSON bool, args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: opensave cloud delete <gameId> [--yes]")
+		fmt.Fprintln(os.Stderr, cloudDeleteUsage)
 		return 1
 	}
+	gameID := args[0]
+
+	// A filename means one snapshot. The app has always been able to remove a
+	// single cloud copy — /api/cloud/delete takes a fileName — but the CLI
+	// only wired up delete-game, so from here the choice was every copy of a
+	// game or none of them.
+	if len(args) > 1 && !strings.HasPrefix(args[1], "-") {
+		return cloudDeleteOne(asJSON, gameID, args[1])
+	}
+
 	confirmed := false
 	for _, a := range args[1:] {
 		if a == "--yes" || a == "-y" {
@@ -514,13 +577,13 @@ func cloudDelete(asJSON bool, args []string) int {
 		if asJSON {
 			return fail(asJSON, fmt.Errorf("refusing to delete cloud copies without --yes"))
 		}
-		warning("This deletes every cloud copy of %s.", bold(args[0]))
+		warning("This deletes every cloud copy of %s.", bold(gameID))
 		note("Local snapshots on this device are not touched.")
-		hint("opensave cloud delete " + args[0] + " --yes")
+		hint("opensave cloud delete " + gameID + " --yes")
 		return 1
 	}
 
-	raw, err := daemonRequest("POST", "/api/cloud/delete-game/"+args[0], map[string]any{})
+	raw, err := daemonRequest("POST", "/api/cloud/delete-game/"+gameID, map[string]any{})
 	if err != nil {
 		return fail(asJSON, err)
 	}
@@ -531,7 +594,7 @@ func cloudDelete(asJSON bool, args []string) int {
 		Deleted int `json:"deleted"`
 	}
 	_ = json.Unmarshal(raw, &res)
-	success("Removed %d cloud file(s) for %s", res.Deleted, bold(args[0]))
+	success("Removed %d cloud file(s) for %s", res.Deleted, bold(gameID))
 	return 0
 }
 
