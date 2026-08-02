@@ -173,9 +173,11 @@ func TestCLI_SnapshotAndRollbackRestoresEverything(t *testing.T) {
 	c.mustRun("add", "History Game", dir)
 	c.mustRun("snapshot", "history-game", "-m", "known good")
 
+	// Two: the one tracking took automatically, and the one just asked for.
+	// The manual one is newest, and is the one to roll back to.
 	ids := c.snapshotIDs("history-game")
-	if len(ids) != 1 {
-		t.Fatalf("expected one snapshot, got %v", ids)
+	if len(ids) != 2 {
+		t.Fatalf("expected the initial snapshot plus the manual one, got %v", ids)
 	}
 	snap := ids[0]
 
@@ -315,13 +317,15 @@ func TestCLI_SnapshotDeleteAndPrune(t *testing.T) {
 		c.saveDir("pruning", map[string]string{"slot1.sav": v})
 		c.mustRun("snapshot", "pruning", "-m", v)
 	}
+	// Four: the automatic one taken when the game was tracked, plus the three
+	// asked for here.
 	ids := c.snapshotIDs("pruning")
-	if len(ids) != 3 {
-		t.Fatalf("expected 3 snapshots, got %v", ids)
+	if len(ids) != 4 {
+		t.Fatalf("expected the initial snapshot plus 3 manual ones, got %v", ids)
 	}
 
 	c.mustRun("snapshot-delete", "pruning", ids[0])
-	if got := c.snapshotIDs("pruning"); len(got) != 2 {
+	if got := c.snapshotIDs("pruning"); len(got) != 3 {
 		t.Errorf("after deleting one snapshot there are %d: %v", len(got), got)
 	}
 
@@ -362,7 +366,9 @@ func TestCLI_UntrackAllRequiresConfirmation(t *testing.T) {
 	if out := c.mustRun("status"); !strings.Contains(out, "Guarded") {
 		t.Errorf("a command that should have refused removed the game:\n%s", out)
 	}
-	if ids := c.snapshotIDs("guarded"); len(ids) != 1 {
+	// Both survive: the one taken when the game was tracked, and the manual
+	// one above.
+	if ids := c.snapshotIDs("guarded"); len(ids) != 2 {
 		t.Errorf("a command that should have refused deleted a snapshot: %v", ids)
 	}
 

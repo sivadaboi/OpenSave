@@ -142,6 +142,32 @@ func (e *Engine) Watch(gameID, savePath string) error {
 	return nil
 }
 
+// Watching reports whether a game is currently being watched, and at which
+// path. Reconciling the watch set against the database needs this: Watch
+// replaces an existing watch outright — stopping its goroutine and re-adding
+// every fsnotify registration — so re-watching everything to pick up one new
+// game would tear down and rebuild all the others for nothing.
+func (e *Engine) Watching(gameID string) (savePath string, ok bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	gw, ok := e.games[gameID]
+	if !ok {
+		return "", false
+	}
+	return gw.savePath, true
+}
+
+// WatchedGames returns the ids currently being watched.
+func (e *Engine) WatchedGames() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	ids := make([]string, 0, len(e.games))
+	for id := range e.games {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // Unwatch stops watching a game. The (possibly slow) wait for the watch
 // goroutine happens outside the engine lock so other games' operations
 // are never blocked.

@@ -1,0 +1,12 @@
+-- Retroactive proof that a push landed.
+--
+-- After this device pushes, the merge-base is deliberately left behind: the
+-- peer is the side that ends up holding the new state, so convergence is
+-- recorded only when the peer reports back. That report crosses the network
+-- and can be lost — and a merge-base frozen behind BOTH sides does not just
+-- delay a conflict, it manufactures one on every later edit.
+--
+-- Recording the state we handed over lets the next sync prove the push landed
+-- without being told: if the peer is observed holding exactly this hash, both
+-- sides verifiably held it, which is the definition of a merge-base.
+ALTER TABLE game_peer_sync_state ADD COLUMN pushed_hash TEXT NOT NULL DEFAULT '';

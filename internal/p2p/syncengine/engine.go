@@ -254,6 +254,30 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 		_ = e.Store.SetAgreedHash(gameID, peer.ID, localManifest.ManifestHash())
 		agreedHash = localManifest.ManifestHash()
 	}
+	// The same repair for the case the one above cannot reach: the sides no
+	// longer hold the same files, because this device carried on and changed
+	// something after the push. That is the ordinary case — the user played
+	// the game — and it is precisely when a stranded base bites, because
+	// sameFiles is false and nothing else ever advances it.
+	//
+	// The push itself is still provable though. If the peer is holding
+	// exactly the state we handed it, it applied that push, whatever became
+	// of its report. Both sides verifiably held that hash, which is the
+	// definition of a merge-base, so bank it and judge the divergence from
+	// there instead of from a state neither side has held for hours.
+	//
+	// The record is cleared the moment any convergence is recorded (see
+	// SetAgreedHash), so a non-empty one here means a push really is still
+	// outstanding rather than merely having happened at some point. Without
+	// that, a record left over from an earlier push would match again if the
+	// peer ever returned to that state, dragging the base backwards onto it
+	// and skipping a conflict that a later agreement had earned.
+	if pushed := e.Store.GetPushedHash(gameID, peer.ID); pushed != "" {
+		if remoteHash := remoteData.Manifest.ManifestHash(); agreedHash != remoteHash && remoteHash == pushed {
+			_ = e.Store.SetAgreedHash(gameID, peer.ID, remoteHash)
+			agreedHash = remoteHash
+		}
+	}
 
 	if DetectConflict(localManifest, remoteData.Manifest, lastSyncMs, agreedHash) {
 		e.registerConflict(gameID, peer, localManifest, remoteData)
@@ -324,20 +348,30 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	// verifiably on both sides, and dropping it from the lineage here
 	// would make the next pass misread the peer's copy as a brand-new
 	// remote file and resurrect it, instead of propagating the deletion.
-	freshManifest, err := delta.BuildManifest(game.SavePath)
-	if err == nil {
+	freshManifest, freshErr := delta.BuildManifest(game.SavePath)
+	if freshErr == nil {
 		e.persistLineage(gameID, peer.ID, mergeManifestPaths(freshManifest, localManifest), remoteData.Manifest)
 	}
 
 	// Convergence ratchet: after a pure pull (no push, no peer-side
 	// deletions) we now hold exactly the remote's state — record it as the
-	// agreed merge-base. Pushes and peer-deletions converge later, when
-	// the peer reports back (sync-complete → RefreshLineage) or the next
-	// in_sync pass confirms; a stale agreed hash only ever errs toward an
-	// extra conflict prompt, never toward silently overwriting anything.
+	// agreed merge-base.
+	//
+	// Pushes and peer-deletions cannot ratchet here, because this side does
+	// not yet know the peer applied anything; they converge when the peer
+	// reports back (sync-complete → RefreshLineage) or the next in_sync pass
+	// confirms. That was long assumed harmless on the grounds that a stale
+	// base only ever errs toward an extra conflict prompt rather than toward
+	// overwriting anything. Safe, but not harmless: if the report is lost the
+	// base never advances at all, and a base stranded behind both sides turns
+	// every subsequent one-sided edit into a false conflict. So record what
+	// was handed over, and let the next sync prove the push landed by
+	// observing the peer holding exactly it.
 	if !decision.HasPush() &&
 		len(decision.FilesToDeleteOnPeer) == 0 && len(decision.DirsToDeleteOnPeer) == 0 {
 		_ = e.Store.SetAgreedHash(gameID, peer.ID, remoteData.Manifest.ManifestHash())
+	} else if freshErr == nil {
+		_ = e.Store.SetPushedHash(gameID, peer.ID, freshManifest.ManifestHash())
 	}
 
 	return e.classifyResult(decision), nil

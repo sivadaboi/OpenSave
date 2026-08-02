@@ -57,6 +57,14 @@ type Daemon struct {
 	// uploads counts cloud mirrors still running, so Stop can wait for them
 	// rather than letting process exit truncate one.
 	uploads sync.WaitGroup
+
+	// initialSnapshots counts the first-snapshot goroutines TrackGame starts.
+	// They run in the background so the API can answer immediately, which is
+	// right for the desktop app and wrong for the CLI: `opensave add` returns
+	// and the process exits, taking the unfinished snapshot with it. The game
+	// ended up tracked with no history at all, and nothing said so — the one
+	// snapshot you would most want is the state before you started playing.
+	initialSnapshots sync.WaitGroup
 }
 
 // New builds the daemon: resolves paths, runs the one-time legacy JSON
@@ -150,9 +158,28 @@ func New(opts Options) (*Daemon, error) {
 		if err != nil || game.MaxSnapshots <= 0 {
 			return
 		}
+		// Only automatic snapshots are candidates. Mirroring the local limit
+		// over every file would delete the user's deliberate snapshots from
+		// the cloud even though local retention now keeps them — leaving the
+		// backup thinner than the machine it is backing up.
+		//
+		// A remote file whose snapshot row is gone locally cannot be
+		// classified, so it stays a candidate: that is the pre-existing
+		// behaviour, and treating unknowns as protected would make cloud
+		// storage grow without bound.
 		prefix := fmt.Sprintf("%s__%s__", gameID, branch)
 		_, _ = d.Cloud.PruneGameBranch(func(name string) bool {
-			return strings.HasPrefix(name, prefix)
+			if !strings.HasPrefix(name, prefix) {
+				return false
+			}
+			_, _, snapID, parsed := snapshot.ParseExportEntryName(name)
+			if !parsed {
+				return false
+			}
+			if snap, sErr := s.GetSnapshot(snapID); sErr == nil && !snap.IsSystemAuto {
+				return false // a manual snapshot: not the automatic budget's to spend
+			}
+			return true
 		}, game.MaxSnapshots)
 	}
 
@@ -243,6 +270,17 @@ func (d *Daemon) Stop() {
 	// they leave truncated archives behind. Bounded: a wedged provider must
 	// not hold a CLI command open indefinitely, and an upload killed at the
 	// timeout is no worse off than it was before this waited at all.
+	// Same for a first snapshot still being taken: a CLI `add` returns as soon
+	// as the game is recorded, and without this the process exits before the
+	// snapshot is written, leaving a tracked game with no history.
+	snapsDone := make(chan struct{})
+	go func() { d.initialSnapshots.Wait(); close(snapsDone) }()
+	select {
+	case <-snapsDone:
+	case <-time.After(uploadDrainTimeout):
+		d.Log.Log("warn", "an initial snapshot was still running at shutdown; it may be missing")
+	}
+
 	done := make(chan struct{})
 	go func() { d.uploads.Wait(); close(done) }()
 	select {
@@ -269,6 +307,74 @@ func SteamCoverURL(appID string) string {
 		}
 	}
 	return "https://cdn.cloudflare.steamstatic.com/steam/apps/" + appID + "/header.jpg"
+}
+
+// ResyncWatchers reconciles the live watch set with what the database says,
+// starting watches for games that should have one and stopping those that
+// should not. Returns how many were started and stopped.
+//
+// It exists because the CLI does not talk to a running daemon: every command
+// opens its own short-lived daemon and writes the database directly. A game
+// added with `opensave add` while the desktop app (or a `daemon start`) is
+// running therefore appears in the database but is watched by nobody — no
+// auto-snapshots, no auto-sync — until the long-running process is restarted,
+// and nothing on screen says so. The CLI asks for this afterwards so the
+// running process picks the change up immediately.
+//
+// Existing watches are left strictly alone: Watch replaces a watch outright,
+// so re-watching everything would stop and rebuild every goroutine and every
+// fsnotify registration each time one game changed.
+func (d *Daemon) ResyncWatchers() (started, stopped int) {
+	if d.Watcher == nil {
+		return 0, 0
+	}
+	games, err := d.Store.ListGames()
+	if err != nil {
+		return 0, 0
+	}
+
+	want := make(map[string]string, len(games)) // id -> save path
+	for _, game := range games {
+		if game.AutoSync {
+			want[game.ID] = game.SavePath
+		}
+	}
+
+	for _, id := range d.Watcher.WatchedGames() {
+		current, _ := d.Watcher.Watching(id)
+		path, wanted := want[id]
+		switch {
+		case !wanted:
+			// Untracked, or auto-sync switched off.
+			d.Watcher.Unwatch(id)
+			stopped++
+		case path != current:
+			// The save was relocated; the existing watch is on the wrong tree.
+			if err := d.Watcher.Watch(id, path); err != nil {
+				d.Log.Log("warn", fmt.Sprintf("could not re-watch %q: %v", id, err))
+				continue
+			}
+			started++
+		}
+	}
+
+	for id, path := range want {
+		if _, watching := d.Watcher.Watching(id); watching {
+			continue
+		}
+		if err := d.Watcher.Watch(id, path); err != nil {
+			d.Log.Log("warn", fmt.Sprintf("could not watch %q: %v", id, err))
+			continue
+		}
+		started++
+	}
+
+	if started > 0 || stopped > 0 {
+		d.Log.Log("info", fmt.Sprintf(
+			"watch list reconciled after an outside change: %d started, %d stopped",
+			started, stopped))
+	}
+	return started, stopped
 }
 
 // TrackGame adds a new game, takes its initial snapshot (when the save
@@ -321,6 +427,13 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 			game.MaxSnapshots = s.DefaultMaxSnapshots
 		}
 	}
+	if game.MaxManualSnapshots == 0 {
+		// Manual snapshots default to being kept forever; a global default is
+		// only applied when the user has set one.
+		if s, err := d.Store.GetSettings(); err == nil && s.DefaultMaxManualSnapshots > 0 {
+			game.MaxManualSnapshots = s.DefaultMaxManualSnapshots
+		}
+	}
 	if game.CoverURL == "" {
 		game.CoverURL = SteamCoverURL(game.AppID)
 	}
@@ -333,7 +446,13 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 	// background so tracking returns immediately and never blocks the UI.
 	// If the game is untracked while the snapshot runs, stop: no watch, no
 	// upload, no zombie work for a game that no longer exists.
+	//
+	// Counted so Stop can wait for it: the CLI's daemon lives only as long as
+	// the command, and without the wait `opensave add` returned before the
+	// snapshot was written and the process took it with it.
+	d.initialSnapshots.Add(1)
 	go func() {
+		defer d.initialSnapshots.Done()
 		if _, err := d.Snapshots.Create(game.ID, "Initial snapshot", true); err != nil {
 			d.Log.Log("warn", fmt.Sprintf("initial snapshot for %q failed: %v", game.Name, err))
 		}

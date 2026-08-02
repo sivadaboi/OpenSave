@@ -22,6 +22,8 @@ func (s *Server) routes(r chi.Router) {
 	r.Get("/api/settings", s.handleGetSettings)
 	r.Post("/api/settings", s.handleUpdateSettings)
 
+	r.Post("/api/watch/reload", s.handleReloadWatchers)
+
 	r.Get("/api/games", s.handleListGames)
 	r.Post("/api/games", s.handleTrackGame)
 	r.Post("/api/games/untrack-bulk", s.handleBulkUntrack)
@@ -232,14 +234,16 @@ func (s *Server) handlePruneSnapshots(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		limit := settings.DefaultMaxSnapshots
+		manualLimit := settings.DefaultMaxManualSnapshots
 		games, err := s.Daemon.Store.ListGames()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		for _, g := range games {
-			if g.MaxSnapshots != limit {
+			if g.MaxSnapshots != limit || g.MaxManualSnapshots != manualLimit {
 				g.MaxSnapshots = limit
+				g.MaxManualSnapshots = manualLimit
 				_ = s.Daemon.Store.UpdateGame(g)
 			}
 		}
@@ -330,6 +334,22 @@ func (s *Server) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 // header image (as opposed to a user's custom cover).
 func isSteamCover(url string) bool {
 	return strings.Contains(url, "steamstatic.com/steam/apps/")
+}
+
+// handleReloadWatchers makes this daemon re-read the games table and bring
+// its watch list back in line with it.
+//
+// The CLI writes the database directly rather than talking to a running
+// daemon, so `opensave add` on a machine where the app is already running
+// leaves the new game tracked but unwatched — no auto-snapshots and no
+// auto-sync until a restart, with nothing to indicate it. The CLI posts here
+// after any change so the running process notices straight away.
+func (s *Server) handleReloadWatchers(w http.ResponseWriter, r *http.Request) {
+	started, stopped := s.Daemon.ResyncWatchers()
+	s.BroadcastGamesUpdate()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"started": started, "stopped": stopped,
+	})
 }
 
 func (s *Server) handleUntrackGame(w http.ResponseWriter, r *http.Request) {

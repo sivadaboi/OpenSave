@@ -198,6 +198,7 @@ func cmdConfig(d *daemon.Daemon, args []string) int {
 		fmt.Printf("relay room:       %s\n", orNone(settings.SyncCode))
 		fmt.Printf("match by app id:  %v\n", settings.MatchByAppID)
 		fmt.Printf("snapshot limit:   %d\n", settings.DefaultMaxSnapshots)
+		fmt.Printf("manual limit:     %s\n", manualLimitLabel(settings.DefaultMaxManualSnapshots))
 		fmt.Printf("data dir:         %s\n", settings.DataDir)
 		fmt.Printf("snapshots dir:    %s\n", settings.BackupsDir)
 		return 0
@@ -220,6 +221,12 @@ func cmdConfig(d *daemon.Daemon, args []string) int {
 			return fail(asJSON, fmt.Errorf("snapshot-limit must be a non-negative number"))
 		}
 		settings.DefaultMaxSnapshots = n
+	case "manual-snapshot-limit":
+		var n int
+		if _, err := fmt.Sscanf(value, "%d", &n); err != nil || n < 0 {
+			return fail(asJSON, fmt.Errorf("manual-snapshot-limit must be a non-negative number (0 keeps them forever)"))
+		}
+		settings.DefaultMaxManualSnapshots = n
 	case "relay-url":
 		settings.RelayURL = value
 	default:
@@ -243,8 +250,20 @@ const configUsage = `usage:
   opensave config [list]                    Show current settings
   opensave config set device-name <name>    How other devices see this one
   opensave config set match-by-app-id <t/f> Link same-App-ID games across devices
-  opensave config set snapshot-limit <n>    Snapshots kept per branch (0 = all)
+  opensave config set snapshot-limit <n>    Automatic snapshots kept per branch (0 = all)
+  opensave config set manual-snapshot-limit <n>
+                                            Manual snapshots kept per branch (0 = keep forever)
   opensave config set relay-url <url>       Relay server for internet sync`
+
+// manualLimitLabel renders the manual-snapshot budget. 0 is the default and
+// means "never pruned", which is worth saying in words — printing a bare 0
+// next to "snapshot limit: 20" reads like manual snapshots are disabled.
+func manualLimitLabel(n int) string {
+	if n <= 0 {
+		return "keep forever"
+	}
+	return fmt.Sprintf("%d", n)
+}
 
 func orNone(s string) string {
 	if s == "" {

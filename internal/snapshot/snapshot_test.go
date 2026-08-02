@@ -372,9 +372,13 @@ func TestEmptySnapshotNeverMirrorsToCloud(t *testing.T) {
 // forever (a real disk-filler behind "my system is full of snapshots").
 func TestPruneAllBranches(t *testing.T) {
 	env := setup(t)
-	// Limit 2 per branch.
+	// Limit 2 per branch. The snapshots below are manual, so the manual
+	// budget is the one that applies to them; automatic and manual snapshots
+	// are counted separately so an auto-saving game cannot evict deliberate
+	// snapshots (see manual_retention_test.go).
 	g, _ := env.store.GetGame("game1")
 	g.MaxSnapshots = 2
+	g.MaxManualSnapshots = 2
 	_ = env.store.UpdateGame(g)
 
 	// main branch: 4 snapshots.
@@ -411,8 +415,17 @@ func TestPruneAllBranches(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(snaps) != 2 {
-			t.Errorf("branch %q has %d snapshots after prune, want 2 (limit)", branch, len(snaps))
+		// Each kind is capped separately, so count the manual ones this test
+		// created rather than the total: switching branches takes a safety
+		// snapshot of its own, which belongs to the automatic budget.
+		manual := 0
+		for _, s := range snaps {
+			if !s.IsSystemAuto {
+				manual++
+			}
+		}
+		if manual != 2 {
+			t.Errorf("branch %q has %d manual snapshots after prune, want 2 (limit)", branch, manual)
 		}
 		for _, s := range snaps {
 			if _, err := os.Stat(s.ZipPath); err != nil {

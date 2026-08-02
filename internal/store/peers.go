@@ -181,6 +181,9 @@ type GamePeerSyncState struct {
 	// convergence — the merge-base for content-based conflict detection.
 	// Empty means no convergence recorded yet.
 	AgreedHash string `db:"agreed_hash"`
+	// PushedHash is the state this device last handed to the peer. Seeing the
+	// peer hold it proves the push landed even if the peer's report was lost.
+	PushedHash string `db:"pushed_hash"`
 }
 
 // GetAgreedHash returns the last-convergence manifest hash for a
@@ -196,14 +199,51 @@ func (s *Store) GetAgreedHash(gameID, peerID string) string {
 }
 
 // SetAgreedHash records the manifest hash both sides verifiably held.
+//
+// It also clears any outstanding pushed hash, because recording a convergence
+// settles the question that record exists to answer. Left behind, it outlives
+// the push it describes: a later pull moves the base on, and if the peer ever
+// returns to the older pushed state — rolling back to one of its own snapshots
+// does exactly that — the stale record would match again and drag the base
+// backwards onto it, silently discarding the newer agreement and pushing over
+// the peer's copy instead of raising a conflict.
 func (s *Store) SetAgreedHash(gameID, peerID, hash string) error {
 	_, err := s.db.Exec(`
 		INSERT INTO game_peer_sync_state (game_id, peer_id, last_synced_files, last_synced_dirs, agreed_hash)
 		VALUES (?, ?, '[]', '[]', ?)
-		ON CONFLICT(game_id, peer_id) DO UPDATE SET agreed_hash = excluded.agreed_hash`,
+		ON CONFLICT(game_id, peer_id) DO UPDATE SET
+			agreed_hash = excluded.agreed_hash,
+			pushed_hash = ''`,
 		gameID, peerID, hash)
 	if err != nil {
 		return fmt.Errorf("set agreed hash %s/%s: %w", gameID, peerID, err)
+	}
+	return nil
+}
+
+// GetPushedHash returns the manifest state this device last handed to a peer
+// ("" if it has never pushed to it). Observing the peer holding exactly this
+// hash later is proof the push landed, which lets a merge-base stranded by a
+// lost report be repaired from data alone.
+func (s *Store) GetPushedHash(gameID, peerID string) string {
+	var hash string
+	if err := s.db.Get(&hash,
+		`SELECT pushed_hash FROM game_peer_sync_state WHERE game_id = ? AND peer_id = ?`,
+		gameID, peerID); err != nil {
+		return ""
+	}
+	return hash
+}
+
+// SetPushedHash records the state this device just handed to a peer.
+func (s *Store) SetPushedHash(gameID, peerID, hash string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO game_peer_sync_state (game_id, peer_id, last_synced_files, last_synced_dirs, pushed_hash)
+		VALUES (?, ?, '[]', '[]', ?)
+		ON CONFLICT(game_id, peer_id) DO UPDATE SET pushed_hash = excluded.pushed_hash`,
+		gameID, peerID, hash)
+	if err != nil {
+		return fmt.Errorf("set pushed hash %s/%s: %w", gameID, peerID, err)
 	}
 	return nil
 }

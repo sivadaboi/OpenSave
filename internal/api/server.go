@@ -347,17 +347,18 @@ func (s *Server) gamePayload(g store.Game) map[string]any {
 		branches[name] = map[string]any{"name": name, "snapshots": wireSnaps}
 	}
 	return map[string]any{
-		"id":           g.ID,
-		"name":         g.Name,
-		"savePath":     g.SavePath,
-		"activeBranch": g.ActiveBranch,
-		"autoSync":     g.AutoSync,
-		"maxSnapshots": g.MaxSnapshots,
-		"appId":        g.AppID,
-		"exePath":      g.ExePath,
-		"coverUrl":     g.CoverURL,
-		"branches":     branches,
-		"createdAt":    g.CreatedAt,
+		"id":                 g.ID,
+		"name":               g.Name,
+		"savePath":           g.SavePath,
+		"activeBranch":       g.ActiveBranch,
+		"autoSync":           g.AutoSync,
+		"maxSnapshots":       g.MaxSnapshots,
+		"maxManualSnapshots": g.MaxManualSnapshots,
+		"appId":              g.AppID,
+		"exePath":            g.ExePath,
+		"coverUrl":           g.CoverURL,
+		"branches":           branches,
+		"createdAt":          g.CreatedAt,
 	}
 }
 

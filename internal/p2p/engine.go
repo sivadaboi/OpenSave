@@ -87,6 +87,15 @@ type Engine struct {
 	buildMu    sync.Mutex
 	peerBuilds map[string]PeerBuild
 
+	// Lineage refreshes already running after a peer-applied deletion, keyed
+	// by game+peer. Deletions arrive one file at a time, and each one leaves
+	// the merge-base needing to be re-derived — so clearing a save folder of
+	// a hundred files would otherwise start a hundred manifest fetches of the
+	// same peer at once, over the relay. One in flight per game+peer is
+	// enough: the last deletion to finish is the one whose refresh matters.
+	deleteRefreshMu sync.Mutex
+	deleteRefresh   map[string]bool
+
 	// Lifecycle of background work this engine starts. Syncs triggered by a
 	// peer appearing, or by the retry failsafe, used to run on
 	// context.Background() and so outlived Stop entirely — leaving a partly

@@ -18,31 +18,34 @@ type TranslationRule struct {
 
 // Settings is the singleton device configuration row.
 type Settings struct {
-	ID                int               `db:"id" json:"-"`
-	DeviceName        string            `db:"device_name" json:"deviceName"`
-	NodeID            string            `db:"node_id" json:"nodeId"`
-	DeviceType        string            `db:"device_type" json:"deviceType"`
-	Port              int               `db:"port" json:"port"`
-	SyncInterval      int               `db:"sync_interval" json:"syncInterval"`
-	SyncOnWatch       bool              `db:"sync_on_watch" json:"syncOnWatch"`
-	DataDir           string            `db:"data_dir" json:"dataDir"`
-	BackupsDir        string            `db:"backups_dir" json:"backupsDir"`
-	SyncBackupsDir    string            `db:"sync_backups_dir" json:"syncBackupsDir"`
-	AutoDeleteBackups bool              `db:"auto_delete_backups" json:"autoDeleteBackups"`
-	AutoDeleteDays    int               `db:"auto_delete_days" json:"autoDeleteDays"`
-	AutoSyncOnTrack   bool              `db:"auto_sync_on_track" json:"autoSyncOnTrack"`
-	MatchByAppID      bool              `db:"match_by_app_id" json:"matchByAppId"`
-	CustomScanPaths   []string          `db:"-" json:"customScanPaths"`
-	ExcludePaths      []string          `db:"-" json:"excludePaths"`
-	PathTranslations  []TranslationRule `db:"-" json:"pathTranslations"`
-	RelayURL          string            `db:"relay_url" json:"relayUrl"`
-	SyncCode          string            `db:"sync_code" json:"syncCode"`
-	HostRelay         bool              `db:"host_relay" json:"hostRelay"`
-	RelayPort         int               `db:"relay_port" json:"relayPort"`
-	StartOnBoot       bool              `db:"start_on_boot" json:"startOnBoot"`
-	SpeedLimitKbps    int               `db:"speed_limit_kbps" json:"speedLimit"`
-	UIMode            string            `db:"ui_mode" json:"uiMode"`
-	DefaultMaxSnapshots int             `db:"default_max_snapshots" json:"defaultMaxSnapshots"`
+	ID                  int               `db:"id" json:"-"`
+	DeviceName          string            `db:"device_name" json:"deviceName"`
+	NodeID              string            `db:"node_id" json:"nodeId"`
+	DeviceType          string            `db:"device_type" json:"deviceType"`
+	Port                int               `db:"port" json:"port"`
+	SyncInterval        int               `db:"sync_interval" json:"syncInterval"`
+	SyncOnWatch         bool              `db:"sync_on_watch" json:"syncOnWatch"`
+	DataDir             string            `db:"data_dir" json:"dataDir"`
+	BackupsDir          string            `db:"backups_dir" json:"backupsDir"`
+	SyncBackupsDir      string            `db:"sync_backups_dir" json:"syncBackupsDir"`
+	AutoDeleteBackups   bool              `db:"auto_delete_backups" json:"autoDeleteBackups"`
+	AutoDeleteDays      int               `db:"auto_delete_days" json:"autoDeleteDays"`
+	AutoSyncOnTrack     bool              `db:"auto_sync_on_track" json:"autoSyncOnTrack"`
+	MatchByAppID        bool              `db:"match_by_app_id" json:"matchByAppId"`
+	CustomScanPaths     []string          `db:"-" json:"customScanPaths"`
+	ExcludePaths        []string          `db:"-" json:"excludePaths"`
+	PathTranslations    []TranslationRule `db:"-" json:"pathTranslations"`
+	RelayURL            string            `db:"relay_url" json:"relayUrl"`
+	SyncCode            string            `db:"sync_code" json:"syncCode"`
+	HostRelay           bool              `db:"host_relay" json:"hostRelay"`
+	RelayPort           int               `db:"relay_port" json:"relayPort"`
+	StartOnBoot         bool              `db:"start_on_boot" json:"startOnBoot"`
+	SpeedLimitKbps      int               `db:"speed_limit_kbps" json:"speedLimit"`
+	UIMode              string            `db:"ui_mode" json:"uiMode"`
+	DefaultMaxSnapshots int               `db:"default_max_snapshots" json:"defaultMaxSnapshots"`
+	// DefaultMaxManualSnapshots is the starting manual-snapshot budget for
+	// newly tracked games. 0 means keep them forever.
+	DefaultMaxManualSnapshots int `db:"default_max_manual_snapshots" json:"defaultMaxManualSnapshots"`
 
 	CustomScanPathsJSON  string `db:"custom_scan_paths" json:"-"`
 	ExcludePathsJSON     string `db:"exclude_paths" json:"-"`
@@ -220,6 +223,7 @@ func (s *Store) UpdateSettings(settings Settings) error {
 			speed_limit_kbps = :speed_limit_kbps,
 			ui_mode = :ui_mode,
 			default_max_snapshots = :default_max_snapshots,
+			default_max_manual_snapshots = :default_max_manual_snapshots,
 			updated_at = datetime('now')
 		WHERE id = 1`, settings)
 	if err != nil {

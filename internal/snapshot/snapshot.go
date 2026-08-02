@@ -228,10 +228,18 @@ func (m *Manager) claimAndInsert(gameID, branch, backupDir, stagingPath, comment
 			SizeBytes:    size,
 		}
 		if err := m.Store.CreateSnapshot(snap); err != nil {
-			// Lost a race with another process. Put the archive back under
-			// the staging name and try the next millisecond.
+			// Put the archive back under the staging name either way, so the
+			// next attempt has something to move and a failure leaves no
+			// half-named file behind.
 			if renameErr := os.Rename(zipPath, stagingPath); renameErr != nil {
 				os.Remove(zipPath)
+				return store.Snapshot{}, "", err
+			}
+			// Only an id collision is worth walking forward for. Anything
+			// else — a closed database, a full disk — will fail identically
+			// on all 1000 attempts, and reporting it as "could not find a
+			// free snapshot id" hides the actual cause behind a wrong one.
+			if !isIDCollision(err) {
 				return store.Snapshot{}, "", err
 			}
 			ms++
@@ -242,9 +250,17 @@ func (m *Manager) claimAndInsert(gameID, branch, backupDir, stagingPath, comment
 	return store.Snapshot{}, "", fmt.Errorf("could not find a free snapshot id near %d", ms)
 }
 
+// isIDCollision reports whether an insert failed because the id was already
+// taken, as opposed to any other database error. SQLite reports this as a
+// uniqueness violation naming the column; the driver (modernc) surfaces it as
+// a plain error, so the text is what there is to match on.
+func isIDCollision(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+}
+
 // pruneRetention deletes the oldest snapshots (metadata + zip file,
-// best-effort on the file) beyond the game's maxSnapshots limit. A limit
-// of 0 or below disables pruning, matching the JS `maxSnapshots > 0` guard.
+// best-effort on the file) beyond the game's retention limits. A limit
+// of 0 or below disables pruning for that kind.
 //
 // Retention applies to EVERY branch, not just the active one: conflict
 // resolutions and manual branching create side branches whose snapshots
@@ -254,10 +270,17 @@ func (m *Manager) pruneRetention(game store.Game) {
 	m.pruneGameAllBranches(game)
 }
 
-// pruneGameAllBranches deletes snapshots beyond the limit on every branch
+// pruneGameAllBranches deletes snapshots beyond the limits on every branch
 // of a game and returns how many were removed and the bytes freed.
+//
+// Automatic and manual snapshots are budgeted separately (see
+// SnapshotsBeyondRetentionByKind): a game that auto-saves constantly must not
+// be able to evict the snapshots its user took deliberately.
 func (m *Manager) pruneGameAllBranches(game store.Game) (removed int, freed int64) {
-	if game.MaxSnapshots <= 0 {
+	// Nothing to do only when BOTH kinds are unlimited. Checking just the
+	// automatic limit here would skip manual pruning entirely for the common
+	// setup of "keep all auto-saves, keep 20 manual".
+	if game.MaxSnapshots <= 0 && game.MaxManualSnapshots <= 0 {
 		return 0, 0
 	}
 	branches, err := m.Store.ListBranches(game.ID)
@@ -265,7 +288,8 @@ func (m *Manager) pruneGameAllBranches(game store.Game) (removed int, freed int6
 		return 0, 0
 	}
 	for _, branch := range branches {
-		beyond, err := m.Store.SnapshotsBeyondRetention(game.ID, branch, game.MaxSnapshots)
+		beyond, err := m.Store.SnapshotsBeyondRetentionByKind(
+			game.ID, branch, game.MaxSnapshots, game.MaxManualSnapshots)
 		if err != nil {
 			continue
 		}

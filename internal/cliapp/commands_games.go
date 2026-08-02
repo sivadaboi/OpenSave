@@ -55,6 +55,12 @@ func cmdGame(d *daemon.Daemon, args []string) int {
 			return fail(asJSON, fmt.Errorf("max-snapshots must be a non-negative number"))
 		}
 		game.MaxSnapshots = n
+	case "max-manual-snapshots":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return fail(asJSON, fmt.Errorf("max-manual-snapshots must be a non-negative number (0 keeps them forever)"))
+		}
+		game.MaxManualSnapshots = n
 	case "path":
 		// Relocating a save is the one change that needs validating: pointing
 		// a game at a bad path would break sync and snapshots silently.
@@ -94,7 +100,10 @@ const gameUsage = `usage: opensave game <gameId> set <key> <value>
   exe-path <file>        Executable, so the app can launch the game
   cover-url <url>        Custom cover image
   auto-sync <true|false> Watch this save and sync it automatically
-  max-snapshots <n>      Snapshots kept per branch (0 = unlimited)`
+  max-snapshots <n>      Automatic snapshots kept per branch (0 = unlimited)
+  max-manual-snapshots <n>
+                         Snapshots you took yourself, kept per branch
+                         (0 = keep forever, the default)`
 
 func isTruthy(s string) bool {
 	switch strings.ToLower(s) {

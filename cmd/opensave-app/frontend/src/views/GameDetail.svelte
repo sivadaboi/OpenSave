@@ -34,7 +34,8 @@
       exePath: game.exePath ?? '',
       coverUrl: game.coverUrl ?? '',
       autoSync: game.autoSync ?? true,
-      maxSnapshots: game.maxSnapshots ?? 5
+      maxSnapshots: game.maxSnapshots ?? 5,
+      maxManualSnapshots: game.maxManualSnapshots ?? 0
     };
   }
   // Cover preview for the config editor: a custom URL wins, else the proxied
@@ -241,7 +242,8 @@
         exePath: cfg.exePath,
         coverUrl: cfg.coverUrl,
         autoSync: cfg.autoSync,
-        maxSnapshots: Number(cfg.maxSnapshots)
+        maxSnapshots: Number(cfg.maxSnapshots),
+        maxManualSnapshots: Number(cfg.maxManualSnapshots)
       })
     );
   }
@@ -518,9 +520,19 @@
             Auto-sync saves when changes are detected
           </label>
           <div class="field" style="margin-top: 12px;">
-            <label for="c-max">Snapshot retention limit</label>
+            <label for="c-max">Automatic snapshot limit</label>
             <input id="c-max" type="number" min="0" bind:value={cfg.maxSnapshots} />
-            <span class="hint">Max snapshots kept per branch (0 = unlimited). Oldest are pruned first.</span>
+            <span class="hint">
+              Max <em>automatic</em> snapshots kept per branch (0 = unlimited). Oldest are pruned first.
+            </span>
+          </div>
+          <div class="field">
+            <label for="c-max-manual">Manual snapshot limit</label>
+            <input id="c-max-manual" type="number" min="0" bind:value={cfg.maxManualSnapshots} />
+            <span class="hint">
+              Snapshots you took yourself get their own budget, so a game that auto-saves often
+              can't push them out. <strong>0 = keep forever</strong> (the default).
+            </span>
           </div>
           <div class="config-save">
             <button class="btn primary" disabled={busy} on:click={saveConfig}>Save configuration</button>

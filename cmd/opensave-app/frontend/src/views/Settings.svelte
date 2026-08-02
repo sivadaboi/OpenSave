@@ -54,6 +54,9 @@
     draft.cloudSync ??= {
       enabled: true, provider: 'local', url: '', username: '', password: '', headers: '{}', folderId: ''
     };
+    // Older daemons predate the separate manual-snapshot budget; 0 is the
+    // "keep forever" default, so an omitted value behaves as it should.
+    draft.defaultMaxManualSnapshots ??= 0;
   }
 
   async function save() {
@@ -365,11 +368,20 @@
     <div class="card" style="margin-top: 14px;">
       <h3 class="section-title">📸 Snapshot history</h3>
       <div class="field">
-        <label for="s-max-snaps">Snapshots to keep per game</label>
+        <label for="s-max-snaps">Automatic snapshots to keep per game</label>
         <input id="s-max-snaps" type="number" min="0" style="max-width: 120px;" bind:value={draft.defaultMaxSnapshots} />
         <span class="hint">
           Default limit for newly tracked games (0 = keep everything). The oldest are pruned first,
           per branch. Change a single game's limit in its Configuration tab.
+        </span>
+      </div>
+      <div class="field">
+        <label for="s-max-manual-snaps">Manual snapshots to keep per game</label>
+        <input id="s-max-manual-snaps" type="number" min="0" style="max-width: 120px;" bind:value={draft.defaultMaxManualSnapshots} />
+        <span class="hint">
+          Snapshots you take yourself have their own budget, so games that auto-save often
+          (Elden Ring, Dragonsword) can't push them out. <strong>0 = keep forever</strong>, which is
+          the default.
         </span>
       </div>
       <div class="field" style="margin-bottom: 0;">

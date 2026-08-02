@@ -10,9 +10,10 @@ import (
 )
 
 type snapshotWire struct {
-	ID      string `json:"id"`
-	Comment string `json:"comment"`
-	Branch  string `json:"branch"`
+	ID           string `json:"id"`
+	Comment      string `json:"comment"`
+	Branch       string `json:"branch"`
+	IsSystemAuto bool   `json:"isSystemAuto"`
 }
 
 type gameWire struct {
@@ -161,16 +162,29 @@ func TestHistory_PruneEnforcesRetention(t *testing.T) {
 		t.Fatalf("expected at least 7 snapshots before pruning, have %d", before)
 	}
 
-	// Cap this game at 3 and prune.
-	a.API(http.MethodPatch, "/api/games/"+gameID, map[string]any{"maxSnapshots": 3}, nil)
+	// Cap this game at 3 and prune. These snapshots were taken through the
+	// snapshot endpoint, so they are manual ones and belong to the manual
+	// budget — maxSnapshots governs only the watcher's automatic snapshots,
+	// which are deliberately not allowed to evict deliberate ones.
+	a.API(http.MethodPatch, "/api/games/"+gameID,
+		map[string]any{"maxSnapshots": 3, "maxManualSnapshots": 3}, nil)
 	var pruneResp struct {
 		Removed int `json:"removed"`
 	}
 	a.API(http.MethodPost, "/api/snapshots/prune", map[string]any{}, &pruneResp)
 
 	after := snapshotsOn(a, gameID, "main")
-	if len(after) > 3 {
-		t.Errorf("after pruning to a limit of 3, %d snapshots remain", len(after))
+	// Each kind is held to its own budget, so the total is the sum of the
+	// two rather than a single number — tracking the game took an automatic
+	// snapshot of its own, which the manual limit has no say over.
+	manual := 0
+	for _, s := range after {
+		if !s.IsSystemAuto {
+			manual++
+		}
+	}
+	if manual > 3 {
+		t.Errorf("after pruning to a manual limit of 3, %d manual snapshots remain", manual)
 	}
 	if pruneResp.Removed == 0 {
 		t.Error("prune reported removing nothing despite being over the limit")

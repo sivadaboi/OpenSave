@@ -347,7 +347,7 @@ func (w *WanClient) routeRequest(ctx context.Context, msg RelayMessage) (int, an
 		return w.serveBlocks(route, msg.Body)
 
 	case strings.HasPrefix(route, "/delete-file/"):
-		return w.serveDeleteFile(route, msg.Body)
+		return w.serveDeleteFile(route, msg.Body, msg.From)
 
 	case strings.HasPrefix(route, "/snapshot/"):
 		return w.serveSnapshotDownload(route)
@@ -436,7 +436,16 @@ func (w *WanClient) serveBlocks(route string, rawBody json.RawMessage) (int, any
 	return 200, map[string]any{"relPath": body.RelPath, "blocks": out}
 }
 
-func (w *WanClient) serveDeleteFile(route string, rawBody json.RawMessage) (int, any) {
+// serveDeleteFile applies a deletion a peer asked for over the relay.
+//
+// fromPeerID is who asked. It is needed because applying the deletion changes
+// this device without any sync having run, so the merge-base for that peer is
+// left describing a state that still holds the deleted file — and a base
+// behind both sides turns the next ordinary one-sided edit into a conflict on
+// a save nobody else touched. The relay path matters more than the LAN one
+// here: devices syncing over the internet are the ones far enough apart for
+// the stale window to be noticed.
+func (w *WanClient) serveDeleteFile(route string, rawBody json.RawMessage, fromPeerID string) (int, any) {
 	gameID := route[strings.LastIndex(route, "/")+1:]
 	var body struct {
 		RelPath string `json:"relPath"`
@@ -454,6 +463,12 @@ func (w *WanClient) serveDeleteFile(route string, rawBody json.RawMessage) (int,
 	full := filepath.Join(game.SavePath, filepath.FromSlash(body.RelPath))
 	_ = os.Chmod(full, 0o666)
 	_ = os.Remove(full)
+
+	if peer, pErr := w.engine.Store.GetPeer(fromPeerID); pErr == nil {
+		w.engine.refreshLineageAfterDeletion(gameID, syncengine.Peer{
+			ID: peer.ID, Name: peer.Name, Address: peer.Address, Port: peer.Port,
+		})
+	}
 	return 200, map[string]any{"success": true}
 }
 

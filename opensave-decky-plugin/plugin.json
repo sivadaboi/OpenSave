@@ -2,7 +2,7 @@
   "name": "OpenSave",
   "author": "Siva Prakash",
   "description": "Peer-to-peer game save sync. Syncs your saves around gameplay, without leaving Game Mode.",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "api_version": 1,
   "publish": {
     "tags": ["utility", "sync", "saves"],

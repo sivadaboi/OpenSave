@@ -194,7 +194,10 @@ func TestSnapshotsBeyondRetention(t *testing.T) {
 		}
 	}
 
-	beyond, err := s.SnapshotsBeyondRetention(game.ID, "main", 2)
+	// These are manual snapshots (IsSystemAuto defaults to false), so the
+	// manual budget is the one that governs them; the automatic budget is
+	// unlimited here and must not pull any of them in.
+	beyond, err := s.SnapshotsBeyondRetentionByKind(game.ID, "main", 0, 2)
 	if err != nil {
 		t.Fatal(err)
 	}

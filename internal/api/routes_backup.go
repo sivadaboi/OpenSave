@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/opensave/opensave/internal/delta"
 	"github.com/opensave/opensave/internal/snapshot"
+	"github.com/opensave/opensave/internal/store"
 )
 
 // handleSnapshotFiles lists the entries inside a snapshot ZIP (for the
@@ -161,6 +162,15 @@ type backupManifestGame struct {
 	Tracked      bool   `json:"tracked"`
 	SavePath     string `json:"savePath"`
 	PortablePath string `json:"portablePath"`
+	// SaveKind is "dir" or "file" — whether the save path is a folder or a
+	// single file. Recorded because the archive alone cannot say: a folder
+	// holding exactly one save (which is most of them) produces the same
+	// single-entry zip as a save that IS one file, and restoring onto a
+	// machine where the target does not exist yet has to choose between
+	// creating the folder and writing the file where the folder should be.
+	// Guessing put the save one directory too high. Empty means an archive
+	// written before this was recorded; those still fall back to the guess.
+	SaveKind string `json:"saveKind,omitempty"`
 }
 
 // skippedGame reports one game an export/import couldn't include and why.
@@ -241,6 +251,10 @@ func (s *Server) handleBackupExport(w http.ResponseWriter, r *http.Request) {
 		}
 		seenPath[norm] = true
 		entry.PortablePath = tokenizeSavePath(entry.SavePath)
+		entry.SaveKind = "dir"
+		if info, statErr := os.Stat(entry.SavePath); statErr == nil && !info.IsDir() {
+			entry.SaveKind = "file"
+		}
 		games = append(games, entry)
 	}
 
@@ -648,12 +662,52 @@ func (s *Server) importBackupV2(zr *zip.Reader, manifest *backupManifest, mode s
 			s.Daemon.Log.Log("info", fmt.Sprintf("existing files at %s backed up to %s", target, safetyPath))
 		}
 
+		// When the manifest says this save is a folder, create it before
+		// extracting. UnzipTo decides between "a folder of saves" and "one
+		// save file" by looking at the target, and on a machine that has
+		// never held this game there is nothing there to look at — so it
+		// falls back to the shape of the archive, and a folder containing a
+		// single save looks exactly like a save that is one file. It then
+		// wrote that file into the PARENT directory: the save came back, one
+		// level above where the game looks for it, reported as restored.
+		// Creating the folder first removes the guess entirely.
+		if g.SaveKind == "dir" {
+			if mkErr := os.MkdirAll(target, 0o777); mkErr != nil {
+				os.Remove(tmpPath)
+				res.Action, res.Error = "skipped", mkErr.Error()
+				results = append(results, s.logImportResult(res))
+				continue
+			}
+		}
+
 		err = snapshot.UnzipTo(tmpPath, target)
 		os.Remove(tmpPath)
 		if err != nil {
 			res.Action, res.Error = "skipped", err.Error()
+			results = append(results, s.logImportResult(res))
+			continue
+		}
+		res.Action = "restored"
+
+		// Track it. Restoring a backup onto a machine that has never seen
+		// these games is the whole point of the format, and putting the files
+		// back without the games left the app empty and every one of them
+		// waiting to be re-added by hand — the files were on disk, but nothing
+		// was watching, syncing or snapshotting them, and nothing said so.
+		//
+		// The manifest's id is reused rather than derived afresh, so the game
+		// keeps the identity its peers and its snapshot history already use.
+		// Failing to track is not failing to restore: the files are already
+		// back, so the outcome stands and only the tracked flag says otherwise.
+		tracked, trackErr := s.Daemon.TrackGame(store.Game{
+			ID: g.ID, Name: g.Name, SavePath: target, AppID: g.AppID,
+		})
+		if trackErr != nil {
+			s.Daemon.Log.Log("warn", fmt.Sprintf(
+				"backup import: restored %q to %s but could not track it: %v", g.Name, target, trackErr))
 		} else {
-			res.Action = "restored"
+			res.Tracked = true
+			res.Path = tracked.SavePath
 		}
 		results = append(results, s.logImportResult(res))
 	}

@@ -205,6 +205,15 @@ func (td *TestDaemon) WriteSave(rel, content string) {
 	}
 }
 
+// RemoveSave deletes a file from this daemon's save dir, as a game or a user
+// would. Missing is not an error: the point is the file being gone.
+func (td *TestDaemon) RemoveSave(rel string) {
+	td.T.Helper()
+	if err := os.Remove(filepath.Join(td.SaveDir, filepath.FromSlash(rel))); err != nil && !os.IsNotExist(err) {
+		td.T.Fatal(err)
+	}
+}
+
 // ReadSave reads a file from the save dir ("" if missing).
 func (td *TestDaemon) ReadSave(rel string) string {
 	raw, err := os.ReadFile(filepath.Join(td.SaveDir, filepath.FromSlash(rel)))

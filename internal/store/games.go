@@ -33,10 +33,16 @@ type Game struct {
 	SavePath     string `db:"save_path" json:"savePath"`
 	ActiveBranch string `db:"active_branch" json:"activeBranch"`
 	AutoSync     bool   `db:"auto_sync" json:"autoSync"`
-	MaxSnapshots int    `db:"max_snapshots" json:"maxSnapshots"`
-	AppID        string `db:"app_id" json:"appId"`
-	ExePath      string `db:"exe_path" json:"exePath"`
-	CoverURL     string `db:"cover_url" json:"coverUrl"`
+	// MaxSnapshots caps AUTOMATIC snapshots — the ones the watcher takes as
+	// the game saves. 0 or below keeps them all.
+	MaxSnapshots int `db:"max_snapshots" json:"maxSnapshots"`
+	// MaxManualSnapshots caps snapshots the user took deliberately. It is a
+	// separate budget so a frequently auto-saving game cannot evict them;
+	// 0 or below (the default) keeps them forever.
+	MaxManualSnapshots int    `db:"max_manual_snapshots" json:"maxManualSnapshots"`
+	AppID              string `db:"app_id" json:"appId"`
+	ExePath            string `db:"exe_path" json:"exePath"`
+	CoverURL           string `db:"cover_url" json:"coverUrl"`
 	// LastManifestHash is the manifest hash at the moment of the last
 	// auto-snapshot; the watcher compares against it before snapshotting
 	// again, preventing feedback loops (snapshot -> event -> snapshot).
@@ -61,8 +67,8 @@ func (s *Store) CreateGame(g Game) error {
 	defer tx.Rollback()
 
 	_, err = tx.NamedExec(`
-		INSERT INTO games (id, name, save_path, active_branch, auto_sync, max_snapshots, app_id, exe_path, cover_url)
-		VALUES (:id, :name, :save_path, :active_branch, :auto_sync, :max_snapshots, :app_id, :exe_path, :cover_url)`,
+		INSERT INTO games (id, name, save_path, active_branch, auto_sync, max_snapshots, max_manual_snapshots, app_id, exe_path, cover_url)
+		VALUES (:id, :name, :save_path, :active_branch, :auto_sync, :max_snapshots, :max_manual_snapshots, :app_id, :exe_path, :cover_url)`,
 		g)
 	if err != nil {
 		return fmt.Errorf("insert game: %w", err)
@@ -123,6 +129,7 @@ func (s *Store) UpdateGame(g Game) error {
 			active_branch = :active_branch,
 			auto_sync = :auto_sync,
 			max_snapshots = :max_snapshots,
+			max_manual_snapshots = :max_manual_snapshots,
 			app_id = :app_id,
 			exe_path = :exe_path,
 			cover_url = :cover_url,

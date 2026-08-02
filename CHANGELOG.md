@@ -3,6 +3,137 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] — 2026-08-02
+
+Mostly conflicts and backups. Three separate faults could raise a conflict on
+a save the other device had never touched, a fourth could skip a conflict that
+should have been raised, and a backup made from the command line could not be
+restored onto a new machine at all.
+
+### Added
+
+- **Snapshots you take yourself are no longer thrown away by the ones the app
+  takes for you.** Retention kept the newest few snapshots per branch
+  regardless of where they came from, so in a game that saves often — Elden
+  Ring, Dragonsword: Awakening — a play session's worth of automatic backups
+  filled the whole allowance within minutes and pushed out the snapshot you
+  took on purpose before a boss. Manual and automatic snapshots now have
+  separate allowances, and **manual ones are kept forever by default**, so a
+  burst of automatic backups can only ever replace other automatic backups.
+  Set a limit for them per game in its Configuration tab, or for new games
+  under Settings → Snapshot history; from the command line,
+  `opensave game <id> set max-manual-snapshots <n>` and
+  `opensave config set manual-snapshot-limit <n>`, where 0 means keep
+  everything. Cloud backups follow the same rule, so your off-site copy no
+  longer ends up thinner than the machine it is backing up. Existing games
+  pick this up on upgrade without being reconfigured.
+- **Sign in to Google Drive or Dropbox from the command line.** Cloud backup
+  previously needed the desktop app to authorise it, which left a Steam Deck
+  in Game Mode or a headless install unable to set it up at all. `opensave
+  cloud connect`, `cloud setup`, `cloud status` and `cloud disconnect` now
+  cover the whole flow, alongside pushing, pulling, listing and deleting
+  cloud saves.
+- **See a paired device's games, and what a conflict actually is, from the
+  command line.** `opensave peers games <peerId>` lists what another device
+  tracks, and `opensave conflicts` shows which files differ and on which
+  side rather than only that a conflict exists.
+- **Set a game's Steam App ID by hand.** Cover art and cross-device matching
+  both key off the App ID, and a game the scanner could not identify had no
+  way to be told. Name matching also now recognises titles whose folder name
+  has lost its spaces.
+- **Dismiss a save location from the scan results.** A stale or wrong
+  location can be excluded permanently instead of being offered every time
+  you scan.
+- **Linking a game to its copy on another device offers that device's
+  games.** Linking previously meant knowing and typing the other machine's
+  id for the game, which is not something anyone has to hand.
+- **The Steam Deck plugin ships with every release.** It had to be built from
+  source before, which is not much use on a Deck.
+- **Retention limits appear in `opensave status --json`.** A headless install
+  had no way to confirm what it had just set.
+
+### Fixed
+
+- **Conflicts on saves the other device had never touched, after sending it a
+  change.** Each device remembers the last state both were known to share, and
+  judges a conflict by whether both have since moved away from it. After
+  sending a change, that shared point is only updated when the other device
+  confirms it caught up — and that confirmation travels the network, where it
+  can be lost. When it was, the shared point stayed frozen at a state neither
+  device held any more, and once it is behind both of them, *every* later
+  edit reads as both sides having changed. The next ordinary save prompted a
+  conflict on a file the other device had not opened. The state handed over
+  is now recorded, so the next sync can prove the change landed by seeing the
+  other device holding exactly it, with no confirmation needed.
+- **The same thing after the other device deleted a file.** A deletion is
+  applied directly — the file is removed and that is the end of it — so no
+  sync runs on the receiving side and nothing updated its record of the
+  shared state, which went on describing a save that still contained the
+  deleted file. It corrected itself whenever some later sync happened along,
+  which is why this only showed up as an occasional conflict long after the
+  deletion. The record is now brought up to date when the deletion is
+  applied.
+- **A conflict that should have been raised could be skipped, overwriting the
+  other device's copy without asking.** The record of what was last sent was
+  kept after it was no longer relevant, so if the other device later returned
+  to that exact state — rolling back to one of its own snapshots does
+  precisely that — it looked unchanged, and this device pushed over the
+  rollback instead of stopping to ask. The record is now cleared as soon as
+  the two devices are known to agree on something newer.
+- **A backup made from the command line could not be restored onto a new
+  machine.** `opensave backup export` with no games named fell back to an
+  older archive format that stores snapshot files and nothing else — no
+  names, no save locations — so restoring it onto a fresh install matched
+  nothing, restored nothing, and said it had succeeded. It now writes the
+  same archive the desktop app does. Restoring one also tracks the games it
+  contains, instead of putting the files back and leaving the library empty.
+- **A save folder containing a single file was restored one directory too
+  high.** Restoring decides whether a save is a folder or a single file by
+  looking at where it is going, and on a machine that has never held that
+  game there is nothing there to look at. A folder holding one save — which
+  is most of them — is indistinguishable from a save that *is* one file, and
+  the file was written into the parent directory: the save came back, one
+  level above where the game reads it, reported as restored. Backups now
+  record which of the two it was.
+- **`opensave add` never took the first snapshot it promised.** Tracking a
+  game snapshots whatever is already there, in the background so the desktop
+  app stays responsive. From the command line the process exited before that
+  finished and took the snapshot with it, so every game tracked from the
+  command line started with no history at all — the one snapshot most worth
+  having, of the save before you started playing.
+- **Changes made from the command line did not reach a running app.** Adding
+  a game, removing one, or turning auto-sync off while the desktop app was
+  open left the app unaware: the game was tracked but watched by nobody, so
+  it got no automatic snapshots and no automatic sync until the app was
+  restarted, with nothing on screen to say so.
+- **`opensave backup export` never said what it had captured.** It read a
+  count the server does not send, so every backup — full or empty — reported
+  the same bare success. Importing one was equally silent about how much came
+  back, or that nothing had.
+- **Two snapshots taken in the same millisecond lost one of them.** Snapshot
+  identifiers are built from the clock, so a sync snapshotting several games
+  at once, or an automatic backup landing beside a manual one, could collide.
+  The second failed and the backup silently did not happen.
+- **Cloud backups could be left empty or truncated.** A backup interrupted
+  part-way left a partial file in the cloud that would be treated as a good
+  copy; the app now finishes an upload before shutting down, and repairs a
+  remote copy whose size does not match instead of skipping it.
+- **Switch emulator saves were offered as one enormous entry.** The scanner
+  presented the whole NAND profile tree rather than each game's own save, so
+  tracking one game meant tracking all of them.
+- **Snapshot file sizes showed as 0 B, and restoring a single file did
+  nothing.** Both were the command line reading fields by the wrong name —
+  which produces an empty value rather than an error, so both looked like
+  they had worked.
+- **`opensave status --json` printed the ordinary status panel.** The flag
+  was accepted and ignored, so anything scripting against it got a table of
+  text where it expected JSON.
+- **An update that could not be written reported success and then failed.**
+  The check asked whether a temporary file could be created next to the app,
+  which antivirus and Controlled Folder Access will happily allow while
+  refusing the executable itself. It now attempts the exact file the update
+  writes, and falls back to the installer when that is refused.
+
 ## [2.2.0] — 2026-07-28
 
 ### Added

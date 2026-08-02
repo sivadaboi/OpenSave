@@ -549,8 +549,62 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 			_ = os.Remove(full)
 		}
 		e.Log("info", fmt.Sprintf("peer-requested deletion applied: %s", body.RelPath))
+
+		// This side just changed without running a sync, so nothing has
+		// updated its merge-base — it still describes a state that contains
+		// the file that was removed. A base behind both sides does not merely
+		// go stale, it manufactures conflicts: the next ordinary one-sided
+		// edit here reads as a two-way divergence and prompts on a save the
+		// peer never touched. Re-derive it now rather than waiting for some
+		// later sync to happen along and put it right.
+		if peer, ok := e.peerByAddress(clientIP(r)); ok {
+			e.refreshLineageAfterDeletion(gameID, peer)
+		}
 	}
 	jsonOK(w, map[string]any{"success": true})
+}
+
+// refreshLineageAfterDeletion re-reads the peer's manifest and re-records the
+// shared lineage, ratcheting the merge-base when both sides now match. Run in
+// the background: the peer is waiting on the delete response, and a deletion
+// that reported failure because the follow-up fetch was slow would be worse
+// than the stale bookkeeping this exists to prevent.
+func (e *Engine) refreshLineageAfterDeletion(gameID string, peer syncengine.Peer) {
+	key := gameID + "\x00" + peer.ID
+	e.deleteRefreshMu.Lock()
+	if e.deleteRefresh == nil {
+		e.deleteRefresh = map[string]bool{}
+	}
+	if _, running := e.deleteRefresh[key]; running {
+		// Coalesce, but do not drop: the refresh already in flight may have
+		// read the peer's manifest before this deletion was applied, so
+		// letting it stand would leave the base describing a file that is now
+		// gone — the very thing this exists to prevent. Ask it to run once
+		// more instead.
+		e.deleteRefresh[key] = true
+		e.deleteRefreshMu.Unlock()
+		return
+	}
+	e.deleteRefresh[key] = false
+	e.deleteRefreshMu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		for {
+			e.Sync.RefreshLineage(ctx, gameID, peer)
+
+			e.deleteRefreshMu.Lock()
+			again := e.deleteRefresh[key]
+			if !again {
+				delete(e.deleteRefresh, key)
+				e.deleteRefreshMu.Unlock()
+				return
+			}
+			e.deleteRefresh[key] = false // consume the request and go round again
+			e.deleteRefreshMu.Unlock()
+		}
+	}()
 }
 
 func (e *Engine) handleSyncEvent(w http.ResponseWriter, r *http.Request) {

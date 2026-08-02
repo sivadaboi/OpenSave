@@ -102,11 +102,30 @@ func Run(args []string) int {
 	}
 	defer d.Stop()
 
+	// withWatchReload tells an already-running daemon on this machine to
+	// re-read the games table, so a change made here takes effect there
+	// without waiting for a restart. Best-effort by design: when no daemon is
+	// running there is nothing to tell and nothing to report, and failing to
+	// reach one must not turn a change that did succeed into an error.
+	withWatchReload := func(code int) int {
+		if code == 0 {
+			_, _ = daemonRequest("POST", "/api/watch/reload", map[string]any{})
+		}
+		return code
+	}
+
+	// Commands below run against a short-lived daemon of our own and write
+	// the database directly, so a daemon already running on this machine —
+	// the desktop app, or `opensave daemon start` — never hears about the
+	// change. Its watch list is built at startup, so a game added here is
+	// tracked but watched by nobody: no auto-snapshots, no auto-sync, and no
+	// sign of it until the app is restarted. Anything that alters which games
+	// exist, where they live, or whether they auto-sync tells it to catch up.
 	switch cmd {
 	case "scan":
 		return cmdScan(d)
 	case "add":
-		return cmdAdd(d, rest)
+		return withWatchReload(cmdAdd(d, rest))
 	case "status":
 		return cmdStatus(d, rest)
 	case "snapshot":
@@ -118,7 +137,7 @@ func Run(args []string) int {
 	case "checkout":
 		return cmdCheckout(d, rest)
 	case "remove":
-		return cmdRemove(d, rest)
+		return withWatchReload(cmdRemove(d, rest))
 	case "snapshots":
 		return cmdSnapshots(d, rest)
 	case "export":
@@ -134,11 +153,11 @@ func Run(args []string) int {
 	case "config":
 		return cmdConfig(d, rest)
 	case "game":
-		return cmdGame(d, rest)
+		return withWatchReload(cmdGame(d, rest))
 	case "scanpath":
 		return cmdScanPath(d, rest)
 	case "untrack-all":
-		return cmdUntrackAll(d, rest)
+		return withWatchReload(cmdUntrackAll(d, rest))
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", cmd)
 		printUsage()
@@ -404,6 +423,13 @@ type statusReportGame struct {
 	ActiveBranch string         `json:"activeBranch"`
 	AutoSync     bool           `json:"autoSync"`
 	Branches     map[string]int `json:"branches"` // branch -> snapshot count
+	// Retention budgets. Automatic and manual snapshots are counted
+	// separately so a game that auto-saves constantly cannot evict the
+	// snapshots the user took on purpose; 0 means unlimited for automatic
+	// ones and "keep forever" for manual ones. Reported here because a
+	// headless install has no other way to confirm what it just set.
+	MaxSnapshots       int `json:"maxSnapshots"`
+	MaxManualSnapshots int `json:"maxManualSnapshots"`
 }
 
 type statusReportPeer struct {
@@ -440,7 +466,9 @@ func cmdStatus(d *daemon.Daemon, args []string) int {
 			entry := statusReportGame{
 				ID: g.ID, Name: g.Name, SavePath: g.SavePath, AppID: g.AppID,
 				ActiveBranch: g.ActiveBranch, AutoSync: g.AutoSync,
-				Branches: map[string]int{},
+				Branches:           map[string]int{},
+				MaxSnapshots:       g.MaxSnapshots,
+				MaxManualSnapshots: g.MaxManualSnapshots,
 			}
 			branches, _ := d.Store.ListBranches(g.ID)
 			for _, b := range branches {

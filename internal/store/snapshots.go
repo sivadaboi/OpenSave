@@ -67,16 +67,37 @@ func (s *Store) DeleteSnapshot(id string) error {
 	return checkRowAffected(res)
 }
 
-// SnapshotsBeyondRetention returns the oldest snapshots for a game+branch
-// that exceed maxSnapshots, for pruning. Mirrors the JS app's per-game
-// maxSnapshots retention (oldest deleted first once the limit is exceeded).
-func (s *Store) SnapshotsBeyondRetention(gameID, branchName string, maxSnapshots int) ([]Snapshot, error) {
+// SnapshotsBeyondRetentionByKind returns the snapshots to prune when
+// automatic and manual snapshots are budgeted separately.
+//
+// A single shared budget lets a game that auto-saves every few minutes push
+// out snapshots the user took on purpose — the automatic ones are newer, so
+// "keep the newest N" always favours them, and the manual snapshot is gone
+// precisely when it is wanted. Counting the two kinds independently means a
+// burst of auto-saves can only ever evict other auto-saves.
+//
+// Either limit at 0 or below keeps that kind entirely, matching the
+// convention used by the per-game limit elsewhere.
+func (s *Store) SnapshotsBeyondRetentionByKind(gameID, branchName string, maxAuto, maxManual int) ([]Snapshot, error) {
 	all, err := s.ListSnapshots(gameID, branchName) // newest first
 	if err != nil {
 		return nil, err
 	}
-	if len(all) <= maxSnapshots {
-		return nil, nil
+	var auto, manual []Snapshot
+	for _, snap := range all {
+		if snap.IsSystemAuto {
+			auto = append(auto, snap)
+		} else {
+			manual = append(manual, snap)
+		}
 	}
-	return all[maxSnapshots:], nil
+
+	var beyond []Snapshot
+	if maxAuto > 0 && len(auto) > maxAuto {
+		beyond = append(beyond, auto[maxAuto:]...)
+	}
+	if maxManual > 0 && len(manual) > maxManual {
+		beyond = append(beyond, manual[maxManual:]...)
+	}
+	return beyond, nil
 }
