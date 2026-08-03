@@ -296,7 +296,20 @@ func TestPortable_CustomScanPathNarrowsToSaves(t *testing.T) {
 	// A plain game folder alongside them still behaves as before.
 	mkdirs(t, root, "Some Game")
 
+	// Hermetic. This is the only test here that drives a whole Scan, and
+	// left to itself it reaches out to the real machine: it downloads the
+	// 17 MB Ludusavi manifest, reads whatever Steam libraries exist, and
+	// sweeps the actual drives. On a CI Windows runner that download races
+	// the temp-dir cleanup — the same reason the e2e harness disables it —
+	// and it turned a scan test into a network test.
 	sc := NewScanner(filepath.Join(t.TempDir(), "cache.json"))
+	sc.ManifestURL = ""
+	sc.SteamRoots = []string{}
+	sc.SteamUserdataPaths = []string{}
+	prev := driveRoots
+	driveRoots = func() []string { return nil }
+	t.Cleanup(func() { driveRoots = prev })
+
 	found := sc.Scan([]string{root})
 
 	var sawRetroSaves, sawAzahar, sawWholeInstall, sawPlainGame bool
