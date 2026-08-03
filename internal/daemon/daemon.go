@@ -130,57 +130,22 @@ func New(opts Options) (*Daemon, error) {
 	// Every new snapshot mirrors to the configured cloud provider in the
 	// background; failures are logged, never fatal.
 	snaps.OnUpload = func(zipPath, remoteFileName string) {
-		// Tracked so Stop can wait for it. Snapshot fires this in a
-		// goroutine, and in a short-lived process — `opensave snapshot`, or
-		// the automatic backup taken by rollback and checkout — the process
-		// exits before the copy finishes. The destination file has already
-		// been created and truncated by then, so what is left in the cloud
-		// is a zero-byte archive that looks like a backup. `cloud push`
-		// then skips it, because a file of that name exists, so it is never
-		// repaired. Reproduced with a local folder provider: of five
-		// snapshots taken in sequence, the last two uploaded as 0 bytes.
-		d.uploads.Add(1)
-		defer d.uploads.Done()
-
-		if err := d.Cloud.Upload(zipPath, remoteFileName); err != nil {
-			if !cloud.IsNotConfigured(err) {
-				log.Log("error", fmt.Sprintf("cloud upload of %s failed: %v", remoteFileName, err))
-			}
-			return
-		}
-		// Cloud-side retention mirrors the game's local snapshot limit:
-		// keep the newest maxSnapshots per branch, delete the rest.
-		gameID, branch, _, ok := snapshot.ParseExportEntryName(remoteFileName)
-		if !ok {
-			return
-		}
-		game, err := s.GetGame(gameID)
-		if err != nil || game.MaxSnapshots <= 0 {
-			return
-		}
-		// Only automatic snapshots are candidates. Mirroring the local limit
-		// over every file would delete the user's deliberate snapshots from
-		// the cloud even though local retention now keeps them — leaving the
-		// backup thinner than the machine it is backing up.
+		// Tracked so Stop can wait for it. In a short-lived process —
+		// `opensave snapshot`, or the automatic backup taken by rollback and
+		// checkout — the process would otherwise exit before the copy
+		// finishes. The destination file has already been created and
+		// truncated by then, so what is left in the cloud is a zero-byte
+		// archive that looks like a backup. `cloud push` then skips it,
+		// because a file of that name exists, so it is never repaired.
+		// Reproduced with a local folder provider: of five snapshots taken in
+		// sequence, the last two uploaded as 0 bytes.
 		//
-		// A remote file whose snapshot row is gone locally cannot be
-		// classified, so it stays a candidate: that is the pre-existing
-		// behaviour, and treating unknowns as protected would make cloud
-		// storage grow without bound.
-		prefix := fmt.Sprintf("%s__%s__", gameID, branch)
-		_, _ = d.Cloud.PruneGameBranch(func(name string) bool {
-			if !strings.HasPrefix(name, prefix) {
-				return false
-			}
-			_, _, snapID, parsed := snapshot.ParseExportEntryName(name)
-			if !parsed {
-				return false
-			}
-			if snap, sErr := s.GetSnapshot(snapID); sErr == nil && !snap.IsSystemAuto {
-				return false // a manual snapshot: not the automatic budget's to spend
-			}
-			return true
-		}, game.MaxSnapshots)
+		// Counted here, on the caller's goroutine, and only then moved to the
+		// background. Counting from inside the goroutine raced Stop's wait on
+		// the same counter — a WaitGroup's Add has to be visible before
+		// anything waits on it, and the detector fails the run when it is not.
+		d.uploads.Add(1)
+		go d.runCloudUpload(zipPath, remoteFileName, log)
 	}
 
 	d.Watcher = watcher.New(watcher.Callbacks{
@@ -266,11 +231,22 @@ func (d *Daemon) Start() error {
 const uploadDrainTimeout = 30 * time.Second
 
 func (d *Daemon) Stop() {
-	// Let in-flight cloud uploads finish before the process goes away, or
-	// they leave truncated archives behind. Bounded: a wedged provider must
-	// not hold a CLI command open indefinitely, and an upload killed at the
-	// timeout is no worse off than it was before this waited at all.
-	// Same for a first snapshot still being taken: a CLI `add` returns as soon
+	// Order matters. Everything that can START a snapshot is stopped first —
+	// syncs (which follow a peer onto another branch, taking a safety copy on
+	// the way) and the watcher (which snapshots as the game saves) — because
+	// draining before that just leaves room for a new one to begin.
+	d.P2P.Stop()
+	d.Watcher.Stop()
+
+	// Then wait for the snapshots already being written. One that outlives
+	// shutdown writes its archive into a backups directory that may be going
+	// away and records it against a closed database, which shows up as a
+	// snapshot the user never gets and an error nobody sees.
+	if !d.Snapshots.WaitForInFlight(uploadDrainTimeout) {
+		d.Log.Log("warn", "a snapshot was still being written at shutdown; it may be incomplete")
+	}
+	// Including the first snapshot of a newly tracked game, which is taken in
+	// the background so the UI stays responsive: a CLI `add` returns as soon
 	// as the game is recorded, and without this the process exits before the
 	// snapshot is written, leaving a tracked game with no history.
 	snapsDone := make(chan struct{})
@@ -281,6 +257,11 @@ func (d *Daemon) Stop() {
 		d.Log.Log("warn", "an initial snapshot was still running at shutdown; it may be missing")
 	}
 
+	// Uploads last: a snapshot that finished above may have queued one, and
+	// an upload cut off part-way leaves a truncated archive in the cloud.
+	// Bounded throughout — a wedged provider must not hold a CLI command open
+	// forever, and an upload killed at the timeout is no worse off than it was
+	// before any of this waited at all.
 	done := make(chan struct{})
 	go func() { d.uploads.Wait(); close(done) }()
 	select {
@@ -289,8 +270,6 @@ func (d *Daemon) Stop() {
 		d.Log.Log("warn", "a cloud upload was still running at shutdown; it may be incomplete")
 	}
 
-	d.P2P.Stop()
-	d.Watcher.Stop()
 	d.Store.Close()
 	d.Log.Close()
 }
@@ -307,6 +286,53 @@ func SteamCoverURL(appID string) string {
 		}
 	}
 	return "https://cdn.cloudflare.steamstatic.com/steam/apps/" + appID + "/header.jpg"
+}
+
+// runCloudUpload mirrors one snapshot to the configured cloud provider and
+// then trims that game's remote copies. Always started with d.uploads already
+// incremented by the caller, and it owns releasing that count.
+func (d *Daemon) runCloudUpload(zipPath, remoteFileName string, log *logging.Logger) {
+	defer d.uploads.Done()
+
+	if err := d.Cloud.Upload(zipPath, remoteFileName); err != nil {
+		if !cloud.IsNotConfigured(err) {
+			log.Log("error", fmt.Sprintf("cloud upload of %s failed: %v", remoteFileName, err))
+		}
+		return
+	}
+	// Cloud-side retention mirrors the game's local snapshot limit: keep the
+	// newest maxSnapshots per branch, delete the rest.
+	gameID, branch, _, ok := snapshot.ParseExportEntryName(remoteFileName)
+	if !ok {
+		return
+	}
+	game, err := d.Store.GetGame(gameID)
+	if err != nil || game.MaxSnapshots <= 0 {
+		return
+	}
+	// Only automatic snapshots are candidates. Mirroring the local limit over
+	// every file would delete the user's deliberate snapshots from the cloud
+	// even though local retention now keeps them — leaving the backup thinner
+	// than the machine it is backing up.
+	//
+	// A remote file whose snapshot row is gone locally cannot be classified,
+	// so it stays a candidate: that is the pre-existing behaviour, and
+	// treating unknowns as protected would make cloud storage grow without
+	// bound.
+	prefix := fmt.Sprintf("%s__%s__", gameID, branch)
+	_, _ = d.Cloud.PruneGameBranch(func(name string) bool {
+		if !strings.HasPrefix(name, prefix) {
+			return false
+		}
+		_, _, snapID, parsed := snapshot.ParseExportEntryName(name)
+		if !parsed {
+			return false
+		}
+		if snap, sErr := d.Store.GetSnapshot(snapID); sErr == nil && !snap.IsSystemAuto {
+			return false // a manual snapshot: not the automatic budget's to spend
+		}
+		return true
+	}, game.MaxSnapshots)
 }
 
 // ResyncWatchers reconciles the live watch set with what the database says,

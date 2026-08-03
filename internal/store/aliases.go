@@ -98,6 +98,60 @@ func (s *Store) ResolveGameAlias(aliasID string) (string, bool) {
 	return gameID, true
 }
 
+// CreateGameUnlessAliased inserts a game only if its id has not, in the
+// meantime, been linked to one that already exists here. It returns the
+// canonical id to use — the new game's, or the one the alias points at.
+//
+// Auto-tracking a peer's game is a check-then-create: look for a local game
+// under that id, look for an alias, and create one when neither turns up.
+// Linking is a separate write, made by the user or by App-ID matching, and
+// nothing stopped it landing in between. Both sides then saw nothing to do —
+// the link found no game to absorb because it had not been created yet, and
+// the auto-track had already decided no link existed — and the peer's game
+// appeared a second time under its own id, beside the entry it was just
+// linked to.
+//
+// Doing both in one immediate transaction closes that: SQLite holds the write
+// lock for the whole thing, so an alias committed by anyone else is either
+// visible to the check or blocked until the insert is done.
+func (s *Store) CreateGameUnlessAliased(g Game) (canonicalID string, err error) {
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	var aliasTarget string
+	if err := tx.Get(&aliasTarget, `SELECT game_id FROM game_aliases WHERE alias_id = ?`, g.ID); err == nil && aliasTarget != "" {
+		return aliasTarget, nil
+	}
+	// Someone may also have created the game itself in the window.
+	var existing string
+	if err := tx.Get(&existing, `SELECT id FROM games WHERE id = ?`, g.ID); err == nil && existing != "" {
+		return existing, nil
+	}
+
+	if g.ActiveBranch == "" {
+		g.ActiveBranch = "main"
+	}
+	if g.MaxSnapshots == 0 {
+		g.MaxSnapshots = 20
+	}
+	if _, err := tx.NamedExec(`
+		INSERT INTO games (id, name, save_path, active_branch, auto_sync, max_snapshots, max_manual_snapshots, app_id, exe_path, cover_url)
+		VALUES (:id, :name, :save_path, :active_branch, :auto_sync, :max_snapshots, :max_manual_snapshots, :app_id, :exe_path, :cover_url)`,
+		g); err != nil {
+		return "", fmt.Errorf("insert game: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO branches (game_id, name) VALUES (?, ?)`, g.ID, g.ActiveBranch); err != nil {
+		return "", fmt.Errorf("insert default branch: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return g.ID, nil
+}
+
 // ListGameAliasDetails returns the alias rows pointing at a canonical game,
 // including the merged game's remembered name and path — a bare id like
 // "balatro-2" is meaningless to a user, especially when one title is tracked

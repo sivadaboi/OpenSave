@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,9 +30,14 @@ type TestDaemon struct {
 	Addr    string // host:port
 	Port    int
 	SaveDir string
-	// LastError holds the response body of the most recent 4xx/5xx, so a
-	// failure reports why rather than only that it happened.
-	LastError string
+	// lastErrMu guards lastError. Tests drive one daemon from several
+	// goroutines at once — firing concurrent syncs at the same game is a case
+	// worth covering — and every request wrote this field, so the race
+	// detector failed the whole package. Reporting a request's error through
+	// a field shared by all of them was also wrong on its own terms: the
+	// message a failing call printed could belong to a different call.
+	lastErrMu sync.Mutex
+	lastError string
 }
 
 // NewTestDaemon boots a daemon with an isolated home dir and API server on
@@ -99,20 +105,33 @@ func NewTestDaemon(t *testing.T, name string) *TestDaemon {
 // unless allowError is set.
 func (td *TestDaemon) API(method, path string, body any, out any) {
 	td.T.Helper()
-	status := td.apiRaw(method, path, body, out)
+	status, errBody := td.apiRaw(method, path, body, out)
 	if status >= 400 {
-		td.T.Fatalf("%s %s -> %d: %s", method, path, status, td.LastError)
+		td.T.Fatalf("%s %s -> %d: %s", method, path, status, errBody)
 	}
+}
+
+// LastError returns the response body of the most recent 4xx/5xx seen by any
+// request on this daemon. Prefer the value API reports in its own failure
+// message: with concurrent callers this is whichever request finished last.
+func (td *TestDaemon) LastError() string {
+	td.lastErrMu.Lock()
+	defer td.lastErrMu.Unlock()
+	return td.lastError
 }
 
 // APIStatus performs a request and returns the HTTP status without failing
 // the test — for calls that may legitimately return a 4xx.
 func (td *TestDaemon) APIStatus(method, path string, body any, out any) int {
 	td.T.Helper()
-	return td.apiRaw(method, path, body, out)
+	status, _ := td.apiRaw(method, path, body, out)
+	return status
 }
 
-func (td *TestDaemon) apiRaw(method, path string, body any, out any) int {
+// apiRaw returns the status and, for a 4xx/5xx, the response body — returned
+// rather than only stashed, so a caller reports its own error and concurrent
+// callers cannot overwrite each other's.
+func (td *TestDaemon) apiRaw(method, path string, body any, out any) (int, string) {
 	td.T.Helper()
 	var reader *bytes.Reader
 	if body != nil {
@@ -145,15 +164,18 @@ func (td *TestDaemon) apiRaw(method, path string, body any, out any) int {
 	if readErr != nil {
 		td.T.Fatalf("%s %s: reading response: %v", method, path, readErr)
 	}
+	errBody := ""
 	if resp.StatusCode >= 400 {
-		td.LastError = strings.TrimSpace(string(raw))
-	} else {
-		td.LastError = ""
+		errBody = strings.TrimSpace(string(raw))
 	}
+	td.lastErrMu.Lock()
+	td.lastError = errBody
+	td.lastErrMu.Unlock()
+
 	if out != nil && len(raw) > 0 {
 		_ = json.Unmarshal(raw, out)
 	}
-	return resp.StatusCode
+	return resp.StatusCode, errBody
 }
 
 // NodeID returns this daemon's peer identity.
@@ -183,13 +205,26 @@ func (td *TestDaemon) PairWith(other *TestDaemon) {
 
 	other.API(http.MethodPost, "/api/peers/approve", map[string]any{"peerId": td.NodeID()}, nil)
 
-	// Both sides must now know each other.
-	if !WaitFor(10*time.Second, func() bool {
-		_, err1 := td.Daemon.Store.GetPeer(other.NodeID())
-		_, err2 := other.Daemon.Store.GetPeer(td.NodeID())
-		return err1 == nil && err2 == nil
+	// Both sides must now know each other, AND consider each other online.
+	//
+	// Knowing is not enough to sync: a sync only attempts peers whose status
+	// is "online", and that is set by a periodic ping rather than by the
+	// handshake. Returning as soon as the peer row existed meant a sync fired
+	// immediately afterwards found no peers, did nothing, and reported no
+	// error — so tests that fire one sync and then wait for the transfer sat
+	// out their whole timeout waiting for something that was never started.
+	// Rare at full speed and common under the race detector, where it showed
+	// up as a different sync test failing on almost every run.
+	if !WaitFor(20*time.Second, func() bool {
+		p1, err1 := td.Daemon.Store.GetPeer(other.NodeID())
+		p2, err2 := other.Daemon.Store.GetPeer(td.NodeID())
+		return err1 == nil && err2 == nil &&
+			p1.Status == "online" && p2.Status == "online"
 	}) {
-		td.T.Fatal("pairing did not complete on both sides")
+		p1, _ := td.Daemon.Store.GetPeer(other.NodeID())
+		p2, _ := other.Daemon.Store.GetPeer(td.NodeID())
+		td.T.Fatalf("pairing did not come online on both sides (%s=%q, %s=%q)",
+			td.Addr, p1.Status, other.Addr, p2.Status)
 	}
 }
 
@@ -239,7 +274,8 @@ func (td *TestDaemon) TrackGame(name string) string {
 
 // WaitFor polls cond until true or timeout.
 func WaitFor(timeout time.Duration, cond func() bool) bool {
-	deadline := time.Now().Add(timeout)
+	// Scaled for instrumented runs; see TimeoutScale.
+	deadline := time.Now().Add(timeout * TimeoutScale)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return true

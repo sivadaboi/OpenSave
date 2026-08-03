@@ -21,6 +21,30 @@ type syncResults struct {
 	} `json:"results"`
 }
 
+// syncToEventually runs syncs until the named peer actually takes part, then
+// returns its result.
+//
+// A sync only reports peers it attempted, so one that ran while the peer was
+// still settling comes back with no entry for it at all rather than an error
+// — indistinguishable, to syncTo, from a peer that does not exist. That is
+// rare at full speed and ordinary under the race detector, where everything
+// is slow enough for a relay peer to be a moment behind.
+func syncToEventually(td *testutil.TestDaemon, gameID string, peerID string) (string, string) {
+	td.T.Helper()
+	deadline := time.Now().Add(45 * time.Second * testutil.TimeoutScale)
+	for {
+		var resp syncResults
+		td.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, &resp)
+		if r, ok := resp.Results[peerID]; ok {
+			return r.Status, r.Direction
+		}
+		if time.Now().After(deadline) {
+			td.T.Fatalf("peer %s never took part in a sync of %s", peerID, gameID)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // syncTo runs a sync and returns the per-peer result for the named peer.
 func syncTo(td *testutil.TestDaemon, gameID string, peerID string) (string, string) {
 	td.T.Helper()

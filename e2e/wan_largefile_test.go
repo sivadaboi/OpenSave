@@ -68,12 +68,19 @@ func pairOverRelay(t *testing.T, a, b *testutil.TestDaemon, relayURL, room strin
 		t.Fatal("WAN handshake never arrived")
 	}
 	b.API(http.MethodPost, "/api/peers/approve", map[string]any{"peerId": a.NodeID()}, nil)
-	if !testutil.WaitFor(15*time.Second, func() bool {
-		_, e1 := a.Daemon.Store.GetPeer(b.NodeID())
-		_, e2 := b.Daemon.Store.GetPeer(a.NodeID())
-		return e1 == nil && e2 == nil
+	// Online, not merely known: a sync only attempts peers marked online, so
+	// returning earlier lets a sync fired straight afterwards do nothing at
+	// all and report no error. See PairWith for the same reasoning on LAN.
+	if !testutil.WaitFor(20*time.Second, func() bool {
+		p1, e1 := a.Daemon.Store.GetPeer(b.NodeID())
+		p2, e2 := b.Daemon.Store.GetPeer(a.NodeID())
+		return e1 == nil && e2 == nil &&
+			p1.Status == "online" && p2.Status == "online"
 	}) {
-		t.Fatal("WAN pairing did not complete")
+		p1, _ := a.Daemon.Store.GetPeer(b.NodeID())
+		p2, _ := b.Daemon.Store.GetPeer(a.NodeID())
+		t.Fatalf("WAN pairing did not come online on both sides (a sees %q, b sees %q)",
+			p1.Status, p2.Status)
 	}
 }
 

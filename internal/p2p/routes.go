@@ -445,8 +445,19 @@ func (e *Engine) ensureManifestGame(gameID string, q manifestGameQuery) (store.G
 		AppID:    q.AppID,
 		CoverURL: q.CoverURL,
 	}
-	if err := e.Store.CreateGame(game); err != nil {
+	// The alias check above and this insert are not one step, and linking is
+	// a separate write that can land between them — leaving the peer's game
+	// tracked twice, once under its own id and once as the entry it was just
+	// linked to. Re-check and insert together so whichever happens first wins.
+	canonicalID, err := e.Store.CreateGameUnlessAliased(game)
+	if err != nil {
 		return store.Game{}, fmt.Errorf("auto-track failed: %w", err)
+	}
+	if canonicalID != game.ID {
+		// It was linked while we were deciding; use the game it points at.
+		if linked, lErr := e.Store.GetGame(canonicalID); lErr == nil {
+			return e.backfillCover(linked, q), nil
+		}
 	}
 	if q.IsFile {
 		_ = os.MkdirAll(filepath.Dir(localPath), 0o777)

@@ -110,6 +110,19 @@ restored onto a new machine at all.
   count the server does not send, so every backup — full or empty — reported
   the same bare success. Importing one was equally silent about how much came
   back, or that nothing had.
+- **A game could end up tracked twice after being linked.** Auto-tracking a
+  peer's game checks whether that game is already linked to one here before
+  creating anything, but the check and the creation were separate steps and a
+  link written in between was seen by neither: the link found no entry to
+  absorb because it did not exist yet, and the auto-track had already decided
+  no link existed. The game then appeared a second time under the peer's id,
+  beside the entry it had just been linked to. Both now happen as one step.
+- **A snapshot could be left half-written when the app closed.** Snapshots are
+  started from several places — the watcher as a game saves, a sync following
+  the peer onto another branch, a safety copy before a restore — and shutdown
+  did not wait for one in progress. It carried on writing into a folder that
+  was going away and recorded itself against a database that had already
+  closed, so the snapshot was never really taken and nothing reported it.
 - **Two snapshots taken in the same millisecond lost one of them.** Snapshot
   identifiers are built from the clock, so a sync snapshotting several games
   at once, or an automatic backup landing beside a manual one, could collide.

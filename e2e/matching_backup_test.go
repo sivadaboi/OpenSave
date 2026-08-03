@@ -187,7 +187,12 @@ func TestMatching_LinkedGameActuallyTransfersData(t *testing.T) {
 	b.API(http.MethodPost, "/api/games/"+gameB.ID+"/link", map[string]string{"alias": gameA}, nil)
 	a.API(http.MethodPost, "/api/games/"+gameA+"/link", map[string]string{"alias": gameB.ID}, nil)
 
-	a.API(http.MethodPost, "/api/games/"+gameA+"/sync", nil, nil)
+	// Sync until the peer actually takes part. A single fire-and-forget call
+	// is enough at full speed and not under load: a sync only reports peers
+	// it attempted, so one issued while the pairing was still settling did
+	// nothing at all, and with nothing to retry it the test then waited out
+	// its full minute for a transfer that was never started.
+	syncToEventually(a, gameA, b.NodeID())
 
 	if !testutil.WaitFor(60*time.Second, func() bool {
 		return b.ReadSave("slot1.sav") == "A's progress"

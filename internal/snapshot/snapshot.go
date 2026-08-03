@@ -23,10 +23,18 @@ import (
 	"github.com/opensave/opensave/internal/store"
 )
 
-// UploadHook is called in the background after each snapshot is created,
-// with the local zip path and the remote filename encoding game metadata
+// UploadHook is called after each snapshot is created, with the local zip
+// path and the remote filename encoding game metadata
 // (gameId__branch__snap_<ts>.zip). Wired to cloud backup in Phase 3; nil
 // disables it.
+//
+// It is called ON the goroutine that took the snapshot and must return
+// promptly — an implementation that does real work should start its own
+// goroutine. Create used to do that for it, which meant a hook wanting to
+// register the work for shutdown (as the cloud upload does) could only count
+// itself from inside the new goroutine, racing whatever was waiting on the
+// count. Handing the hook control of its own goroutine lets it register
+// before starting one.
 type UploadHook func(zipPath, remoteFileName string)
 
 // Manager performs snapshot/branch operations against the store and
@@ -45,6 +53,27 @@ type Manager struct {
 	// stagingSeq names the in-progress archive uniquely, independently of
 	// the clock.
 	stagingSeq atomic.Uint64
+	// inFlight counts snapshots currently being written, so shutdown can wait
+	// for them. A snapshot is started from several places — the watcher, a
+	// sync following the peer's branch, a safety copy before a restore — and
+	// each writes an archive into the backups directory and then a row. Left
+	// running past shutdown it wrote into a directory that was being deleted
+	// and recorded against a database that was already closed.
+	inFlight sync.WaitGroup
+}
+
+// WaitForInFlight blocks until every snapshot being written has finished, or
+// until the timeout. Callers should stop whatever starts snapshots first —
+// otherwise a new one can begin after the wait and before the store closes.
+func (m *Manager) WaitForInFlight(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() { m.inFlight.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // New creates a snapshot Manager.
@@ -85,6 +114,9 @@ func toLower(s string) string {
 // active branch, prunes history beyond the game's maxSnapshots, and fires
 // the background upload hook.
 func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snapshot, error) {
+	m.inFlight.Add(1)
+	defer m.inFlight.Done()
+
 	game, err := m.Store.GetGame(gameID)
 	if err != nil {
 		return store.Snapshot{}, err
@@ -154,7 +186,8 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 
 	if m.OnUpload != nil {
 		remoteName := fmt.Sprintf("%s__%s__%s.zip", gameID, game.ActiveBranch, snapshotID)
-		go m.OnUpload(zipPath, remoteName)
+		// Called directly, not in a goroutine of ours: see UploadHook.
+		m.OnUpload(zipPath, remoteName)
 	}
 
 	return snap, nil

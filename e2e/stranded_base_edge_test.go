@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -31,6 +32,15 @@ func TestStrandedBaseEdge_AStalePushRecordMustNotUndoALaterAgreement(t *testing.
 	a, b, gameID := trackBothOverRelay(t, "EdgeStale", map[string]string{
 		"slot1.sav": "original",
 	})
+
+	// Stop anything running on its own. The state below is injected to stand
+	// for a history that took a while to arrive at, and a background sync
+	// firing between the injection and the assertion simply re-records the
+	// real merge-base — leaving the test measuring nothing and failing at
+	// random depending on when the timer landed.
+	a.API(http.MethodPatch, "/api/games/"+gameID, map[string]any{"autoSync": false}, nil)
+	b.API(http.MethodPatch, "/api/games/"+gameID, map[string]any{"autoSync": false}, nil)
+	time.Sleep(syncSettleWindow)
 
 	// Whatever B is holding now is the state a rollback would land it on.
 	peerHeld := manifestHashOf(t, b, gameID)
@@ -83,7 +93,19 @@ func TestStrandedBaseEdge_AnOutstandingPushStillRepairsTheBase(t *testing.T) {
 		"slot1.sav": "original",
 	})
 
+	// Same reason as above, and it matters more here: this asserts that NO
+	// conflict is raised, so a background sync quietly repairing the base
+	// would make the test pass without the repair under test doing anything.
+	a.API(http.MethodPatch, "/api/games/"+gameID, map[string]any{"autoSync": false}, nil)
+	b.API(http.MethodPatch, "/api/games/"+gameID, map[string]any{"autoSync": false}, nil)
+	time.Sleep(syncSettleWindow)
+
 	peerHeld := manifestHashOf(t, b, gameID)
+
+	// The edit comes first: the state below is what a lost report leaves
+	// behind, and it has to be the last thing written before the sync reads
+	// it.
+	a.WriteSave("slot1.sav", "one-sided-edit")
 
 	// The lost-report state: the base is behind and no convergence has been
 	// recorded since, so the push record is still live. It is set last
@@ -91,9 +113,6 @@ func TestStrandedBaseEdge_AnOutstandingPushStillRepairsTheBase(t *testing.T) {
 	a.Daemon.Store.SetAgreedHash(gameID, b.NodeID(),
 		"2222222222222222222222222222222222222222222222222222222222222222")
 	a.Daemon.Store.SetPushedHash(gameID, b.NodeID(), peerHeld)
-
-	time.Sleep(syncSettleWindow)
-	a.WriteSave("slot1.sav", "one-sided-edit")
 
 	if status, _ := syncTo(a, gameID, b.NodeID()); status == "conflict" {
 		ca, _ := conflictOn(a, gameID)

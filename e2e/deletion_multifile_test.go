@@ -39,7 +39,7 @@ func TestDeletionMultiFile_TheBaseReflectsTheLastDeletionNotTheFirst(t *testing.
 	for i := 0; i < 12; i++ {
 		b.RemoveSave(fmt.Sprintf("doomed%02d.sav", i))
 	}
-	syncTo(b, gameID, a.NodeID())
+	syncToEventually(b, gameID, a.NodeID())
 
 	if !testutil.WaitFor(60*time.Second, func() bool {
 		for i := 0; i < 12; i++ {

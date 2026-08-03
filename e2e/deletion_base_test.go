@@ -43,7 +43,7 @@ func TestDeletionBase_APeerDeletionMustNotStrandTheReceiversBase(t *testing.T) {
 
 	// B deletes a save and propagates it.
 	b.RemoveSave("doomed.sav")
-	syncTo(b, gameID, a.NodeID())
+	syncToEventually(b, gameID, a.NodeID())
 	if !testutil.WaitFor(45*time.Second, func() bool { return a.ReadSave("doomed.sav") == "" }) {
 		t.Fatal("the deletion never reached A")
 	}
@@ -76,7 +76,7 @@ func TestDeletionBase_AnEditAfterAPeerDeletionMustNotConflict(t *testing.T) {
 	b.API(http.MethodPatch, "/api/games/"+gameID, map[string]any{"autoSync": false}, nil)
 
 	b.RemoveSave("doomed.sav")
-	syncTo(b, gameID, a.NodeID())
+	syncToEventually(b, gameID, a.NodeID())
 	if !testutil.WaitFor(45*time.Second, func() bool { return a.ReadSave("doomed.sav") == "" }) {
 		t.Fatal("the deletion never reached A")
 	}
