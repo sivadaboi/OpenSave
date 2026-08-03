@@ -98,7 +98,26 @@ Change a setting. Keys:
 .BR device-name ,
 .BR match-by-app-id ,
 .BR snapshot-limit ,
+.BR manual-snapshot-limit ,
 .BR relay-url .
+.TP
+.BI "game " "gameId set key value"
+Change one game's settings. Keys:
+.BR name ,
+.BR path ,
+.BR app-id ,
+.BR exe-path ,
+.BR cover-url ,
+.BR auto-sync ,
+.BR max-snapshots ,
+.BR max-manual-snapshots .
+.IP
+.B max-snapshots
+caps the snapshots taken automatically as the game saves;
+.B max-manual-snapshots
+caps the ones you took yourself, and defaults to 0, meaning they are kept
+forever. The two are counted separately so a game that autosaves often cannot
+push out a snapshot you took on purpose.
 .TP
 .B exclude list|add|remove
 Manage folders that auto\-scan skips, for stale save locations you do not want

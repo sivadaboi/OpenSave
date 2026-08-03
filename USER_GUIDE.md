@@ -73,6 +73,26 @@ restore snapshots per game.
 - **Sync** — auto-sync on track, bandwidth limit, relay URL, relay hosting.
 - **Storage** — snapshot folder, pre-sync safety-backup folder, retention,
   extra scan folders.
+
+### Snapshot retention
+
+Automatic and manual snapshots have separate allowances, so a game that saves
+often cannot push out a snapshot you took on purpose.
+
+- **Automatic snapshots to keep** — how many of the backups taken as the game
+  saves are kept, per branch. 0 keeps them all.
+- **Manual snapshots to keep** — the ones you took yourself. **0 keeps them
+  forever, and that is the default.**
+
+Both are set per game in its Configuration tab, or for newly tracked games
+under Settings → Snapshot history. From the command line:
+
+```
+opensave game <gameId> set max-snapshots 20
+opensave game <gameId> set max-manual-snapshots 0     # 0 = keep forever
+opensave config set snapshot-limit 20                 # default for new games
+opensave config set manual-snapshot-limit 0
+```
 - **Advanced** — daemon port, cross-platform path translation rules (e.g.
   rewrite `C:\Users\me\Saves` → `/home/deck/saves`).
 
