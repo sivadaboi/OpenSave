@@ -24,7 +24,7 @@ import (
 // it, so a test can look at what actually landed there.
 func useLocalCloud(t *testing.T, td *testutil.TestDaemon) string {
 	t.Helper()
-	dir := filepath.Join(t.TempDir(), "cloud")
+	dir := filepath.Join(testutil.TempDir(t), "cloud")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

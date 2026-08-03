@@ -113,7 +113,7 @@ func TestMatching_ManualLinkAndUnlink(t *testing.T) {
 	canonical := a.TrackGame("Canonical Game")
 
 	// A second tracked game, at its own location.
-	otherDir := filepath.Join(t.TempDir(), "other-saves")
+	otherDir := filepath.Join(testutil.TempDir(t), "other-saves")
 	if err := os.MkdirAll(otherDir, 0o777); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestBackup_ExportImportRoundTrip(t *testing.T) {
 	}
 	a.API(http.MethodPost, "/api/games/"+gameID+"/snapshot", map[string]string{"comment": "pre-export"}, nil)
 
-	target := filepath.Join(t.TempDir(), "opensave-backup")
+	target := filepath.Join(testutil.TempDir(t), "opensave-backup")
 	var exportResp struct {
 		Path  string `json:"path"`
 		Count int    `json:"count"`

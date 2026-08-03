@@ -40,12 +40,60 @@ type TestDaemon struct {
 	lastError string
 }
 
+// mustTempRoot makes a temp directory for one test daemon and schedules a
+// retrying, best-effort removal.
+//
+// Registered before the caller's daemon-stop cleanup so it runs after it —
+// t.Cleanup is last-in-first-out — because nothing can be deleted while the
+// daemon still holds the database and the watched save tree open.
+func mustTempRoot(t *testing.T, pattern string) string {
+	t.Helper()
+	root, err := os.MkdirTemp("", pattern)
+	if err != nil {
+		t.Fatalf("temp root: %v", err)
+	}
+	t.Cleanup(func() {
+		// A handle released a moment after the daemon stops is normal on
+		// Windows; give it a few tries, then leave it to the OS rather than
+		// failing a test that has already passed.
+		for i := 0; i < 20; i++ {
+			if err := os.RemoveAll(root); err == nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	})
+	return root
+}
+
+// TempDir is t.TempDir with a retrying, best-effort removal. Use it for any
+// directory a daemon writes into — a cloud folder, a watched save tree — for
+// the reason described on mustTempRoot: the standard one fails an otherwise
+// passing test when a handle is still open, which on Windows is routine.
+func TempDir(t *testing.T) string { return mustTempRoot(t, "opensave-test-*") }
+
 // NewTestDaemon boots a daemon with an isolated home dir and API server on
 // an OS-assigned port. Discovery is disabled; tests pair explicitly.
 func NewTestDaemon(t *testing.T, name string) *TestDaemon {
 	t.Helper()
 
-	home := t.TempDir()
+	// Not t.TempDir(): its cleanup deletes the tree and FAILS THE TEST if
+	// anything is still holding a handle. On Windows that is routine — an
+	// antivirus scanner keeps a file open for a moment after it is written,
+	// and these tests write constantly — so a run that passed every assertion
+	// was reported as a failure for a directory that could not be removed on
+	// the first attempt. It is why CI failed here on Windows while the same
+	// suite passed on Linux, and the CLI harness already avoids t.TempDir for
+	// this reason.
+	//
+	// Removal is retried and, in the end, best-effort: the operating system
+	// reclaims a test's temp directory regardless, and a stubborn handle says
+	// nothing about whether the code under test is correct.
+	root := mustTempRoot(t, "opensave-e2e-*")
+	home := filepath.Join(root, "home")
+	if err := os.MkdirAll(home, 0o777); err != nil {
+		t.Fatal(err)
+	}
 	d, err := daemon.New(daemon.Options{HomeOverride: home, DisableDiscovery: true})
 	if err != nil {
 		t.Fatalf("daemon.New(%s): %v", name, err)
@@ -87,7 +135,9 @@ func NewTestDaemon(t *testing.T, name string) *TestDaemon {
 		t.Fatal(err)
 	}
 
-	saveDir := filepath.Join(t.TempDir(), "saves")
+	// Under the same root, for the same reason: the watcher holds handles on
+	// this tree for as long as the daemon runs.
+	saveDir := filepath.Join(root, "saves")
 	if err := os.MkdirAll(saveDir, 0o777); err != nil {
 		t.Fatal(err)
 	}
