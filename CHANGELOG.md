@@ -41,6 +41,18 @@ restored onto a new machine at all.
   both key off the App ID, and a game the scanner could not identify had no
   way to be told. Name matching also now recognises titles whose folder name
   has lost its spaces.
+- **Emulators installed on another drive are found.** The scan looked for
+  each emulator's per-user data folder, which is where an *installed* one
+  keeps its saves — and is on C: whatever drive the emulator itself is on.
+  RetroArch, the Citra forks (Azahar, Lime3DS) and the yuzu forks (Eden,
+  Suyu) are all commonly unzipped somewhere instead, and then keep their
+  saves inside that folder, so anyone with their emulators on D: got nothing
+  from a scan at all. Those installs are now recognised where they actually
+  live: at the top of any internal drive, or inside a folder named for the
+  collection ("Emulators", "Emulation", "Games"). Adding the folder as a
+  custom scan path works too, and now offers the emulator's *save* folders
+  rather than the whole install with its cores, BIOS and ROMs. Reported by
+  Erakodo on Windows 11.
 - **Dismiss a save location from the scan results.** A stale or wrong
   location can be excluded permanently instead of being offered every time
   you scan.

@@ -153,6 +153,13 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 		}
 	}
 
+	// 2b. Portable emulator installs on other drives. The presets above look
+	// under %APPDATA%, which is where an INSTALLED emulator keeps its data —
+	// but RetroArch and the Citra and yuzu lineages all ship as a folder you
+	// unzip anywhere, and then keep their saves inside it instead. Someone
+	// with every emulator on D: therefore got nothing at all from a scan.
+	discovered = append(discovered, scanFixedDrivesForPortableEmulators()...)
+
 	// 3. Steam libraries: follow libraryfolders.vdf to every library drive
 	// and parse appmanifests — exact installed-game names + AppIDs, plus
 	// detection of games whose Steam library isn't on C:.
@@ -285,9 +292,26 @@ func (sc *Scanner) Scan(customScanPaths []string) []DiscoveredSave {
 		if err != nil || !dirExists(resolved) {
 			continue
 		}
+
+		// The path may BE a portable emulator install rather than a folder of
+		// them — someone pointing at their emulators is as likely to add
+		// "D:\Emulators\RetroArch" as "D:\Emulators".
+		if saves := portableEmulatorSaves(resolved); len(saves) > 0 {
+			discovered = append(discovered, saves...)
+			continue
+		}
+
 		base := sanitizeID(filepath.Base(resolved))
 		for _, sub := range listSubdirs(resolved) {
 			if isCacheDirName(sub) {
+				continue
+			}
+			// A portable emulator gets its save folders offered, not the
+			// whole install: the install holds cores, BIOS and ROMs, and
+			// syncing that instead of the saves is worse than finding
+			// nothing.
+			if saves := portableEmulatorSaves(filepath.Join(resolved, sub)); len(saves) > 0 {
+				discovered = append(discovered, saves...)
 				continue
 			}
 			discovered = append(discovered, DiscoveredSave{
