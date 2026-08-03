@@ -141,11 +141,23 @@ func portableEmulatorSaves(dir string) []DiscoveredSave {
 			// Same reasoning as the installed case: offering the yuzu-lineage
 			// NAND root would sync a per-install profile id, which the other
 			// device's emulator does not recognise. Descend to the titles.
+			// The NAME must be exactly what an installed copy of the same
+			// emulator produces, because that is what the two devices match
+			// on: tracking derives a game's id by slugifying its name, and a
+			// peer resolves an incoming game by that id. Calling this one
+			// "RetroArch Save Files (portable)" would make it
+			// retroarch-save-files-portable here and retroarch-save-files on
+			// a machine where RetroArch is installed normally — two ids that
+			// never meet, so the saves this exists to sync would not.
+			//
+			// The discovery id still carries the distinction, which is what
+			// keeps a portable and an installed copy on the SAME machine as
+			// two separate entries in the scan results.
 			if titles := switchNANDTitles(saveRoot); p.SwitchNAND && len(titles) > 0 {
 				for _, title := range titles {
 					found = append(found, DiscoveredSave{
 						ID:       p.ID + "-portable-" + filepath.Base(title),
-						Name:     fmt.Sprintf("%s (portable) - Title ID: %s", p.Name, filepath.Base(title)),
+						Name:     fmt.Sprintf("%s - Title ID: %s", p.Name, filepath.Base(title)),
 						Type:     p.Type,
 						SavePath: title,
 					})
@@ -153,7 +165,7 @@ func portableEmulatorSaves(dir string) []DiscoveredSave {
 			} else {
 				found = append(found, DiscoveredSave{
 					ID:       p.ID + "-portable-" + sanitizeID(name),
-					Name:     fmt.Sprintf("%s (portable)", p.Name),
+					Name:     p.Name,
 					Type:     p.Type,
 					SavePath: saveRoot,
 				})

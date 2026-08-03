@@ -3,6 +3,7 @@ package presets
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -233,6 +234,57 @@ func TestPortable_AutoScanDoesNotWalkTheWholeDrive(t *testing.T) {
 
 	if found := scanFixedDrivesForPortableEmulators(); len(found) > 0 {
 		t.Errorf("the sweep reached deeper than it should: %v", savePathsOf(found))
+	}
+}
+
+// The property the whole feature depends on: a portable install must be
+// offered under exactly the name an installed copy gets.
+//
+// Two devices resolve each other's games by id, and tracking derives that id
+// by slugifying the name. So a portable RetroArch on one machine and an
+// installed one on the other only ever sync if both produce the same name —
+// label one "(portable)" and they become two different games that never
+// meet, which is precisely the saves this feature exists to move.
+func TestPortable_NameMatchesTheInstalledEquivalent(t *testing.T) {
+	// What each preset is called when found the ordinary way.
+	installedName := map[string]string{}
+	for _, p := range presetDefs {
+		installedName[p.ID] = p.Name
+	}
+
+	root := t.TempDir()
+	cases := []struct {
+		dir, layout, presetID string
+	}{
+		{"RetroArch", "saves", "retroarch-saves"},
+		{"RetroArch", "states", "retroarch-states"},
+		{"Azahar", "user/sdmc/Nintendo 3DS", "azahar"},
+	}
+	for _, c := range cases {
+		install := filepath.Join(root, c.dir)
+		mkdirs(t, install, c.layout)
+	}
+
+	for _, c := range cases {
+		found := portableEmulatorSaves(filepath.Join(root, c.dir))
+		var matched bool
+		for _, d := range found {
+			if d.Name == installedName[c.presetID] {
+				matched = true
+			}
+			if strings.Contains(d.Name, "portable") {
+				t.Errorf("%q carries a name an installed copy never has, so the two "+
+					"devices would derive different game ids: %q", c.dir, d.Name)
+			}
+		}
+		if !matched {
+			var names []string
+			for _, d := range found {
+				names = append(names, d.Name)
+			}
+			t.Errorf("no entry named %q for a portable %s (got %v)",
+				installedName[c.presetID], c.dir, names)
+		}
 	}
 }
 
