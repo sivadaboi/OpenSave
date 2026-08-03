@@ -21,40 +21,61 @@ type syncResults struct {
 	} `json:"results"`
 }
 
-// syncToEventually runs syncs until the named peer actually takes part, then
-// returns its result.
+// syncTo runs a sync and returns the per-peer result for the named peer,
+// retrying until that peer takes part.
 //
-// A sync only reports peers it attempted, so one that ran while the peer was
-// still settling comes back with no entry for it at all rather than an error
-// — indistinguishable, to syncTo, from a peer that does not exist. That is
-// rare at full speed and ordinary under the race detector, where everything
-// is slow enough for a relay peer to be a moment behind.
-func syncToEventually(td *testutil.TestDaemon, gameID string, peerID string) (string, string) {
+// A sync only reports peers it actually attempted, and it attempts only peers
+// currently marked online — a status maintained by a periodic ping, not by
+// the sync itself. So a sync issued while a peer is briefly not online comes
+// back with no entry for it at all: not an error, just an empty map,
+// indistinguishable from a peer that does not exist. Pairing waits for both
+// sides to come online, but that only holds at pairing time; a relay peer can
+// lapse later, and on a slow CI runner regularly does.
+//
+// Failing on the first empty map made that a test failure, which is what it
+// looked like in CI: "sync returned no result for peer ... (got map[])" on a
+// test whose actual subject had nothing to do with peer liveness. Retrying
+// keeps every assertion intact — the returned status is still checked — and
+// only tolerates the peer being a moment late.
+func syncTo(td *testutil.TestDaemon, gameID string, peerID string) (string, string) {
 	td.T.Helper()
 	deadline := time.Now().Add(45 * time.Second * testutil.TimeoutScale)
 	for {
+		// Wait for the peer to be online before asking, rather than firing
+		// syncs at the relay until one happens to catch it. A sync that finds
+		// nobody is cheap but not free, and dozens of them add load to the
+		// very thing that was already struggling to keep up.
+		if p, err := td.Daemon.Store.GetPeer(peerID); err != nil || p.Status != "online" {
+			if time.Now().After(deadline) {
+				td.T.Fatalf("peer %s never came online for a sync of %s (status=%q err=%v)",
+					peerID, gameID, p.Status, err)
+			}
+			time.Sleep(250 * time.Millisecond)
+			continue
+		}
+
 		var resp syncResults
 		td.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, &resp)
 		if r, ok := resp.Results[peerID]; ok {
 			return r.Status, r.Direction
 		}
 		if time.Now().After(deadline) {
-			td.T.Fatalf("peer %s never took part in a sync of %s", peerID, gameID)
+			// Report why, not just that: the peer's own record says whether
+			// this was liveness or something else entirely.
+			peer, err := td.Daemon.Store.GetPeer(peerID)
+			td.T.Fatalf("peer %s never took part in a sync of %s (results %+v; "+
+				"peer record: status=%q err=%v)",
+				peerID, gameID, resp.Results, peer.Status, err)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 }
 
-// syncTo runs a sync and returns the per-peer result for the named peer.
-func syncTo(td *testutil.TestDaemon, gameID string, peerID string) (string, string) {
+// syncToEventually is syncTo — kept so existing call sites read as intended
+// now that retrying is the default rather than the exception.
+func syncToEventually(td *testutil.TestDaemon, gameID string, peerID string) (string, string) {
 	td.T.Helper()
-	var resp syncResults
-	td.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, &resp)
-	r, ok := resp.Results[peerID]
-	if !ok {
-		td.T.Fatalf("sync returned no result for peer %s (got %+v)", peerID, resp.Results)
-	}
-	return r.Status, r.Direction
+	return syncTo(td, gameID, peerID)
 }
 
 // pairAndTrack sets up two paired daemons both tracking the same game, with
