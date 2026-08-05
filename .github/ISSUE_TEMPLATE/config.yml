@@ -1,0 +1,12 @@
+# Shown on the "New issue" chooser, above the blank-issue option. A fair
+# share of what arrives as an issue is a question with an answer already
+# known, and a chat server answers those in minutes where an issue thread
+# takes days. Bugs still belong here — the blank option stays enabled.
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 Ask on Discord
+    url: https://discord.gg/hvBv92DZvn
+    about: Questions, help with a save that will not sync, or just saying hello — this is the fastest way to get an answer.
+  - name: 📖 User Guide
+    url: https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md
+    about: Setup, syncing, snapshots, cloud backup and troubleshooting.
