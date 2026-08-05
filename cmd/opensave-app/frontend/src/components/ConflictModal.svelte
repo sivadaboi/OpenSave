@@ -86,11 +86,16 @@
   // A side with nothing in it is a real state — the save folder was emptied,
   // or this device has never held this game — and "0 files · 0 B" reads like
   // the panel failed to load rather than like information.
+  //
+  // The "whole save" prefix is load-bearing: this sits directly under the
+  // count of what differs, and an unlabelled "3 files" below "2 files differ
+  // here" reads as the panel contradicting itself rather than as two
+  // different measurements.
   function sideSummary(stats) {
     const files = stats?.files;
-    if (files === 0) return 'nothing here yet';
+    if (files === 0) return 'save folder is empty';
     if (typeof files !== 'number') return '';
-    return `${files} file${files === 1 ? '' : 's'} · ${fmtSize(stats?.totalBytes ?? -1)}`;
+    return `whole save: ${files} file${files === 1 ? '' : 's'} · ${fmtSize(stats?.totalBytes ?? -1)}`;
   }
 
   async function resolve(resolution) {
@@ -288,10 +293,12 @@
     color: var(--text);
     margin-bottom: 3px;
   }
+  /* Weight alone, not size: enlarging the number knocked it out of line with
+     the words around it for no extra clarity. Accent rather than the warning
+     amber — a count of what differs is information, not a hazard. */
   .v-diff strong {
-    font-size: 1.05rem;
     font-weight: 700;
-    color: var(--warn);
+    color: var(--accent);
   }
   .v-diff-bytes {
     color: var(--text-dim);
@@ -301,10 +308,14 @@
     color: var(--text-dim);
     margin-bottom: 3px;
   }
+  /* Ruled off from the difference counts above it: this is context about
+     the save as a whole, not another thing that differs. */
   .v-stats {
     font-size: 0.78rem;
     color: var(--text-faint);
-    margin-bottom: 4px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
   }
   .diff-capped {
     font-size: 0.74rem;

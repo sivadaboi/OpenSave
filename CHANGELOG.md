@@ -3,7 +3,7 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [2.2.1] — 2026-08-02
+## [2.2.1] — 2026-08-05
 
 Mostly conflicts and backups. Three separate faults could raise a conflict on
 a save the other device had never touched, a fourth could skip a conflict that
