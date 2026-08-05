@@ -53,6 +53,91 @@ textarea {
   user-select: text;
 }
 
+/* Checkboxes and radios are drawn rather than left native. The OS control is
+   a hard-edged square in the system's own accent colour, which reads as a
+   foreign object dropped onto a card full of pill buttons and rounded
+   surfaces. These are circles in our purple, so a control that is on looks
+   like it belongs to the same app as everything around it.
+
+   Checkbox and radio are deliberately identical — same circle, same purple
+   fill, same white dot. "On" should look like one thing everywhere, not two
+   things depending on which element a view happened to use.
+
+   Defined globally: a checkbox styled per-view is a checkbox that looks
+   different in the one view somebody forgets. */
+input[type='checkbox'],
+input[type='radio'] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  transition:
+    background 0.13s ease,
+    border-color 0.13s ease,
+    box-shadow 0.13s ease;
+}
+
+/* The dot. Scaled from nothing so turning something on has a little weight
+   to it rather than snapping. */
+input[type='checkbox']::after,
+input[type='radio']::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  transform: scale(0);
+  transition: transform 0.13s ease;
+}
+
+input[type='checkbox']:hover:not(:disabled),
+input[type='radio']:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+input[type='checkbox']:checked,
+input[type='radio']:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input[type='checkbox']:checked::after,
+input[type='radio']:checked::after {
+  transform: scale(1);
+}
+
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input[type='checkbox']:disabled,
+input[type='radio']:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* A checkbox and its label read as one control, so the whole row is the hit
+   target and the two line up on a shared centre. */
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.92rem;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px 0;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

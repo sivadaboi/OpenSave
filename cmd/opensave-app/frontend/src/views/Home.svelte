@@ -815,8 +815,12 @@
   .scan-show-tracked:hover {
     background: var(--bg-hover);
   }
+  /* A notch smaller than the app-wide 17px: this one sits in a compact pill
+     next to 0.85rem text, and the full-size circle makes the pill taller
+     than the buttons beside it. */
   .scan-show-tracked input {
-    cursor: pointer;
+    width: 15px;
+    height: 15px;
   }
   .cover-name {
     margin-top: 7px;

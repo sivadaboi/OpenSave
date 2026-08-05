@@ -11,6 +11,7 @@
   let newBranch = '';
   // Default to copying: a branch that keeps your save can never surprise you.
   let branchCopySave = true;
+  let branchDialog = false;
   let snapshotComment = '';
   let busy = false;
   let browsing = null; // {snapshotId, files}
@@ -80,14 +81,29 @@
     if (!(await askConfirm(`Restore snapshot ${snap.id} over your current save? Your current state is snapshotted first, so this is reversible.`, { title: 'Restore snapshot?', confirmText: 'Restore' }))) return;
     return run(`Restored ${snap.id}`, () => api.post(`/api/games/${game.id}/rollback`, { snapshotId: snap.id }));
   };
-  const createBranch = () =>
-    run(branchCopySave ? 'Branch created from your current save' : 'Empty branch created', async () => {
+  // Creating a branch asks what it starts from in its own dialog rather than
+  // a checkbox beside the name field. The two answers do materially
+  // different things to the save folder on the next switch, which is not a
+  // decision to make by noticing a tickbox.
+  function openBranchDialog() {
+    if (!newBranch || busy) return;
+    branchCopySave = true; // the safe answer is the one pre-selected
+    branchDialog = true;
+  }
+  // Escape closes it, as in every other dialog in the app.
+  function onBranchKeydown(e) {
+    if (branchDialog && e.key === 'Escape') branchDialog = false;
+  }
+  const createBranch = () => {
+    branchDialog = false;
+    return run(branchCopySave ? 'Branch created from your current save' : 'Empty branch created', async () => {
       await api.post(`/api/games/${game.id}/branch`, {
         name: newBranch,
         copyCurrentSave: branchCopySave,
       });
       newBranch = '';
     });
+  };
   const switchBranch = (name) =>
     run(`Switched to "${name}"`, () => api.post(`/api/games/${game.id}/branch/switch`, { name }));
   async function deleteBranch(name) {
@@ -411,22 +427,16 @@
   {:else if tab === 'branches'}
     <div class="card branch-new">
       <div class="snap-new-row">
-        <input placeholder="New branch name (e.g. ng-plus)" bind:value={newBranch} />
-        <button class="btn primary" disabled={!newBranch || busy} on:click={createBranch}>+ Create branch</button>
+        <input
+          placeholder="New branch name (e.g. ng-plus)"
+          bind:value={newBranch}
+          on:keydown={(e) => e.key === 'Enter' && openBranchDialog()}
+        />
+        <button class="btn primary" disabled={!newBranch || busy} on:click={openBranchDialog}>+ Create branch</button>
       </div>
-      <label class="check">
-        <input type="checkbox" bind:checked={branchCopySave} />
-        Start from my current save
-      </label>
       <span class="hint">
-        {#if branchCopySave}
-          The new branch begins with the save you have now, and the two diverge from the first
-          snapshot you take on it.
-        {:else}
-          The new branch begins with <strong>no save</strong> — for a fresh run. Switching to it
-          clears your save folder; your current save is snapshotted first and comes back when you
-          switch to <strong>{game.activeBranch}</strong>.
-        {/if}
+        A branch is a separate line of saves — a second playthrough, or a run you want to keep
+        apart from your main one. You'll be asked what it starts from.
       </span>
     </div>
     <div class="snap-list">
@@ -631,6 +641,52 @@
   {/if}
 {/if}
 
+<svelte:window on:keydown={onBranchKeydown} />
+
+{#if branchDialog && game}
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="overlay" on:click={() => (branchDialog = false)}>
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div class="modal card" on:click|stopPropagation>
+      <h3>🌱 New branch — {newBranch}</h3>
+      <p class="desc">What should it start from?</p>
+
+      <label class="choice" class:sel={branchCopySave}>
+        <input type="radio" bind:group={branchCopySave} value={true} />
+        <span class="c-body">
+          <span class="c-title">A copy of my current save</span>
+          <span class="c-desc">
+            "{newBranch}" begins exactly where you are now. The two only diverge from the first
+            snapshot you take on it — so this is the one for trying something without losing your
+            place.
+          </span>
+        </span>
+      </label>
+
+      <label class="choice" class:sel={!branchCopySave}>
+        <input type="radio" bind:group={branchCopySave} value={false} />
+        <span class="c-body">
+          <span class="c-title">A fresh start — no save</span>
+          <span class="c-desc">
+            "{newBranch}" begins empty, for a new playthrough from scratch. Switching to it clears
+            your save folder — your current save is snapshotted first and comes straight back when
+            you switch to <strong>{game.activeBranch}</strong>.
+          </span>
+        </span>
+      </label>
+
+      <div class="actions">
+        <button class="btn" on:click={() => (branchDialog = false)}>Cancel</button>
+        <button class="btn primary" disabled={busy} on:click={createBranch}>Create branch</button>
+      </div>
+      <p class="hint-line">
+        🛡️ Either way nothing is lost. Switching between branches snapshots whatever is in your
+        save folder first, and refuses to change anything if that snapshot can't be taken.
+      </p>
+    </div>
+  </div>
+{/if}
+
 <style>
   .head {
     display: flex;
@@ -710,12 +766,86 @@
     display: flex;
     gap: 10px;
   }
-  .branch-new .check {
-    margin-top: 12px;
-  }
   .branch-new .hint {
     display: block;
-    margin-top: 6px;
+    margin-top: 10px;
+  }
+  /* The new-branch dialog. Deliberately the same furniture as the conflict
+     modal — both are "this is about to touch your save folder, choose". */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 90;
+  }
+  .modal {
+    width: 520px;
+    max-width: calc(100vw - 48px);
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+  }
+  .modal h3 {
+    margin-bottom: 8px;
+    overflow-wrap: anywhere;
+  }
+  .modal .desc {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    margin-bottom: 14px;
+  }
+  .choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition:
+      border-color 0.13s ease,
+      background 0.13s ease;
+  }
+  .choice:hover {
+    border-color: var(--border-strong);
+  }
+  .choice.sel {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .choice input {
+    margin-top: 1px;
+  }
+  .c-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .c-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .c-desc {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .modal .actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 14px;
+  }
+  .hint-line {
+    margin-top: 12px;
+    font-size: 0.78rem;
+    color: var(--text-faint);
+    line-height: 1.5;
   }
   .snap-new input,
   .branch-new .snap-new-row input {
@@ -965,18 +1095,6 @@
   }
   .config-fields .field {
     margin-bottom: 14px;
-  }
-  .config-fields .check {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    font-size: 0.9rem;
-    cursor: pointer;
-  }
-  .config-fields .check input {
-    accent-color: var(--accent);
-    width: 16px;
-    height: 16px;
   }
   .config-save {
     display: flex;

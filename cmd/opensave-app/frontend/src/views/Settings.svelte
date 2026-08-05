@@ -577,20 +577,7 @@
   .quiet {
     color: var(--text-faint);
   }
-  .check {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 0.92rem;
-    color: var(--text);
-    cursor: pointer;
-    padding: 4px 0;
-  }
-  .check input {
-    accent-color: var(--accent);
-    width: 16px;
-    height: 16px;
-  }
+  /* .check and the checkbox itself are styled globally in app.css. */
   .path-row {
     display: flex;
     gap: 8px;

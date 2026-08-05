@@ -37,6 +37,10 @@ restored onto a new machine at all.
   way the stable release is offered as soon as it is newer, so it is not a
   one-way door in the other direction either. From the command line,
   `opensave update` follows the same channel.
+- **Tickboxes match the rest of the app.** Every checkbox and radio was the
+  operating system's own square control in the operating system's own colour,
+  sitting on cards built out of pills and rounded corners. They are now
+  circles that fill with OpenSave's purple when you turn them on.
 - **Sign in to Google Drive or Dropbox from the command line.** Cloud backup
   previously needed the desktop app to authorise it, which left a Steam Deck
   in Game Mode or a headless install unable to set it up at all. `opensave
@@ -138,11 +142,11 @@ restored onto a new machine at all.
   put back. Every file disappeared, with no warning, which is indistinguishable
   from having lost the save. (It was recoverable: the outgoing branch is
   snapshotted first, so switching back restored it.) Creating a branch now
-  asks what it should start from — **your current save**, which is the
-  default, or **empty** for a genuinely fresh run. Either way you are told
-  which you are getting before the branch exists, and an empty one only
-  clears the save folder because that is what you chose. From the command
-  line, `opensave branch <gameId> <name>` copies and `--empty` does not.
+  opens a dialog asking what it should start from — **a copy of your current
+  save**, which is pre-selected, or **a fresh start with no save**. Each says
+  in full what it will do to your save folder, so an empty branch only clears
+  it because that is what you chose. From the command line,
+  `opensave branch <gameId> <name>` copies and `--empty` does not.
 - **A failed backup no longer let a branch switch wipe the save anyway.**
   Switching snapshots the current save first, so the change can be undone —
   but if that snapshot failed, the failure was only written to the log and
