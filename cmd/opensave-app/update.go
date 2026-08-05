@@ -1,14 +1,24 @@
 package main
 
 import (
-	"encoding/json"
-	"net/http"
 	"runtime"
 	"strings"
-	"time"
 
+	"github.com/opensave/opensave/internal/selfupdate"
 	"github.com/opensave/opensave/internal/version"
 )
+
+// wantsPreReleases reports whether this device should be offered betas: the
+// user asked for the channel, or is already running one.
+func (a *App) wantsPreReleases() bool {
+	channel := ""
+	if a.daemon != nil {
+		if s, err := a.daemon.Store.GetSettings(); err == nil {
+			channel = s.UpdateChannel
+		}
+	}
+	return selfupdate.WantsPreReleases(channel, AppVersion)
+}
 
 // updateRepo is the GitHub "owner/repo" whose releases are checked for a
 // newer version. Change this one line if the project moves.
@@ -21,38 +31,12 @@ const updateRepo = "Liquid-co/OpenSave"
 func (a *App) CheckForUpdate() map[string]any {
 	none := map[string]any{"available": false, "current": AppVersion}
 
-	req, err := http.NewRequest(http.MethodGet,
-		"https://api.github.com/repos/"+updateRepo+"/releases/latest", nil)
-	if err != nil {
-		return none
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "OpenSave/"+AppVersion)
-
-	resp, err := (&http.Client{Timeout: 6 * time.Second}).Do(req)
-	if err != nil {
-		return none
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	rel, err := selfupdate.LatestRelease(updateRepo, "OpenSave/"+AppVersion, a.wantsPreReleases())
+	if err != nil || rel.TagName == "" {
 		return none
 	}
 
-	var rel struct {
-		TagName    string         `json:"tag_name"`
-		HTMLURL    string         `json:"html_url"`
-		Prerelease bool           `json:"prerelease"`
-		Body       string         `json:"body"`
-		Assets     []releaseAsset `json:"assets"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return none
-	}
-	if rel.Prerelease || rel.TagName == "" {
-		return none
-	}
-
-	latest := strings.TrimPrefix(rel.TagName, "v")
+	latest := rel.Version()
 	if compareVersions(latest, AppVersion) <= 0 {
 		return none
 	}
@@ -78,21 +62,19 @@ func (a *App) CheckForUpdate() map[string]any {
 		notes = notes[:4000] + "\n…"
 	}
 	return map[string]any{
-		"available": true,
-		"current":   AppVersion,
-		"latest":    latest,
-		"url":       url,
-		"assetUrl":  assetURL,
-		"notes":     notes,
-		"flatpak":   runningInFlatpak(),
+		"available":  true,
+		"current":    AppVersion,
+		"latest":     latest,
+		"url":        url,
+		"assetUrl":   assetURL,
+		"notes":      notes,
+		"flatpak":    runningInFlatpak(),
+		"prerelease": rel.Prerelease,
 	}
 }
 
 // releaseAsset is the subset of a GitHub release asset the updater needs.
-type releaseAsset struct {
-	Name               string `json:"name"`
-	BrowserDownloadURL string `json:"browser_download_url"`
-}
+type releaseAsset = selfupdate.Asset
 
 // selectUpdateAsset picks the OS-appropriate one-click update asset:
 // OpenSave.exe on Windows, the linux tarball on Linux. Returns "" when no

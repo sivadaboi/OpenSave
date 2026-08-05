@@ -122,6 +122,36 @@ func TestUpdateSettings_RoundTripsJSONColumns(t *testing.T) {
 	}
 }
 
+// An existing install picks up the update channel on upgrade without being
+// asked, and defaults to stable — nobody is moved onto pre-releases by
+// installing a version that happens to add the setting.
+func TestUpdateChannelDefaultsToStableAndPersists(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.EnsureDefaultSettings("/data", "/backups"); err != nil {
+		t.Fatal(err)
+	}
+
+	settings, err := s.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.UpdateChannel != "stable" {
+		t.Errorf("UpdateChannel = %q on a fresh install, want stable", settings.UpdateChannel)
+	}
+
+	settings.UpdateChannel = "beta"
+	if err := s.UpdateSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UpdateChannel != "beta" {
+		t.Errorf("UpdateChannel = %q after opting in, want beta", got.UpdateChannel)
+	}
+}
+
 func TestGameBranchSnapshotLifecycle(t *testing.T) {
 	s := openTestStore(t)
 

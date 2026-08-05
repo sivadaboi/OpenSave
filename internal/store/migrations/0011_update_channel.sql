@@ -1,0 +1,12 @@
+-- Which releases this device is offered.
+--
+-- "stable" is the default and means published releases only. "beta" also
+-- offers pre-releases, for people who want to try what is coming and report
+-- on it before it ships.
+--
+-- Running a pre-release implies the beta channel regardless of this value:
+-- GitHub's "latest release" deliberately skips pre-releases, so a beta build
+-- is newer than the newest stable and its update check would answer "up to
+-- date" until the final release overtook it. Installing a beta would have been
+-- a one-way door with no way back except a manual download.
+ALTER TABLE settings ADD COLUMN update_channel TEXT NOT NULL DEFAULT 'stable';

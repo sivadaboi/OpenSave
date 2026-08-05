@@ -46,6 +46,10 @@ type Settings struct {
 	// DefaultMaxManualSnapshots is the starting manual-snapshot budget for
 	// newly tracked games. 0 means keep them forever.
 	DefaultMaxManualSnapshots int `db:"default_max_manual_snapshots" json:"defaultMaxManualSnapshots"`
+	// UpdateChannel is "stable" (published releases only) or "beta" (also
+	// pre-releases). Running a pre-release implies beta whatever this says;
+	// see selfupdate.WantsPreReleases.
+	UpdateChannel string `db:"update_channel" json:"updateChannel"`
 
 	CustomScanPathsJSON  string `db:"custom_scan_paths" json:"-"`
 	ExcludePathsJSON     string `db:"exclude_paths" json:"-"`
@@ -224,6 +228,7 @@ func (s *Store) UpdateSettings(settings Settings) error {
 			ui_mode = :ui_mode,
 			default_max_snapshots = :default_max_snapshots,
 			default_max_manual_snapshots = :default_max_manual_snapshots,
+			update_channel = :update_channel,
 			updated_at = datetime('now')
 		WHERE id = 1`, settings)
 	if err != nil {

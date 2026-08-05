@@ -77,8 +77,24 @@ restore snapshots per game.
 - **Sync** — auto-sync on track, bandwidth limit, relay URL, relay hosting.
 - **Storage** — snapshot folder, pre-sync safety-backup folder, retention,
   extra scan folders.
+- **Updates** — whether to be offered beta builds.
 - **Advanced** — daemon port, cross-platform path translation rules (e.g.
   rewrite `C:\Users\me\Saves` → `/home/deck/saves`).
+
+### Beta builds
+
+By default OpenSave only offers you published releases. Tick **Offer me beta
+versions** under Settings → Updates to be offered pre-releases as well, if you
+want to try what is coming and report on it.
+
+If you are already running a beta, that happens automatically — you do not need
+to find this setting first, and you will still be offered the stable release the
+moment it is newer than your build. From the command line:
+
+```
+opensave config set update-channel beta      # or stable
+opensave update --check
+```
 
 ### Snapshot retention
 

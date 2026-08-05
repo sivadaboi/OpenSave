@@ -105,7 +105,19 @@ Change a setting. Keys:
 .BR match-by-app-id ,
 .BR snapshot-limit ,
 .BR manual-snapshot-limit ,
-.BR relay-url .
+.BR relay-url ,
+.BR update-channel .
+.IP
+.B update-channel
+is
+.B stable
+(published releases only, the default) or
+.B beta
+(pre\-releases as well). A build that is itself a pre\-release follows the beta
+channel whatever this is set to, since GitHub's "latest release" skips
+pre\-releases and such a build would otherwise report itself up to date until
+the final release overtook it. The stable release is still offered as soon as
+it is the newer of the two, so neither direction is a one\-way door.
 .TP
 .BI "game " "gameId set key value"
 Change one game's settings. Keys:
@@ -163,6 +175,14 @@ Print a shell completion script.
 .TP
 .BI "upnp " port " " [ --delete ]
 Forward, or remove, a router port via UPnP.
+.TP
+.BR update " [" --check ]
+Replace this binary with the newest release for its channel, or with
+.B --check
+only report whether one exists. See
+.B config set update-channel
+for which releases that is; a headless install has no update banner to click,
+which is the whole reason this exists.
 .TP
 .B version
 Print the version.

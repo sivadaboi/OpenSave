@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/opensave/opensave/internal/daemon"
+	"github.com/opensave/opensave/internal/selfupdate"
+	"github.com/opensave/opensave/internal/version"
 )
 
 // Settings and game-linking management, so a headless install isn't forced
@@ -199,6 +201,7 @@ func cmdConfig(d *daemon.Daemon, args []string) int {
 		fmt.Printf("match by app id:  %v\n", settings.MatchByAppID)
 		fmt.Printf("snapshot limit:   %d\n", settings.DefaultMaxSnapshots)
 		fmt.Printf("manual limit:     %s\n", manualLimitLabel(settings.DefaultMaxManualSnapshots))
+		fmt.Printf("update channel:   %s\n", updateChannelLabel(settings.UpdateChannel))
 		fmt.Printf("data dir:         %s\n", settings.DataDir)
 		fmt.Printf("snapshots dir:    %s\n", settings.BackupsDir)
 		return 0
@@ -229,6 +232,13 @@ func cmdConfig(d *daemon.Daemon, args []string) int {
 		settings.DefaultMaxManualSnapshots = n
 	case "relay-url":
 		settings.RelayURL = value
+	case "update-channel":
+		switch strings.ToLower(value) {
+		case "stable", "beta":
+			settings.UpdateChannel = strings.ToLower(value)
+		default:
+			return fail(asJSON, fmt.Errorf("update-channel must be \"stable\" or \"beta\""))
+		}
 	default:
 		return fail(asJSON, fmt.Errorf("unknown setting %q\n\n%s", key, configUsage))
 	}
@@ -253,7 +263,9 @@ const configUsage = `usage:
   opensave config set snapshot-limit <n>    Automatic snapshots kept per branch (0 = all)
   opensave config set manual-snapshot-limit <n>
                                             Manual snapshots kept per branch (0 = keep forever)
-  opensave config set relay-url <url>       Relay server for internet sync`
+  opensave config set relay-url <url>       Relay server for internet sync
+  opensave config set update-channel <stable|beta>
+                                            Whether updates include pre-releases`
 
 // manualLimitLabel renders the manual-snapshot budget. 0 is the default and
 // means "never pruned", which is worth saying in words — printing a bare 0
@@ -263,6 +275,19 @@ func manualLimitLabel(n int) string {
 		return "keep forever"
 	}
 	return fmt.Sprintf("%d", n)
+}
+
+// updateChannelLabel spells out what the stored channel means, and says when a
+// pre-release build has overridden it — otherwise `config list` would report
+// "stable" on a machine that is being offered betas.
+func updateChannelLabel(channel string) string {
+	if selfupdate.WantsPreReleases(channel, version.Version) && !strings.EqualFold(channel, "beta") {
+		return "beta (this is a pre-release build)"
+	}
+	if strings.EqualFold(channel, "beta") {
+		return "beta"
+	}
+	return "stable"
 }
 
 func orNone(s string) string {

@@ -27,6 +27,16 @@ restored onto a new machine at all.
   everything. Cloud backups follow the same rule, so your off-site copy no
   longer ends up thinner than the machine it is backing up. Existing games
   pick this up on upgrade without being reconfigured.
+- **Beta builds can update to newer betas.** Installing a pre-release used to
+  be a one-way door: the update check asks GitHub for the *latest release*,
+  which deliberately skips pre-releases, so a beta was newer than anything it
+  was offered and reported itself up to date until the final release overtook
+  it — with no way forward but a manual download. Running a pre-release now
+  follows the beta channel automatically, and **Settings → Updates** has a
+  toggle for anyone on a stable build who wants to try what is coming. Either
+  way the stable release is offered as soon as it is newer, so it is not a
+  one-way door in the other direction either. From the command line,
+  `opensave update` follows the same channel.
 - **Sign in to Google Drive or Dropbox from the command line.** Cloud backup
   previously needed the desktop app to authorise it, which left a Steam Deck
   in Game Mode or a headless install unable to set it up at all. `opensave
@@ -164,6 +174,12 @@ restored onto a new machine at all.
 - **Switch emulator saves were offered as one enormous entry.** The scanner
   presented the whole NAND profile tree rather than each game's own save, so
   tracking one game meant tracking all of them.
+- **Beta versions past the ninth were treated as older than the ones before
+  them.** Pre-release suffixes were compared as plain text, where "beta.10"
+  sorts below "beta.9" because "1" precedes "9". Any beta series reaching
+  double figures would have quietly stopped offering updates. They are now
+  compared the way semantic versioning specifies, one identifier at a time and
+  numerically where both sides are numbers.
 - **Snapshot file sizes showed as 0 B, and restoring a single file did
   nothing.** Both were the command line reading fields by the wrong name —
   which produces an empty value rather than an error, so both looked like

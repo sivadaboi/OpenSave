@@ -3,14 +3,14 @@ package cliapp
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
+	"github.com/opensave/opensave/internal/config"
 	"github.com/opensave/opensave/internal/selfupdate"
+	"github.com/opensave/opensave/internal/store"
 	"github.com/opensave/opensave/internal/version"
 )
 
@@ -59,6 +59,7 @@ func cmdUpdate(args []string) int {
 		return emitJSON(map[string]any{
 			"current": version.Version, "latest": latest,
 			"updateAvailable": newer, "url": rel.HTMLURL,
+			"prerelease": rel.Prerelease,
 		})
 	}
 
@@ -67,12 +68,13 @@ func cmdUpdate(args []string) int {
 		field("installed", bold(version.Version))
 		field("latest release", latest)
 		fmt.Println()
-		// Anyone testing a pre-release is ahead of the newest stable build.
-		// Telling them they're "on the latest version" while showing a lower
-		// number next to it reads like something is broken.
+		// A build ahead of everything published is one somebody compiled
+		// themselves — pre-releases are offered here, so a beta install is
+		// never in this position. Saying "you're on the latest version" while
+		// showing a lower number beside it reads like something is broken.
 		if version.Compare(version.Version, latest) > 0 {
 			success("You're ahead of the latest release — nothing to update to.")
-			note("Pre-release builds are never offered here; grab them from the release page.")
+			note("This looks like a build made from source rather than a published one.")
 		} else {
 			success("You're on the latest version.")
 		}
@@ -82,7 +84,11 @@ func cmdUpdate(args []string) int {
 
 	section("Update")
 	field("installed", version.Version)
-	field("available", bold(accent(latest)))
+	if rel.Prerelease {
+		field("available", bold(accent(latest))+dim(" (pre-release)"))
+	} else {
+		field("available", bold(accent(latest)))
+	}
 	fmt.Println()
 
 	if checkOnly {
@@ -216,36 +222,69 @@ func pickCLIAsset(rel *releaseInfo) (url, name string) {
 	return "", ""
 }
 
+// latestRelease fetches the newest release for this install's channel.
+//
+// A build that is itself a pre-release follows the beta channel without being
+// told to: GitHub's "latest release" skips pre-releases, so a beta would
+// otherwise report itself up to date until the final release overtook it,
+// leaving `opensave update` with nothing to offer for as long as the series
+// ran.
 func latestRelease() (*releaseInfo, error) {
-	req, err := http.NewRequest(http.MethodGet,
-		"https://api.github.com/repos/"+updateRepo+"/releases/latest", nil)
+	rel, err := selfupdate.LatestRelease(updateRepo, "OpenSave/"+version.Version,
+		selfupdate.WantsPreReleases(updateChannel(), version.Version))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "OpenSave/"+version.Version)
+	out := &releaseInfo{TagName: rel.TagName, HTMLURL: rel.HTMLURL, Prerelease: rel.Prerelease}
+	for _, a := range rel.Assets {
+		out.Assets = append(out.Assets, struct {
+			Name string `json:"name"`
+			URL  string `json:"browser_download_url"`
+			Size int64  `json:"size"`
+		}{Name: a.Name, URL: a.BrowserDownloadURL, Size: a.Size})
+	}
+	return out, nil
+}
 
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+// updateChannel reads the configured channel, preferring a running daemon —
+// it holds the live value — and falling back to the database directly.
+//
+// The fallback is the case that matters: `update` runs without opening a
+// daemon of its own, and on a headless box nobody has started one, so asking
+// only over HTTP would read "stable" on a machine where the channel had just
+// been set to beta from this same CLI.
+func updateChannel() string {
+	if raw, err := daemonRequest("GET", "/api/settings", nil); err == nil {
+		var s struct {
+			UpdateChannel string `json:"updateChannel"`
+		}
+		if json.Unmarshal(raw, &s) == nil && s.UpdateChannel != "" {
+			return s.UpdateChannel
+		}
+	}
+	paths, err := config.Resolve()
 	if err != nil {
-		return nil, err
+		return ""
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub returned %s", resp.Status)
+	s, err := store.Open(paths.SQLiteDB)
+	if err != nil {
+		return ""
 	}
-	var rel releaseInfo
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return nil, err
+	defer s.Close()
+	settings, err := s.GetSettings()
+	if err != nil {
+		return ""
 	}
-	if rel.TagName == "" {
-		return nil, fmt.Errorf("no published release found")
-	}
-	return &rel, nil
+	return settings.UpdateChannel
 }
 
 const updateUsage = `usage: opensave update [--check]
 
   --check   Report whether a newer version exists, without installing it
 
-Updates this CLI binary in place from the latest GitHub release. Pre-releases
-are never offered; install those from the release page yourself.`
+Updates this CLI binary in place from the latest GitHub release.
+
+Which releases are offered follows the update channel in settings — see
+"opensave config set update-channel". A build that is itself a pre-release
+follows the beta channel whatever that is set to, so testing a beta is never
+a one-way door.`

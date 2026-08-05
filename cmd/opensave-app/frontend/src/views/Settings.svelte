@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from 'svelte';
   import { settings, toast, askConfirm, gameList } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
   import qrcode from 'qrcode-generator';
@@ -27,6 +28,20 @@
   let draft = null;
   let busy = false;
   let pruning = false;
+
+  // The running build, so the updates toggle can explain what it means for
+  // THIS install: someone already on a beta is offered betas regardless, and
+  // saying so is the difference between the checkbox looking broken and
+  // looking deliberate.
+  let appVersion = '';
+  $: onPreRelease = appVersion.includes('-');
+  onMount(async () => {
+    try {
+      appVersion = (await native.appInfo())?.version ?? '';
+    } catch {
+      appVersion = '';
+    }
+  });
 
   async function cleanUpSnapshots() {
     pruning = true;
@@ -57,6 +72,8 @@
     // Older daemons predate the separate manual-snapshot budget; 0 is the
     // "keep forever" default, so an omitted value behaves as it should.
     draft.defaultMaxManualSnapshots ??= 0;
+    // Older daemons predate the update channel; stable is the default.
+    draft.updateChannel ??= 'stable';
   }
 
   async function save() {
@@ -209,6 +226,29 @@
       </label>
       <p class="hint" style="margin-top: 6px;">
         Launches minimized to the system tray so syncing runs in the background.
+      </p>
+    </div>
+
+    <div class="card" style="margin-top: 14px;">
+      <h3 class="section-title">🧪 Updates</h3>
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={draft.updateChannel === 'beta'}
+          on:change={(e) => (draft.updateChannel = e.currentTarget.checked ? 'beta' : 'stable')}
+        />
+        Offer me beta versions
+      </label>
+      <p class="hint" style="margin-top: 6px;">
+        {#if onPreRelease}
+          You're running <strong>{appVersion}</strong>, which is a beta, so you'll be offered newer
+          betas whether or not this is ticked — otherwise there'd be no way forward until the final
+          release caught up. Untick it and you'll move to the stable release as soon as it's newer
+          than what you have.
+        {:else}
+          Betas ship early with the newest fixes and are less tested. You'll be offered the stable
+          release whenever it's newer, so this isn't a one-way door.
+        {/if}
       </p>
     </div>
 

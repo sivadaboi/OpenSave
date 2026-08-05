@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -180,7 +178,7 @@ func (a *App) InstallUpdateFromURL(url string) string {
 func (a *App) installViaInstaller() {
 	a.updateEvent("downloading", 0, "")
 
-	instURL, err := fetchInstallerURL()
+	instURL, err := a.fetchInstallerURL()
 	if err != nil {
 		a.updateEvent("error", 0, "couldn't locate the installer in the latest release: "+err.Error())
 		return
@@ -228,29 +226,9 @@ func (a *App) installViaInstaller() {
 
 // fetchInstallerURL returns the download URL of the NSIS installer asset
 // on the latest GitHub release.
-func fetchInstallerURL() (string, error) {
-	req, err := http.NewRequest(http.MethodGet,
-		"https://api.github.com/repos/"+updateRepo+"/releases/latest", nil)
+func (a *App) fetchInstallerURL() (string, error) {
+	rel, err := selfupdate.LatestRelease(updateRepo, "OpenSave/"+AppVersion, a.wantsPreReleases())
 	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "OpenSave/"+AppVersion)
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GitHub returned %s", resp.Status)
-	}
-	var rel struct {
-		Assets []struct {
-			Name               string `json:"name"`
-			BrowserDownloadURL string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		return "", err
 	}
 	for _, asset := range rel.Assets {
@@ -260,7 +238,7 @@ func fetchInstallerURL() (string, error) {
 			return asset.BrowserDownloadURL, nil
 		}
 	}
-	return "", fmt.Errorf("no installer asset on the latest release")
+	return "", fmt.Errorf("no installer asset on release %s", rel.TagName)
 }
 
 // finishInstall validates and applies a downloaded build, then restarts.
