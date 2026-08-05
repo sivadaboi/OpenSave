@@ -322,9 +322,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: OpenSave ${{ github.ref_name }}
-          # Hyphenated tags (v2.1.0-beta.1) publish as pre-releases: the
-          # in-app updater and /releases/latest both ignore them, so only
-          # people who opt in manually get in-progress builds.
+          # Hyphenated tags (v2.1.0-beta.1) publish as pre-releases, so
+          # /releases/latest ignores them. Only devices on the beta channel
+          # are offered these: either the user ticked Settings -> Updates, or
+          # they are already running a pre-release (see selfupdate).
           prerelease: ${{ contains(github.ref_name, '-') }}
           # Note: re-publishing the same tag appends another generated-notes
           # block; if a tag is ever re-cut, tidy the release body by hand.
