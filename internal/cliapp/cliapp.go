@@ -568,16 +568,36 @@ func cmdRollback(d *daemon.Daemon, args []string) int {
 }
 
 func cmdBranch(d *daemon.Daemon, args []string) int {
-	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: opensave branch <gameId> <name>")
+	// --empty starts the branch with no save at all, for a fresh run. The
+	// default copies the current save, so switching to the new branch never
+	// leaves the folder empty by surprise.
+	copyCurrentSave := true
+	rest := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "--empty" {
+			copyCurrentSave = false
+			continue
+		}
+		rest = append(rest, a)
+	}
+	if len(rest) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: opensave branch <gameId> <name> [--empty]\n\n"+
+			"  Starts from your current save. --empty starts the branch with no\n"+
+			"  save, for a fresh run — switching to it clears the save folder\n"+
+			"  (your current save is snapshotted first).")
 		return 1
 	}
-	clean, err := d.Snapshots.CreateBranch(args[0], args[1])
+	clean, err := d.Snapshots.CreateBranch(rest[0], rest[1], copyCurrentSave)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
-	fmt.Printf("Created branch %q\n", clean)
+	if copyCurrentSave {
+		success("Created branch %s from your current save.", bold(clean))
+	} else {
+		success("Created empty branch %s.", bold(clean))
+		note("Switching to it clears the save folder; your current save is snapshotted first.")
+	}
 	return 0
 }
 

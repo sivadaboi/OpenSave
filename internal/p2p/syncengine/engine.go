@@ -201,7 +201,10 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	if remoteData.ActiveBranch != "" && game.ActiveBranch != remoteData.ActiveBranch {
 		e.Log("warn", fmt.Sprintf("branch mismatch on %q: local %q vs remote %q — switching local",
 			game.Name, game.ActiveBranch, remoteData.ActiveBranch))
-		if _, err := e.Snapshots.CreateBranch(gameID, remoteData.ActiveBranch); err != nil &&
+		// Not seeded: this branch is being created to receive the peer's
+		// state, which the rest of this sync pulls in. The local save is
+		// preserved by the safety snapshot the switch takes.
+		if _, err := e.Snapshots.CreateBranch(gameID, remoteData.ActiveBranch, false); err != nil &&
 			!strings.Contains(err.Error(), "already exists") {
 			return Result{}, err
 		}

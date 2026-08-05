@@ -23,7 +23,7 @@ func TestSwitchToNewBranchKeepsTheCurrentSave(t *testing.T) {
 	writeSave(t, env.saveDir, "slot1.sav", "main progress")
 	writeSave(t, env.saveDir, "config/settings.ini", "vsync=1")
 
-	branch, err := env.mgr.CreateBranch("game1", "ng-plus")
+	branch, err := env.mgr.CreateBranch("game1", "ng-plus", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +46,116 @@ func TestSwitchToNewBranchKeepsTheCurrentSave(t *testing.T) {
 	}
 }
 
+// The other half of the choice: a branch asked to start empty really is
+// empty, and switching to it clears the save folder. That is a deliberate
+// fresh run, and the only reason it is safe to do is the backup below.
+func TestNewBranchCanDeliberatelyStartEmpty(t *testing.T) {
+	env := setup(t)
+	writeSave(t, env.saveDir, "slot1.sav", "main progress")
+
+	branch, err := env.mgr.CreateBranch("game1", "fresh-run", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snaps, _ := env.store.ListSnapshots("game1", branch); len(snaps) != 0 {
+		t.Errorf("a branch asked to start empty has %d snapshot(s)", len(snaps))
+	}
+	if err := env.mgr.SwitchBranch("game1", branch); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(env.saveDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("a deliberately empty branch left %d entries in the save folder", len(entries))
+	}
+
+	// And the save that was there is not lost — it is on the branch switched
+	// away from, which is what makes the emptying reversible.
+	if err := env.mgr.SwitchBranch("game1", "main"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(env.saveDir, "slot1.sav"))
+	if err != nil || string(got) != "main progress" {
+		t.Errorf("the save did not come back on returning to main: %q (%v)", got, err)
+	}
+}
+
+// The seeded snapshot has to land on the NEW branch, not the one still
+// active. Recording it against the current branch would leave the new one
+// empty — the exact state that empties the save folder — while looking like
+// it had worked.
+func TestSeededSnapshotLandsOnTheNewBranch(t *testing.T) {
+	env := setup(t)
+	writeSave(t, env.saveDir, "slot1.sav", "main progress")
+
+	before, _ := env.store.ListSnapshots("game1", "main")
+	branch, err := env.mgr.CreateBranch("game1", "seeded", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	onNew, _ := env.store.ListSnapshots("game1", branch)
+	if len(onNew) != 1 {
+		t.Errorf("the new branch has %d snapshot(s), want exactly the seeded one", len(onNew))
+	}
+	if after, _ := env.store.ListSnapshots("game1", "main"); len(after) != len(before) {
+		t.Errorf("seeding added %d snapshot(s) to the branch still active; it must only "+
+			"record onto the new one", len(after)-len(before))
+	}
+	// The game must not have been moved off its branch by the seeding.
+	if g, _ := env.store.GetGame("game1"); g.ActiveBranch != "main" {
+		t.Errorf("creating a branch moved the active branch to %q", g.ActiveBranch)
+	}
+}
+
+// If the pre-switch backup cannot be taken, nothing may be cleared.
+//
+// This used to log the failure and carry on, so the one case where the backup
+// mattered most — a full disk, a locked file, a database that would not write
+// — was the one where the save folder was emptied with nothing to go back to.
+func TestSwitchAbortsWhenTheBackupCannotBeTaken(t *testing.T) {
+	env := setup(t)
+	writeSave(t, env.saveDir, "slot1.sav", "irreplaceable")
+
+	branch, err := env.mgr.CreateBranch("game1", "target", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Make the snapshot impossible: a regular FILE where the game's backup
+	// directory needs to be, so creating it cannot succeed.
+	if err := os.MkdirAll(env.backups, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	blocker := filepath.Join(env.backups, "game1")
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := env.mgr.SwitchBranch("game1", branch); err == nil {
+		t.Error("the switch reported success even though the save could not be backed up first")
+	}
+
+	// The save must be exactly as it was.
+	got, err := os.ReadFile(filepath.Join(env.saveDir, "slot1.sav"))
+	if err != nil {
+		t.Fatalf("the save was cleared despite the backup failing — this is the data loss "+
+			"the abort exists to prevent: %v", err)
+	}
+	if string(got) != "irreplaceable" {
+		t.Errorf("save = %q, want %q", got, "irreplaceable")
+	}
+	// And the game must still be on the branch it started on.
+	if g, _ := env.store.GetGame("game1"); g.ActiveBranch != "main" {
+		t.Errorf("the active branch moved to %q despite the switch failing", g.ActiveBranch)
+	}
+}
+
 // The branch has to actually diverge afterwards: play on the new branch, go
 // back, and each side must hold its own state. Carrying the files over must
 // not quietly make the two branches the same thing.
@@ -53,7 +163,7 @@ func TestBranchesDivergeAfterSwitching(t *testing.T) {
 	env := setup(t)
 	writeSave(t, env.saveDir, "slot1.sav", "main progress")
 
-	branch, err := env.mgr.CreateBranch("game1", "experiment")
+	branch, err := env.mgr.CreateBranch("game1", "experiment", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +205,7 @@ func TestSwitchToPopulatedBranchReplacesTheSave(t *testing.T) {
 	writeSave(t, env.saveDir, "slot1.sav", "main")
 	writeSave(t, env.saveDir, "main-only.sav", "only on main")
 
-	branch, err := env.mgr.CreateBranch("game1", "other")
+	branch, err := env.mgr.CreateBranch("game1", "other", true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,6 +9,8 @@
 
   let tab = 'snapshots';
   let newBranch = '';
+  // Default to copying: a branch that keeps your save can never surprise you.
+  let branchCopySave = true;
   let snapshotComment = '';
   let busy = false;
   let browsing = null; // {snapshotId, files}
@@ -79,8 +81,11 @@
     return run(`Restored ${snap.id}`, () => api.post(`/api/games/${game.id}/rollback`, { snapshotId: snap.id }));
   };
   const createBranch = () =>
-    run('Branch created', async () => {
-      await api.post(`/api/games/${game.id}/branch`, { name: newBranch });
+    run(branchCopySave ? 'Branch created from your current save' : 'Empty branch created', async () => {
+      await api.post(`/api/games/${game.id}/branch`, {
+        name: newBranch,
+        copyCurrentSave: branchCopySave,
+      });
       newBranch = '';
     });
   const switchBranch = (name) =>
@@ -404,9 +409,25 @@
       </div>
     {/if}
   {:else if tab === 'branches'}
-    <div class="card snap-new">
-      <input placeholder="New branch name (e.g. ng-plus)" bind:value={newBranch} />
-      <button class="btn primary" disabled={!newBranch || busy} on:click={createBranch}>+ Create branch</button>
+    <div class="card branch-new">
+      <div class="snap-new-row">
+        <input placeholder="New branch name (e.g. ng-plus)" bind:value={newBranch} />
+        <button class="btn primary" disabled={!newBranch || busy} on:click={createBranch}>+ Create branch</button>
+      </div>
+      <label class="check">
+        <input type="checkbox" bind:checked={branchCopySave} />
+        Start from my current save
+      </label>
+      <span class="hint">
+        {#if branchCopySave}
+          The new branch begins with the save you have now, and the two diverge from the first
+          snapshot you take on it.
+        {:else}
+          The new branch begins with <strong>no save</strong> — for a fresh run. Switching to it
+          clears your save folder; your current save is snapshotted first and comes back when you
+          switch to <strong>{game.activeBranch}</strong>.
+        {/if}
+      </span>
     </div>
     <div class="snap-list">
       {#each branches as branch (branch.name)}
@@ -679,7 +700,25 @@
     padding: 14px;
     margin-bottom: 14px;
   }
-  .snap-new input {
+  /* Same card as .snap-new, stacked so the choice and its consequence sit
+     under the name field rather than beside it. */
+  .branch-new {
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  .branch-new .snap-new-row {
+    display: flex;
+    gap: 10px;
+  }
+  .branch-new .check {
+    margin-top: 12px;
+  }
+  .branch-new .hint {
+    display: block;
+    margin-top: 6px;
+  }
+  .snap-new input,
+  .branch-new .snap-new-row input {
     flex: 1;
     padding: 8px 12px;
     background: var(--bg);

@@ -154,7 +154,7 @@ func TestDeletingABranchRemovesManualSnapshotsToo(t *testing.T) {
 	env := setup(t)
 	writeSave(t, env.saveDir, "slot1.sav", "main state")
 
-	branch, err := env.mgr.CreateBranch("game1", "side")
+	branch, err := env.mgr.CreateBranch("game1", "side", true)
 	if err != nil {
 		t.Fatal(err)
 	}

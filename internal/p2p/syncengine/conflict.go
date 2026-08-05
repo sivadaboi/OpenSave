@@ -69,7 +69,11 @@ func (e *Engine) ResolveConflict(ctx context.Context, gameID, peerID, resolution
 			lastN(fmt.Sprintf("%d", time.Now().UnixMilli()), 4))
 		e.Log("info", fmt.Sprintf("conflict on %q resolved: keep BOTH — remote goes to branch %q", gameID, branchName))
 
-		if _, err := e.Snapshots.CreateBranch(gameID, branchName); err != nil {
+		// Not seeded from the current save: this branch exists to hold the
+		// PEER's version, which overwriteLocalWithRemote writes into it a
+		// moment from now. The local version is preserved by the safety
+		// snapshot the switch takes onto the outgoing branch.
+		if _, err := e.Snapshots.CreateBranch(gameID, branchName, false); err != nil {
 			return "", err
 		}
 		if err := e.Snapshots.SwitchBranch(gameID, branchName); err != nil {

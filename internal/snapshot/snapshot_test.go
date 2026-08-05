@@ -201,7 +201,7 @@ func TestBranchSwitchRoundTrip(t *testing.T) {
 	env := setup(t)
 	writeSave(t, env.saveDir, "slot1.sav", "main branch save")
 
-	cleanName, err := env.mgr.CreateBranch("game1", "NG+ Run!")
+	cleanName, err := env.mgr.CreateBranch("game1", "NG+ Run!", true)
 	if err != nil {
 		t.Fatalf("CreateBranch() error = %v", err)
 	}
@@ -398,7 +398,7 @@ func TestPruneAllBranches(t *testing.T) {
 		}
 	}
 	// a side branch with its own snapshots (simulating a conflict branch).
-	if _, err := env.mgr.CreateBranch("game1", "side"); err != nil {
+	if _, err := env.mgr.CreateBranch("game1", "side", true); err != nil {
 		t.Fatal(err)
 	}
 	if err := env.mgr.SwitchBranch("game1", "side"); err != nil {
@@ -460,7 +460,9 @@ func TestCleanupSweepsAbandonedConflictBranches(t *testing.T) {
 	}
 	// Three abandoned conflict branches, 2 snapshots each (all < limit 10).
 	for _, b := range []string{"conflict-omar-1111", "conflict-omar-2222", "conflict-omar-3333"} {
-		if _, err := env.mgr.CreateBranch("game1", b); err != nil {
+		// Unseeded, as conflict resolution creates them: the branch is there
+		// to receive the peer's version, not a copy of the local save.
+		if _, err := env.mgr.CreateBranch("game1", b, false); err != nil {
 			t.Fatal(err)
 		}
 		for i := 0; i < 2; i++ {

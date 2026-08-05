@@ -498,15 +498,20 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateBranch(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
-	var body struct {
-		Name string `json:"name"`
-	}
+	// copyCurrentSave defaults to true when the field is absent: a caller that
+	// does not express a preference gets the branch that keeps their save,
+	// never the one that empties the folder on first switch.
+	body := struct {
+		Name            string `json:"name"`
+		CopyCurrentSave *bool  `json:"copyCurrentSave"`
+	}{}
 	if err := readJSON(r, &body); err != nil || body.Name == "" {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	copyCurrentSave := body.CopyCurrentSave == nil || *body.CopyCurrentSave
 
-	clean, err := s.Daemon.Snapshots.CreateBranch(gameID, body.Name)
+	clean, err := s.Daemon.Snapshots.CreateBranch(gameID, body.Name, copyCurrentSave)
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return

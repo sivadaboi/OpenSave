@@ -79,11 +79,17 @@ List snapshots on the active branch, newest first.
 .BI "rollback " "gameId snapshotId"
 Restore a snapshot.
 .TP
-.BI "branch " "gameId name"
-Create a branch, for keeping parallel playthroughs.
+.BI "branch " "gameId name" " [--empty]"
+Create a branch, for keeping parallel playthroughs. It starts from your
+current save, so switching to it changes nothing until you play.
+.B --empty
+starts it with no save instead, for a fresh run \(em switching to that branch
+clears the save folder.
 .TP
 .BI "checkout " "gameId name"
-Switch to a branch.
+Switch to a branch. Your current save is snapshotted onto the branch you are
+leaving first, so the switch can always be undone by switching back; if that
+snapshot cannot be taken, nothing is changed.
 .TP
 .BI "export " "gameId directory"
 Copy the current save out to a folder, exactly as the game wrote it \(em no

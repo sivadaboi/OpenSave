@@ -27,8 +27,12 @@ changed blocks are stored, so history is cheap). Open a game to:
   is snapshotted first, so a restore is always reversible.
 - **Browse files** — restore a single file out of a snapshot.
 - **Branches** — keep parallel playthroughs (e.g. `main` and `ng-plus`).
-  Switching branches snapshots the current save first, then restores the
-  other branch's latest state.
+  When you create one you choose what it starts from: **your current save**
+  (the default — switching to it changes nothing until you play) or **empty**,
+  for a genuinely fresh run, where switching to it clears the save folder.
+  Switching always snapshots the current save onto the branch you're leaving
+  first, so it can be undone by switching back — and if that snapshot can't be
+  taken, nothing is changed at all.
 
 ## 3. Syncing between devices
 
@@ -73,6 +77,8 @@ restore snapshots per game.
 - **Sync** — auto-sync on track, bandwidth limit, relay URL, relay hosting.
 - **Storage** — snapshot folder, pre-sync safety-backup folder, retention,
   extra scan folders.
+- **Advanced** — daemon port, cross-platform path translation rules (e.g.
+  rewrite `C:\Users\me\Saves` → `/home/deck/saves`).
 
 ### Snapshot retention
 
@@ -93,8 +99,6 @@ opensave game <gameId> set max-manual-snapshots 0     # 0 = keep forever
 opensave config set snapshot-limit 20                 # default for new games
 opensave config set manual-snapshot-limit 0
 ```
-- **Advanced** — daemon port, cross-platform path translation rules (e.g.
-  rewrite `C:\Users\me\Saves` → `/home/deck/saves`).
 
 ## 6. Tray & background
 

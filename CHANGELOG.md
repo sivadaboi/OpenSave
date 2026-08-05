@@ -127,11 +127,19 @@ restored onto a new machine at all.
   no state — and switching cleared the save location and then found nothing to
   put back. Every file disappeared, with no warning, which is indistinguishable
   from having lost the save. (It was recoverable: the outgoing branch is
-  snapshotted first, so switching back restored it.) A new branch now carries
-  the current save over as its starting point, and the two diverge from the
-  first snapshot taken on it — which is what branching means everywhere else
-  the word is used. Starting a branch empty is still possible by clearing the
-  save folder once you are on it.
+  snapshotted first, so switching back restored it.) Creating a branch now
+  asks what it should start from — **your current save**, which is the
+  default, or **empty** for a genuinely fresh run. Either way you are told
+  which you are getting before the branch exists, and an empty one only
+  clears the save folder because that is what you chose. From the command
+  line, `opensave branch <gameId> <name>` copies and `--empty` does not.
+- **A failed backup no longer let a branch switch wipe the save anyway.**
+  Switching snapshots the current save first, so the change can be undone —
+  but if that snapshot failed, the failure was only written to the log and
+  the switch carried on and cleared the folder regardless. The one situation
+  where the backup mattered most, a full disk or a file the game still had
+  open, was the one where it was skipped. A switch that cannot back up now
+  stops and changes nothing.
 - **A game could end up tracked twice after being linked.** Auto-tracking a
   peer's game checks whether that game is already linked to one here before
   creating anything, but the check and the creation were separate steps and a

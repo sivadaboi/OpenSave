@@ -114,6 +114,18 @@ func toLower(s string) string {
 // active branch, prunes history beyond the game's maxSnapshots, and fires
 // the background upload hook.
 func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snapshot, error) {
+	game, err := m.Store.GetGame(gameID)
+	if err != nil {
+		return store.Snapshot{}, err
+	}
+	return m.createOnBranch(gameID, game.ActiveBranch, comment, isSystemAuto)
+}
+
+// createOnBranch snapshots the current save state onto a named branch, which
+// is usually the active one. Seeding a freshly created branch is the
+// exception: the state being captured is the one being branched FROM, and it
+// has to land on the new branch for switching to it to restore anything.
+func (m *Manager) createOnBranch(gameID, branch, comment string, isSystemAuto bool) (store.Snapshot, error) {
 	m.inFlight.Add(1)
 	defer m.inFlight.Done()
 
@@ -125,12 +137,15 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 	if err != nil {
 		return store.Snapshot{}, err
 	}
+	if branch == "" {
+		branch = game.ActiveBranch
+	}
 
 	if err := ensureSavePathExists(game.SavePath); err != nil {
 		return store.Snapshot{}, err
 	}
 
-	backupDir := filepath.Join(settings.BackupsDir, gameID, game.ActiveBranch)
+	backupDir := filepath.Join(settings.BackupsDir, gameID, branch)
 	if err := os.MkdirAll(backupDir, 0o777); err != nil {
 		return store.Snapshot{}, fmt.Errorf("create backup dir: %w", err)
 	}
@@ -162,7 +177,7 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 		}
 	}
 
-	snap, zipPath, err := m.claimAndInsert(gameID, game.ActiveBranch, backupDir, stagingPath, comment, isSystemAuto)
+	snap, zipPath, err := m.claimAndInsert(gameID, branch, backupDir, stagingPath, comment, isSystemAuto)
 	if err != nil {
 		return store.Snapshot{}, err
 	}
@@ -185,7 +200,10 @@ func (m *Manager) Create(gameID, comment string, isSystemAuto bool) (store.Snaps
 	}
 
 	if m.OnUpload != nil {
-		remoteName := fmt.Sprintf("%s__%s__%s.zip", gameID, game.ActiveBranch, snapshotID)
+		// The branch this snapshot landed on, which is not always the active
+		// one: seeding a new branch records the state onto that branch while
+		// the game is still on the old one.
+		remoteName := fmt.Sprintf("%s__%s__%s.zip", gameID, branch, snapshotID)
 		// Called directly, not in a goroutine of ours: see UploadHook.
 		m.OnUpload(zipPath, remoteName)
 	}
@@ -482,8 +500,12 @@ func copyToTempZip(src string) (string, error) {
 	return tmp.Name(), nil
 }
 
-// CreateBranch adds a new empty branch to a game.
-func (m *Manager) CreateBranch(gameID, branchName string) (string, error) {
+// CreateBranch adds a branch to a game and returns its cleaned name.
+//
+// copyCurrentSave starts it from the save as it stands, by snapshotting that
+// state onto the new branch. False starts it with nothing, so switching to it
+// clears the save folder — a deliberate fresh run, not a surprise.
+func (m *Manager) CreateBranch(gameID, branchName string, copyCurrentSave bool) (string, error) {
 	if _, err := m.Store.GetGame(gameID); err != nil {
 		return "", err
 	}
@@ -503,7 +525,34 @@ func (m *Manager) CreateBranch(gameID, branchName string) (string, error) {
 	if err := m.Store.CreateBranch(gameID, clean); err != nil {
 		return "", err
 	}
+
+	// copyCurrentSave decides what the branch starts from, and it has to be
+	// decided here rather than at switch time: a branch's state IS its
+	// snapshots, so "copy" means seeding one now, and "empty" means genuinely
+	// having none.
+	//
+	// Left implicit, this was the sharpest edge in the feature. A new branch
+	// had no snapshots, switching to it cleared the save folder and found
+	// nothing to restore, and every save file vanished with no warning —
+	// reported, reasonably, as branches being broken.
+	if copyCurrentSave && savePathHasContent(gameOf(m, gameID).SavePath) {
+		comment := fmt.Sprintf("Branch %q created from %q", clean, gameOf(m, gameID).ActiveBranch)
+		if _, err := m.createOnBranch(gameID, clean, comment, true); err != nil {
+			// The branch exists but has nothing in it, which is the state that
+			// loses saves on the first switch. Undo it rather than leave that
+			// trap set.
+			_, _ = m.DeleteBranch(gameID, clean)
+			return "", fmt.Errorf("copy the current save onto the new branch: %w", err)
+		}
+	}
 	return clean, nil
+}
+
+// gameOf is a small helper for the places that need a game's fields and have
+// already established it exists.
+func gameOf(m *Manager, gameID string) store.Game {
+	g, _ := m.Store.GetGame(gameID)
+	return g
 }
 
 // SwitchBranch moves a game to another branch: auto-snapshot the current
@@ -534,39 +583,36 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 		return fmt.Errorf("branch %q does not exist", targetBranch)
 	}
 
+	// Back the outgoing state up before anything is cleared — and refuse to
+	// continue if that fails.
+	//
+	// This used to log the failure and carry on, which meant the one case
+	// where the backup mattered most was the one where it was skipped: a full
+	// disk, a locked file, a database error, and the save folder was emptied
+	// anyway with nothing to go back to. A switch that cannot be undone is not
+	// a switch worth making automatically.
 	if savePathHasContent(game.SavePath) {
 		comment := fmt.Sprintf("Auto backup before switching to branch %q", targetBranch)
 		if _, err := m.Create(gameID, comment, true); err != nil {
-			fmt.Fprintf(os.Stderr, "[snapshot] safety snapshot before branch switch failed: %v\n", err)
+			return fmt.Errorf("could not back up the current save before switching, so nothing was changed: %w", err)
 		}
 	}
 
-	// What the incoming branch holds decides whether the save folder is
-	// replaced at all. Read it BEFORE clearing anything.
-	targetSnaps, err := m.Store.ListSnapshots(gameID, targetBranch)
-	if err != nil {
-		return err
-	}
-
-	// A branch with no state of its own is one that was just created. Clearing
-	// the folder for it emptied the save and restored nothing in its place —
-	// every file gone, the game starting as though it had never been played.
-	// Recoverable by switching back, since the outgoing branch is snapshotted
-	// above, but indistinguishable from having lost the save.
-	//
-	// A new branch means "carry on from here". Until it has a state of its
-	// own, the files already present are its starting state, and the first
-	// snapshot taken while on it is what makes the two diverge.
-	if len(targetSnaps) > 0 {
-		if err := clearSavePath(game.SavePath); err != nil {
-			return fmt.Errorf("clear save path: %w", err)
-		}
+	if err := clearSavePath(game.SavePath); err != nil {
+		return fmt.Errorf("clear save path: %w", err)
 	}
 
 	if err := m.Store.SwitchActiveBranch(gameID, targetBranch); err != nil {
 		return err
 	}
 
+	// A branch with no snapshots is one deliberately started empty (see
+	// CreateBranch): there is nothing to restore, and the cleared folder is
+	// the point.
+	targetSnaps, err := m.Store.ListSnapshots(gameID, targetBranch)
+	if err != nil {
+		return err
+	}
 	if len(targetSnaps) > 0 {
 		latest := targetSnaps[0] // ListSnapshots returns newest first
 		if err := UnzipTo(latest.ZipPath, game.SavePath); err != nil {
