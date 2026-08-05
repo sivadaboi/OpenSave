@@ -57,6 +57,42 @@
   $: remoteMs = conflict?.remoteStats?.latestMtimeMs ?? 0;
   $: newerSide = localMs && remoteMs ? (localMs > remoteMs ? 'local' : remoteMs > localMs ? 'remote' : '') : '';
 
+  // What actually differs, counted per side. The two boxes used to show only
+  // each side's whole-save totals, which on a save where one file changed are
+  // the same number twice and answer nothing — the question being asked is
+  // "what is different", and that was only in the collapsed list below.
+  //
+  // diffFiles is capped by the server (diffTotal is the true count), so the
+  // breakdown is explicitly "of the first N" once it is truncated.
+  $: diffFiles = conflict?.diffFiles ?? [];
+  $: diffTotal = conflict?.diffTotal ?? 0;
+  $: diffCapped = diffTotal > diffFiles.length;
+  $: changedCount = diffFiles.filter((d) => d.status === 'changed').length;
+  $: onlyLocalCount = diffFiles.filter((d) => d.status === 'only-local').length;
+  $: onlyRemoteCount = diffFiles.filter((d) => d.status === 'only-remote').length;
+
+  // Bytes that differ, per side: a changed file counts its own size on each
+  // side, a file present on only one side counts only there.
+  const sizeOr0 = (n) => (typeof n === 'number' && n > 0 ? n : 0);
+  $: localDiffBytes = diffFiles.reduce(
+    (n, d) => n + (d.status === 'only-remote' ? 0 : sizeOr0(d.localSize)),
+    0
+  );
+  $: remoteDiffBytes = diffFiles.reduce(
+    (n, d) => n + (d.status === 'only-local' ? 0 : sizeOr0(d.remoteSize)),
+    0
+  );
+
+  // A side with nothing in it is a real state — the save folder was emptied,
+  // or this device has never held this game — and "0 files · 0 B" reads like
+  // the panel failed to load rather than like information.
+  function sideSummary(stats) {
+    const files = stats?.files;
+    if (files === 0) return 'nothing here yet';
+    if (typeof files !== 'number') return '';
+    return `${files} file${files === 1 ? '' : 's'} · ${fmtSize(stats?.totalBytes ?? -1)}`;
+  }
+
   async function resolve(resolution) {
     if (!current || busy) return;
     busy = true;
@@ -106,10 +142,17 @@
             <span class="v-title">💻 This device</span>
             {#if newerSide === 'local'}<span class="v-badge">played more recently</span>{/if}
           </div>
-          <div class="v-stats">
-            <span>{conflict.localStats?.files ?? '—'} files</span>
-            <span>{fmtSize(conflict.localStats?.totalBytes ?? -1)}</span>
+          <div class="v-diff">
+            <strong>{changedCount + onlyLocalCount}</strong>
+            file{changedCount + onlyLocalCount === 1 ? '' : 's'} differ{changedCount + onlyLocalCount === 1
+              ? 's'
+              : ''} here
+            {#if localDiffBytes > 0}<span class="v-diff-bytes">· {fmtSize(localDiffBytes)}</span>{/if}
           </div>
+          {#if onlyLocalCount > 0}
+            <div class="v-only">{onlyLocalCount} only on this device</div>
+          {/if}
+          <div class="v-stats">{sideSummary(conflict.localStats)}</div>
           <div class="v-time">last change {fmtMs(localMs)}</div>
         </div>
         <div class="version" class:newer={newerSide === 'remote'}>
@@ -117,13 +160,25 @@
             <span class="v-title">🖥️ {peerName}</span>
             {#if newerSide === 'remote'}<span class="v-badge">played more recently</span>{/if}
           </div>
-          <div class="v-stats">
-            <span>{conflict.remoteStats?.files ?? '—'} files</span>
-            <span>{fmtSize(conflict.remoteStats?.totalBytes ?? -1)}</span>
+          <div class="v-diff">
+            <strong>{changedCount + onlyRemoteCount}</strong>
+            file{changedCount + onlyRemoteCount === 1 ? '' : 's'} differ{changedCount + onlyRemoteCount === 1
+              ? 's'
+              : ''} there
+            {#if remoteDiffBytes > 0}<span class="v-diff-bytes">· {fmtSize(remoteDiffBytes)}</span>{/if}
           </div>
+          {#if onlyRemoteCount > 0}
+            <div class="v-only">{onlyRemoteCount} only on {peerName}</div>
+          {/if}
+          <div class="v-stats">{sideSummary(conflict.remoteStats)}</div>
           <div class="v-time">last change {fmtMs(remoteMs)}</div>
         </div>
       </div>
+      {#if diffCapped}
+        <p class="diff-capped">
+          Counts above cover the first {diffFiles.length} of {diffTotal} differing files.
+        </p>
+      {/if}
 
       {#if conflict.diffTotal > 0}
         <button class="diff-toggle" on:click={() => (showDiff = !showDiff)}>
@@ -226,12 +281,35 @@
     border-radius: 999px;
     white-space: nowrap;
   }
-  .v-stats {
-    display: flex;
-    gap: 12px;
-    font-size: 0.82rem;
+  /* The headline of each box: what differs on that side. The whole-save
+     totals moved below it — useful context, but not the decision. */
+  .v-diff {
+    font-size: 0.84rem;
+    color: var(--text);
+    margin-bottom: 3px;
+  }
+  .v-diff strong {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--warn);
+  }
+  .v-diff-bytes {
     color: var(--text-dim);
+  }
+  .v-only {
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    margin-bottom: 3px;
+  }
+  .v-stats {
+    font-size: 0.78rem;
+    color: var(--text-faint);
     margin-bottom: 4px;
+  }
+  .diff-capped {
+    font-size: 0.74rem;
+    color: var(--text-faint);
+    margin: -8px 0 12px;
   }
   .v-time {
     font-size: 0.74rem;

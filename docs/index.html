@@ -500,7 +500,10 @@
   <!-- lightbox -->
   <div class="lightbox" id="lightbox" aria-hidden="true">
     <button class="lightbox-close" id="lightbox-close" aria-label="Close">✕</button>
-    <img id="lightbox-img" src="" alt="">
+    <!-- No src until a screenshot is opened: src="" resolves against the
+         document, so the browser would request this page a second time on
+         every load and log it as a broken image. -->
+    <img id="lightbox-img" alt="">
   </div>
 
   <script src="app.js"></script>

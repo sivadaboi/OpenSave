@@ -48,7 +48,9 @@
     var close = function () {
       lb.classList.remove('open');
       lb.setAttribute('aria-hidden', 'true');
-      lbImg.src = '';
+      // removeAttribute, not src = '': an empty src resolves against the
+      // document and fetches the page again.
+      lbImg.removeAttribute('src');
     };
     lb.addEventListener('click', function (e) { if (e.target === lb || e.target === lbImg) close(); });
     if (lbClose) lbClose.addEventListener('click', close);

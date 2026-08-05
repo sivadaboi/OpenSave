@@ -84,6 +84,7 @@ restored onto a new machine at all.
 
 ### Fixed
 
+- **The conflict screen showed each save's total size instead of what differed.** The two panels reported how many files and bytes each side held altogether, which on a save where one file changed is the same number twice and settles nothing — the only account of what actually differed was the collapsed list underneath. Each panel now leads with what differs on that side, and how many files exist only there, with the whole-save totals kept underneath as context. A side with an empty save folder said "0 files · 0 B", which reads as a panel that failed to load rather than as a save that is missing; it now says so in words.
 - **Conflicts on saves the other device had never touched, after sending it a
   change.** Each device remembers the last state both were known to share, and
   judges a conflict by whether both have since moved away from it. After
