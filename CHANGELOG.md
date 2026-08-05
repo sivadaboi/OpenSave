@@ -122,6 +122,16 @@ restored onto a new machine at all.
   count the server does not send, so every backup — full or empty — reported
   the same bare success. Importing one was equally silent about how much came
   back, or that nothing had.
+- **Switching to a branch you had just created emptied the save folder.**
+  Creating a branch recorded the name and nothing else, so the new branch had
+  no state — and switching cleared the save location and then found nothing to
+  put back. Every file disappeared, with no warning, which is indistinguishable
+  from having lost the save. (It was recoverable: the outgoing branch is
+  snapshotted first, so switching back restored it.) A new branch now carries
+  the current save over as its starting point, and the two diverge from the
+  first snapshot taken on it — which is what branching means everywhere else
+  the word is used. Starting a branch empty is still possible by clearing the
+  save folder once you are on it.
 - **A game could end up tracked twice after being linked.** Auto-tracking a
   peer's game checks whether that game is already linked to one here before
   creating anything, but the check and the creation were separate steps and a

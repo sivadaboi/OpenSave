@@ -434,7 +434,9 @@
       {/each}
     </div>
     <p class="branch-hint">
-      Switching branches snapshots your current save first, then restores the other branch's latest state.
+      Switching branches snapshots your current save first, then restores the other branch's latest
+      state. A branch you just created has no state of its own yet, so it starts from whatever is in
+      your save folder now — the two diverge from the first snapshot you take on it.
     </p>
   {:else if tab === 'cloud'}
     <div class="card">

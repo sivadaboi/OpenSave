@@ -213,13 +213,22 @@ func TestBranchSwitchRoundTrip(t *testing.T) {
 		t.Fatalf("SwitchBranch() error = %v", err)
 	}
 
-	// New branch has no snapshots -> save dir should be cleared.
-	entries, err := os.ReadDir(env.saveDir)
+	// A new branch carries the current save over rather than starting empty.
+	//
+	// This assertion used to require the opposite, and the branch name here
+	// says why: "NG+ Run" reads as a fresh playthrough, so clearing the folder
+	// looked like the point. In use it did not read that way at all — the
+	// saves simply vanished, with no warning and nothing restored in their
+	// place, and it was reported as branches being broken. Starting empty is
+	// still one deliberate step away (switch, then clear the folder); a save
+	// disappearing because you looked at a branch is not recoverable
+	// confidence.
+	got, err := os.ReadFile(filepath.Join(env.saveDir, "slot1.sav"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("the save did not carry over to the new branch: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Errorf("save dir should be empty on a fresh branch, has %d entries", len(entries))
+	if string(got) != "main branch save" {
+		t.Errorf("carried-over save = %q, want %q", got, "main branch save")
 	}
 
 	// Write NG+ progress, snapshot lands on the new branch.
@@ -232,7 +241,7 @@ func TestBranchSwitchRoundTrip(t *testing.T) {
 	if err := env.mgr.SwitchBranch("game1", "main"); err != nil {
 		t.Fatalf("switch back error = %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(env.saveDir, "slot1.sav"))
+	got, err = os.ReadFile(filepath.Join(env.saveDir, "slot1.sav"))
 	if err != nil {
 		t.Fatal(err)
 	}

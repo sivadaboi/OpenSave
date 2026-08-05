@@ -541,18 +541,32 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 		}
 	}
 
-	if err := clearSavePath(game.SavePath); err != nil {
-		return fmt.Errorf("clear save path: %w", err)
+	// What the incoming branch holds decides whether the save folder is
+	// replaced at all. Read it BEFORE clearing anything.
+	targetSnaps, err := m.Store.ListSnapshots(gameID, targetBranch)
+	if err != nil {
+		return err
+	}
+
+	// A branch with no state of its own is one that was just created. Clearing
+	// the folder for it emptied the save and restored nothing in its place —
+	// every file gone, the game starting as though it had never been played.
+	// Recoverable by switching back, since the outgoing branch is snapshotted
+	// above, but indistinguishable from having lost the save.
+	//
+	// A new branch means "carry on from here". Until it has a state of its
+	// own, the files already present are its starting state, and the first
+	// snapshot taken while on it is what makes the two diverge.
+	if len(targetSnaps) > 0 {
+		if err := clearSavePath(game.SavePath); err != nil {
+			return fmt.Errorf("clear save path: %w", err)
+		}
 	}
 
 	if err := m.Store.SwitchActiveBranch(gameID, targetBranch); err != nil {
 		return err
 	}
 
-	targetSnaps, err := m.Store.ListSnapshots(gameID, targetBranch)
-	if err != nil {
-		return err
-	}
 	if len(targetSnaps) > 0 {
 		latest := targetSnaps[0] // ListSnapshots returns newest first
 		if err := UnzipTo(latest.ZipPath, game.SavePath); err != nil {
