@@ -10,6 +10,10 @@ a save the other device had never touched, a fourth could skip a conflict that
 should have been raised, and a backup made from the command line could not be
 restored onto a new machine at all.
 
+### 💬 Community
+
+- **OpenSave now has an official Discord: https://discord.gg/hvBv92DZvn** — come and say hello. It is the fastest way to get help with a save that will not sync, the right place to report a bug or ask for a feature, and where builds get discussed before they ship. If you have ever wanted to tell us what OpenSave should do next, this is where to do it.
+
 ### Added
 
 - **Snapshots you take yourself are no longer thrown away by the ones the app

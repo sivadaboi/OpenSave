@@ -1,6 +1,7 @@
 <script>
   import { backdropClose } from '../lib/backdrop.js';
   import ReleaseNotes from './ReleaseNotes.svelte';
+  import DiscordBanner from './DiscordBanner.svelte';
   import { navigate } from '../lib/stores.js';
 
   export let releases = [];
@@ -31,6 +32,7 @@
     </div>
 
     <div class="body">
+      <div class="banner-slot"><DiscordBanner compact /></div>
       <ReleaseNotes {releases} compact />
     </div>
 
@@ -113,6 +115,9 @@
     padding: 22px 28px;
     overflow-y: auto;
     flex: 1;
+  }
+  .banner-slot {
+    margin-bottom: 20px;
   }
   footer {
     display: flex;

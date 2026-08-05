@@ -29,6 +29,7 @@
   // can be skimmed by kind rather than read start to finish.
   function toneFor(title) {
     const t = (title ?? '').toLowerCase();
+    if (t.includes('community') || t.includes('discord')) return 'community';
     if (t.startsWith('fix')) return 'fixed';
     if (t.startsWith('add') || t.startsWith('new')) return 'added';
     if (t.startsWith('chang') || t.startsWith('improv')) return 'changed';
@@ -124,6 +125,13 @@
     color: #e0c07e;
     background: rgba(224, 192, 126, 0.1);
     border-color: rgba(224, 192, 126, 0.25);
+  }
+  /* Discord's blurple — the one section heading that is an invitation
+     rather than a category of change. */
+  .kind.community {
+    color: #b9bbfa;
+    background: rgba(88, 101, 242, 0.16);
+    border-color: rgba(88, 101, 242, 0.45);
   }
   .kind.removed,
   .kind.other {

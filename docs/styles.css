@@ -144,6 +144,17 @@ code {
   margin-left: 4px;
 }
 .donate-link:hover { border-color: rgba(233, 79, 133, 0.6); background: rgba(233, 79, 133, 0.18) !important; color: #f6b9d3 !important; }
+/* Discord blurple, shaped like the Donate pill beside it so the nav reads as
+   one row of chips rather than a pill and a plain link. */
+.discord-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid rgba(88, 101, 242, 0.4);
+  border-radius: 999px !important;
+  padding: 7px 14px !important;
+  color: #b9bbfa !important;
+  background: rgba(88, 101, 242, 0.12);
+}
+.discord-link:hover { border-color: #5865f2; background: #5865f2 !important; color: #fff !important; }
 .nav-cta {
   background: var(--grad);
   color: #fff !important;
@@ -647,6 +658,8 @@ code {
 .footer-links a:hover { color: var(--accent-hover); }
 .footer-donate { color: #e94f85 !important; font-weight: 600; }
 .footer-donate:hover { color: #f0a3c2 !important; }
+.footer-discord { color: #8b93f8 !important; font-weight: 600; }
+.footer-discord:hover { color: #b9bbfa !important; }
 .footer-note { width: 100%; font-size: 13px; color: var(--text-dim); border-top: 1px solid var(--border); padding-top: 20px; }
 
 /* ---------- lightbox ---------- */
@@ -693,7 +706,7 @@ code {
   .nav-links > a { padding: 12px; }
   /* justify-content only centers the flex links (donate/github);
      .nav-cta is a plain anchor, so it needs text-align too. */
-  .donate-link, .github-link, .nav-cta { margin: 4px 0 0 !important; justify-content: center; text-align: center; }
+  .donate-link, .discord-link, .github-link, .nav-cta { margin: 4px 0 0 !important; justify-content: center; text-align: center; }
   .nav-toggle { display: flex; }
   .section { padding: 72px 20px; }
   .hero { padding: 116px 20px 24px; }

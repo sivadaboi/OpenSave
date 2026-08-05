@@ -132,3 +132,10 @@ running. Right-click the tray icon to reopen, sync all games, or quit.
   Cloud Backup (see the Google note above).
 - **Steam Deck / Game Mode** — a Decky Loader plugin lives in
   `opensave-decky-plugin/`.
+
+## 8. Getting help
+
+Still stuck, or want to ask for something? **[Join the OpenSave Discord →](https://discord.gg/hvBv92DZvn)**
+It is the quickest way to get an answer, and where new builds are discussed
+before they ship. Bugs are also welcome on
+[GitHub issues](https://github.com/Liquid-co/OpenSave/issues).

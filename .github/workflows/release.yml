@@ -330,6 +330,18 @@ jobs:
           # Note: re-publishing the same tag appends another generated-notes
           # block; if a tag is ever re-cut, tidy the release body by hand.
           generate_release_notes: true
+          # `body` is placed above the generated notes, so the invitation is
+          # the first thing in every release rather than buried under a
+          # commit list.
+          body: |
+            ### 💬 Questions, bug reports, or just want to say hello?
+
+            **[Join the OpenSave Discord →](https://discord.gg/hvBv92DZvn)**
+
+            It is the fastest way to get help, and where new builds get
+            discussed before they ship.
+
+            ---
           fail_on_unmatched_files: false
           files: |
             windows/**/*.exe

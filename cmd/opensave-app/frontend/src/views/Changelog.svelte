@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { native } from '../lib/api.js';
   import ReleaseNotes from '../components/ReleaseNotes.svelte';
+  import DiscordBanner from '../components/DiscordBanner.svelte';
 
   let releases = [];
   let current = '';
@@ -32,6 +33,8 @@
       </div>
     {/if}
   </header>
+
+  <div class="banner-slot"><DiscordBanner /></div>
 
   {#if loading}
     <p class="muted">Loading…</p>
@@ -81,6 +84,9 @@
     letter-spacing: 0.07em;
     color: var(--text-faint);
     margin-bottom: 1px;
+  }
+  .banner-slot {
+    margin-bottom: 26px;
   }
   .muted {
     color: var(--text-faint);

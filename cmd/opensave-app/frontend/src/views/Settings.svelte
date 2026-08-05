@@ -3,10 +3,7 @@
   import { settings, toast, askConfirm, gameList } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
   import qrcode from 'qrcode-generator';
-
-  // Donation page, opened in the system browser (never in-app). Deliberately
-  // a single constant so the destination is easy to audit and change.
-  const DONATE_URL = 'https://opensave.gumroad.com/l/usygu';
+  import { DISCORD_URL, DONATE_URL } from '../lib/links.js';
 
   // QR of the same URL, generated locally so paying from a phone (where
   // Apple/Google Pay is a single tap) needs no typing. Built once — the URL
@@ -192,6 +189,17 @@
     <button class:active={tab === 'storage'} on:click={() => (tab = 'storage')}>Storage</button>
     <button class:active={tab === 'advanced'} on:click={() => (tab = 'advanced')}>Advanced</button>
     <button class="support-tab" class:active={tab === 'support'} on:click={() => (tab = 'support')}>💜 Support</button>
+    <!-- Not a tab: it leaves the app. Shaped like its neighbour so the pair
+         reads as one group, marked with ↗ so nobody expects a panel. -->
+    <button class="discord-tab" on:click={() => native.openExternal(DISCORD_URL)} title="Open the OpenSave Discord in your browser">
+      <span class="discord-glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 18" width="17" height="13" fill="currentColor">
+          <path d="M20.32 1.53A19.8 19.8 0 0 0 15.43 0c-.21.38-.46.9-.63 1.31a18.3 18.3 0 0 0-5.6 0C9.03.9 8.77.38 8.56 0A19.74 19.74 0 0 0 3.67 1.53C.57 6.19-.27 10.73.15 15.21A19.9 19.9 0 0 0 6.18 18c.49-.66.92-1.37 1.29-2.11-.71-.27-1.39-.6-2.03-.98.17-.13.34-.26.5-.4a14.2 14.2 0 0 0 12.12 0c.16.14.33.27.5.4-.64.38-1.32.71-2.03.98.37.74.8 1.45 1.29 2.11a19.87 19.87 0 0 0 6.03-2.79c.5-5.19-.84-9.69-3.53-13.68ZM8.02 12.46c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Zm7.96 0c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Z" />
+        </svg>
+      </span>
+      Discord
+      <span class="ext" aria-hidden="true">↗</span>
+    </button>
   </div>
 
   {#if tab === 'general'}
@@ -616,6 +624,27 @@
      never shouty — no accent fill, just a softer separated pill. */
   .support-tab {
     margin-left: auto;
+  }
+  /* Discord's own blurple, so it is recognisable at a glance, but kept at
+     the same weight as the tabs beside it rather than shouting over them. */
+  .discord-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #b9bbfa;
+    border-color: rgba(88, 101, 242, 0.4);
+  }
+  .discord-tab:hover {
+    color: #fff;
+    background: #5865f2;
+    border-color: #5865f2;
+  }
+  .discord-glyph {
+    display: inline-flex;
+  }
+  .ext {
+    font-size: 0.72rem;
+    opacity: 0.7;
   }
   /* This is the one tab that isn't a settings form, so it carries a little
      accent identity instead of reading as another block of options. */

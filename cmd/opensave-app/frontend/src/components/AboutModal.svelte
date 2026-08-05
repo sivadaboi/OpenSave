@@ -3,6 +3,7 @@
   import { native } from '../lib/api.js';
   import { navigate } from '../lib/stores.js';
   import { backdropClose } from '../lib/backdrop.js';
+  import { DISCORD_URL, GITHUB_URL } from '../lib/links.js';
   import logoUrl from '../assets/logo.png';
 
   export let onClose = () => {};
@@ -48,7 +49,16 @@
       <div><span>Built with</span> {info?.tech ?? 'Go + Wails'}</div>
     </div>
 
-    <button class="changelog-toggle" on:click={openChangelog}>View changelog</button>
+    <div class="links">
+      <button class="link-btn discord" on:click={() => native.openExternal(DISCORD_URL)}>
+        <svg viewBox="0 0 24 18" width="16" height="12" fill="currentColor" aria-hidden="true">
+          <path d="M20.32 1.53A19.8 19.8 0 0 0 15.43 0c-.21.38-.46.9-.63 1.31a18.3 18.3 0 0 0-5.6 0C9.03.9 8.77.38 8.56 0A19.74 19.74 0 0 0 3.67 1.53C.57 6.19-.27 10.73.15 15.21A19.9 19.9 0 0 0 6.18 18c.49-.66.92-1.37 1.29-2.11-.71-.27-1.39-.6-2.03-.98.17-.13.34-.26.5-.4a14.2 14.2 0 0 0 12.12 0c.16.14.33.27.5.4-.64.38-1.32.71-2.03.98.37.74.8 1.45 1.29 2.11a19.87 19.87 0 0 0 6.03-2.79c.5-5.19-.84-9.69-3.53-13.68ZM8.02 12.46c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Zm7.96 0c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Z" />
+        </svg>
+        Join the Discord
+      </button>
+      <button class="link-btn" on:click={() => native.openExternal(GITHUB_URL)}>GitHub</button>
+      <button class="link-btn" on:click={openChangelog}>Changelog</button>
+    </div>
 
     <p class="copy">{info?.copyright ?? ''}</p>
     <p class="note">Wire-compatible with the original Node.js/Electron OpenSave — Go and JS devices sync together.</p>
@@ -134,14 +144,42 @@
     font-weight: 400;
     font-size: 0.78rem;
   }
-  .changelog-toggle {
-    border: none;
+  .links {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
     background: transparent;
-    color: var(--accent);
+    color: var(--text-dim);
     cursor: pointer;
-    font-size: 0.84rem;
-    padding: 4px 8px;
-    margin-bottom: 8px;
+    font-size: 0.82rem;
+    padding: 7px 13px;
+    transition: all 0.12s;
+  }
+  .link-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  /* Discord's blurple, so the one link people are being pointed to is the
+     one their eye lands on first. */
+  .link-btn.discord {
+    color: #fff;
+    background: #5865f2;
+    border-color: #5865f2;
+    font-weight: 600;
+  }
+  .link-btn.discord:hover {
+    background: #4752c4;
+    border-color: #4752c4;
+    color: #fff;
   }
   .copy {
     font-size: 0.78rem;
