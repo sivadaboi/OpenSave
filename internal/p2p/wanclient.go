@@ -43,6 +43,19 @@ const (
 	// the drop is worth telling the user about. Below this it's a blip that
 	// reconnect already handled.
 	wanOutageReportAfter = 45 * time.Second
+
+	// wanColdStartGrace is that threshold for the very first connection,
+	// before this client has ever reached the relay.
+	//
+	// A host that sleeps an idle instance — Render's free tier does, after
+	// ~15 quiet minutes — takes the better part of a minute to serve its
+	// first request again, and the first device to join a quiet room pays
+	// that wait. At 45s the backoff has typically had three goes and the
+	// warning fires seconds before the connection succeeds, so a routine
+	// wake-up gets announced as a fault. Once a connection has been made,
+	// a drop means something actually changed, and the shorter threshold
+	// applies again.
+	wanColdStartGrace = 90 * time.Second
 )
 
 // wanKeepWarmInterval is how often a live connection pokes /health.
@@ -104,6 +117,15 @@ type WanClient struct {
 	// downSince is when the current outage began, so a routine relay cycle
 	// (back within seconds) can stay quiet while a real outage escalates.
 	downSince time.Time
+
+	// connectedTo is the relay URL this client has actually reached, and
+	// targetURL the one it is dialling now. They differ before the first
+	// success and after the relay is changed in settings — and in both cases
+	// a slow connect is far more likely to be a sleeping instance waking up
+	// than anything wrong. A plain "have we ever connected" flag would carry
+	// over to a newly configured relay and lose that. See wanColdStartGrace.
+	connectedTo string
+	targetURL   string
 
 	// staleWarned holds the peer IDs we have already reported as a likely
 	// reinstall of a device we are still paired with, so the warning lands
@@ -168,6 +190,7 @@ func (w *WanClient) Disconnect() {
 	w.staleWarned = map[string]bool{}
 	w.failures = 0
 	w.downSince = time.Time{}
+	w.connectedTo = ""
 	w.mu.Unlock()
 
 	w.markWanPeersOffline()
@@ -195,6 +218,7 @@ func (w *WanClient) run(ctx context.Context, gen int, settings store.Settings) {
 	// an outage would otherwise repeat this line every few seconds.
 	w.mu.Lock()
 	firstAttempt := w.failures == 0
+	w.targetURL = settings.RelayURL
 	w.mu.Unlock()
 	if firstAttempt {
 		w.engine.Log("info", fmt.Sprintf("connecting to WAN relay %s (room %s)", settings.RelayURL, settings.SyncCode))
@@ -219,6 +243,8 @@ func (w *WanClient) run(ctx context.Context, gen int, settings store.Settings) {
 	w.state = "connected"
 	w.lastError = ""
 	outage := w.downSince
+	wasFirstConnect := w.connectedTo != settings.RelayURL
+	w.connectedTo = settings.RelayURL
 	w.failures = 0
 	w.downSince = time.Time{}
 	w.mu.Unlock()
@@ -229,6 +255,12 @@ func (w *WanClient) run(ctx context.Context, gen int, settings store.Settings) {
 	switch {
 	case outage.IsZero():
 		w.engine.Log("success", "connected to WAN relay")
+	case wasFirstConnect:
+		// Never been connected, so this was not a reconnection — the relay
+		// was asleep and took a moment to wake. Saying "offline" about a
+		// host that was only idle reads as an incident that never happened.
+		w.engine.Log("success", fmt.Sprintf("connected to WAN relay (it took %s to wake up)",
+			time.Since(outage).Round(time.Second)))
 	case time.Since(outage) > wanOutageReportAfter:
 		w.engine.Log("success", fmt.Sprintf("reconnected to WAN relay after %s offline",
 			time.Since(outage).Round(time.Second)))
@@ -364,6 +396,10 @@ func (w *WanClient) connectionLost(ctx context.Context, gen int, state, errMsg s
 	failures := w.failures
 	w.failures++
 	downFor := time.Since(w.downSince)
+	reportAfter := wanOutageReportAfter
+	if w.connectedTo != w.targetURL {
+		reportAfter = wanColdStartGrace
+	}
 	w.mu.Unlock()
 
 	w.engine.notifyPeerUpdate()
@@ -383,7 +419,7 @@ func (w *WanClient) connectionLost(ctx context.Context, gen int, state, errMsg s
 		// clock — say so instead of leaving a scary bare TLS error.
 		w.engine.Log("warn", "WAN relay error: "+errMsg+
 			" — the relay may still be waking up (retrying automatically); if this persists, check this device's date & time")
-	case downFor > wanOutageReportAfter:
+	case downFor > reportAfter:
 		msg := fmt.Sprintf("WAN relay unreachable for %s; still retrying (every %s)",
 			downFor.Round(time.Second), delay.Round(time.Second))
 		if errMsg != "" {
