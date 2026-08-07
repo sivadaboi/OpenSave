@@ -45,15 +45,15 @@ func (t *lanTransport) FetchManifest(ctx context.Context, peer syncengine.Peer, 
 	return resp, err
 }
 
-func (t *lanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, gameID, relPath string, blockIndices []int, blockSize int) ([]syncengine.BlockData, error) {
+func (t *lanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, ref syncengine.FileRef, blockIndices []int, blockSize int) ([]syncengine.BlockData, error) {
 	var resp struct {
 		Blocks []syncengine.BlockData `json:"blocks"`
 	}
 	// No encodings advertised: on a LAN the wire is typically faster than the
 	// compressor, so the bytes saved cost more than they're worth. Responses
 	// are still decoded, so a peer that compresses anyway is handled.
-	err := t.postJSON(ctx, peerURL(peer, "/blocks/"+gameID), map[string]any{
-		"relPath": relPath, "blockIndices": blockIndices, "blockSize": blockSize,
+	err := t.postJSON(ctx, peerURL(peer, "/blocks/"+ref.GameID), map[string]any{
+		"relPath": ref.RelPath, "root": ref.Root, "blockIndices": blockIndices, "blockSize": blockSize,
 	}, &resp)
 	if err != nil {
 		return nil, err
@@ -61,8 +61,8 @@ func (t *lanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, ga
 	return decodeBlocks(resp.Blocks)
 }
 
-func (t *lanTransport) DeleteRemote(ctx context.Context, peer syncengine.Peer, gameID, relPath string) error {
-	return t.postJSON(ctx, peerURL(peer, "/delete-file/"+gameID), map[string]any{"relPath": relPath}, nil)
+func (t *lanTransport) DeleteRemote(ctx context.Context, peer syncengine.Peer, ref syncengine.FileRef) error {
+	return t.postJSON(ctx, peerURL(peer, "/delete-file/"+ref.GameID), map[string]any{"relPath": ref.RelPath, "root": ref.Root}, nil)
 }
 
 func (t *lanTransport) TriggerPeerPull(peer syncengine.Peer, gameID string) {

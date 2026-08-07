@@ -53,7 +53,7 @@ func (t *wanTransport) FetchManifest(ctx context.Context, peer syncengine.Peer, 
 // that a dropped response is noticed in tens of seconds.
 const slowLinkBytesPerSec = 128 << 10
 
-func (t *wanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, gameID, relPath string, blockIndices []int, blockSize int) ([]syncengine.BlockData, error) {
+func (t *wanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, ref syncengine.FileRef, blockIndices []int, blockSize int) ([]syncengine.BlockData, error) {
 	// Give the request a deadline proportional to what it's actually moving,
 	// so a big batch on a poor connection isn't cut off mid-flight.
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline && blockSize > 0 {
@@ -64,8 +64,8 @@ func (t *wanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, ga
 		defer cancel()
 	}
 
-	raw, err := t.wan.Request(ctx, peer.ID, "/blocks/"+gameID, "POST", map[string]any{
-		"relPath": relPath, "blockIndices": blockIndices, "blockSize": blockSize,
+	raw, err := t.wan.Request(ctx, peer.ID, "/blocks/"+ref.GameID, "POST", map[string]any{
+		"relPath": ref.RelPath, "root": ref.Root, "blockIndices": blockIndices, "blockSize": blockSize,
 		// Peers that don't understand this ignore it and reply with raw
 		// blocks, which decodeBlocks passes straight through.
 		"encodings": gzipEncodings,
@@ -82,8 +82,8 @@ func (t *wanTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, ga
 	return decodeBlocks(resp.Blocks)
 }
 
-func (t *wanTransport) DeleteRemote(ctx context.Context, peer syncengine.Peer, gameID, relPath string) error {
-	_, err := t.wan.Request(ctx, peer.ID, "/delete-file/"+gameID, "POST", map[string]any{"relPath": relPath})
+func (t *wanTransport) DeleteRemote(ctx context.Context, peer syncengine.Peer, ref syncengine.FileRef) error {
+	_, err := t.wan.Request(ctx, peer.ID, "/delete-file/"+ref.GameID, "POST", map[string]any{"relPath": ref.RelPath, "root": ref.Root})
 	return err
 }
 
@@ -122,12 +122,12 @@ func (t *routingTransport) FetchManifest(ctx context.Context, peer syncengine.Pe
 	return t.pick(peer).FetchManifest(ctx, peer, gameID, q)
 }
 
-func (t *routingTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, gameID, relPath string, blockIndices []int, blockSize int) ([]syncengine.BlockData, error) {
-	return t.pick(peer).FetchBlocks(ctx, peer, gameID, relPath, blockIndices, blockSize)
+func (t *routingTransport) FetchBlocks(ctx context.Context, peer syncengine.Peer, ref syncengine.FileRef, blockIndices []int, blockSize int) ([]syncengine.BlockData, error) {
+	return t.pick(peer).FetchBlocks(ctx, peer, ref, blockIndices, blockSize)
 }
 
-func (t *routingTransport) DeleteRemote(ctx context.Context, peer syncengine.Peer, gameID, relPath string) error {
-	return t.pick(peer).DeleteRemote(ctx, peer, gameID, relPath)
+func (t *routingTransport) DeleteRemote(ctx context.Context, peer syncengine.Peer, ref syncengine.FileRef) error {
+	return t.pick(peer).DeleteRemote(ctx, peer, ref)
 }
 
 func (t *routingTransport) TriggerPeerPull(peer syncengine.Peer, gameID string) {

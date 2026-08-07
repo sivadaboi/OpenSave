@@ -326,8 +326,8 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	}
 
 	// 6. Apply deletions (locally + propagate to peer).
-	e.applyLocalDeletions(game, decision)
-	e.propagateDeletions(ctx, peer, gameID, game, decision)
+	e.applyLocalDeletions(primaryRootOf(game), decision)
+	e.propagateDeletions(ctx, peer, gameID, primaryRootOf(game), decision)
 
 	// 7. Create pulled directories (parents first).
 	e.createPulledDirs(game, decision.DirsToPull)
@@ -621,13 +621,27 @@ func diffManifests(local, remote delta.Manifest) []DiffFile {
 	return out
 }
 
-func (e *Engine) applyLocalDeletions(game store.Game, d Decision) {
+// syncRoot is one save location taking part in a sync: the name both devices
+// know it by, and where it lives on this device. The two always travel
+// together — a name with no local path cannot be written to, and a path with
+// no name cannot be matched against what the peer sent.
+type syncRoot struct {
+	Name string // "" is the primary location, i.e. game.SavePath
+	Path string
+}
+
+// primaryRootOf is the single-location view every existing game has.
+func primaryRootOf(game store.Game) syncRoot {
+	return syncRoot{Name: delta.PrimaryRoot, Path: game.SavePath}
+}
+
+func (e *Engine) applyLocalDeletions(root syncRoot, d Decision) {
 	for _, relPath := range d.FilesToDeleteLocally {
-		if !delta.IsSafePath(game.SavePath, relPath) {
+		if !delta.IsSafePath(root.Path, relPath) {
 			e.Log("warn", "path traversal deletion denied: "+relPath)
 			continue
 		}
-		full := filepath.Join(game.SavePath, filepath.FromSlash(relPath))
+		full := filepath.Join(root.Path, filepath.FromSlash(relPath))
 		_ = os.Chmod(full, 0o666)
 		if err := os.Remove(full); err == nil {
 			e.Log("info", "deleted locally (peer deleted): "+relPath)
@@ -638,10 +652,10 @@ func (e *Engine) applyLocalDeletions(game store.Game, d Decision) {
 	dirs := append([]string{}, d.DirsToDeleteLocally...)
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
 	for _, relDir := range dirs {
-		if !delta.IsSafePath(game.SavePath, relDir) {
+		if !delta.IsSafePath(root.Path, relDir) {
 			continue
 		}
-		full := filepath.Join(game.SavePath, filepath.FromSlash(relDir))
+		full := filepath.Join(root.Path, filepath.FromSlash(relDir))
 		if info, err := os.Stat(full); err == nil && info.IsDir() {
 			if err := os.Remove(full); err == nil { // only removes empty dirs, matching rmdirSync
 				e.Log("info", "deleted directory locally (peer deleted): "+relDir)
@@ -650,22 +664,24 @@ func (e *Engine) applyLocalDeletions(game store.Game, d Decision) {
 	}
 }
 
-func (e *Engine) propagateDeletions(ctx context.Context, peer Peer, gameID string, game store.Game, d Decision) {
+func (e *Engine) propagateDeletions(ctx context.Context, peer Peer, gameID string, root syncRoot, d Decision) {
 	for _, relPath := range d.FilesToDeleteOnPeer {
-		if !delta.IsSafePath(game.SavePath, relPath) {
+		if !delta.IsSafePath(root.Path, relPath) {
 			continue
 		}
-		if err := e.Transport.DeleteRemote(ctx, peer, gameID, relPath); err != nil {
+		ref := FileRef{GameID: gameID, Root: root.Name, RelPath: relPath}
+		if err := e.Transport.DeleteRemote(ctx, peer, ref); err != nil {
 			e.Log("warn", fmt.Sprintf("could not propagate deletion of %s: %v", relPath, err))
 		}
 	}
 	dirs := append([]string{}, d.DirsToDeleteOnPeer...)
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
 	for _, relDir := range dirs {
-		if !delta.IsSafePath(game.SavePath, relDir) {
+		if !delta.IsSafePath(root.Path, relDir) {
 			continue
 		}
-		if err := e.Transport.DeleteRemote(ctx, peer, gameID, relDir); err != nil {
+		ref := FileRef{GameID: gameID, Root: root.Name, RelPath: relDir}
+		if err := e.Transport.DeleteRemote(ctx, peer, ref); err != nil {
 			e.Log("warn", fmt.Sprintf("could not propagate dir deletion of %s: %v", relDir, err))
 		}
 	}
@@ -905,7 +921,12 @@ func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, gameID, relPath
 		go func() {
 			defer wg.Done()
 			for batch := range work {
-				blocks, err := fetchWithRetry(ctx, e.Transport, peer, gameID, relPath, batch, remoteFile.BlockSize, e.Log)
+				// TODO(multi-root): Root is the primary location until the
+				// per-location pull lands. The pull chain still threads
+				// gameID+relPath rather than a FileRef, so this is the one
+				// place the root is currently assumed rather than carried.
+				ref := FileRef{GameID: gameID, Root: delta.PrimaryRoot, RelPath: relPath}
+				blocks, err := fetchWithRetry(ctx, e.Transport, peer, ref, batch, remoteFile.BlockSize, e.Log)
 				if err != nil {
 					fail(fmt.Errorf("fetch blocks for %s: %w", relPath, err))
 					return
@@ -947,18 +968,18 @@ func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, gameID, relPath
 	return ctx.Err()
 }
 
-func fetchWithRetry(ctx context.Context, t Transport, peer Peer, gameID, relPath string,
+func fetchWithRetry(ctx context.Context, t Transport, peer Peer, ref FileRef,
 	indices []int, blockSize int, logf func(string, string)) ([]BlockData, error) {
 
 	const maxAttempts = 3
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		blocks, err := t.FetchBlocks(ctx, peer, gameID, relPath, indices, blockSize)
+		blocks, err := t.FetchBlocks(ctx, peer, ref, indices, blockSize)
 		if err == nil {
 			return blocks, nil
 		}
 		lastErr = err
-		logf("warn", fmt.Sprintf("block fetch attempt %d/%d failed for %s: %v", attempt, maxAttempts, relPath, err))
+		logf("warn", fmt.Sprintf("block fetch attempt %d/%d failed for %s: %v", attempt, maxAttempts, ref.RelPath, err))
 		if attempt < maxAttempts {
 			select {
 			case <-ctx.Done():
