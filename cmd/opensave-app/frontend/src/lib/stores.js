@@ -9,6 +9,10 @@ export const discoveredPeers = writable([]);
 export const pairingRequests = writable([]);
 export const wanRoom = writable(null);
 export const conflicts = writable({});
+// Divergences in a game's EXTRA save locations, as a list: one game can
+// have several folders disagreeing at once, so this cannot be keyed by
+// game id the way whole-game conflicts are.
+export const locationConflicts = writable([]);
 export const logEntries = writable([]);
 export const wsConnected = writable(false);
 export const syncActivity = writable({}); // gameId -> {state, peerName, percentage, ...}
@@ -173,6 +177,27 @@ export function applyMessage(msg) {
       conflictResolution.set(data ?? null);
       break;
     }
+    case 'location-conflict-resolved': {
+      // Applying can take a while (it may pull the other copy), so the
+      // outcome arrives here rather than at the click. A failure has to be
+      // said out loud: the folder stays out of sync until it is answered, and
+      // a silent failure looks exactly like a silent success.
+      const name = get(games)[data.gameId]?.name ?? 'a game';
+      if (data.error) {
+        toast(
+          `Couldn't apply your choice for the “${data.root}” folder of “${name}” — ${friendlySyncError(data.error)}. It's still waiting.`,
+          'error'
+        );
+      } else {
+        toast(
+          data.resolution === 'keep-remote'
+            ? `Now using the other device's “${data.root}” folder for “${name}” — yours is snapshotted if you change your mind`
+            : `Kept this device's “${data.root}” folder for “${name}”`,
+          'success'
+        );
+      }
+      break;
+    }
     case 'cloud-auth':
       cloudAuthEvent.set(data ?? null);
       break;
@@ -231,4 +256,5 @@ function applyPeersPayload(data, isInit = false) {
     wasWanConnected = connected;
   }
   if (data.conflicts !== undefined) conflicts.set(data.conflicts ?? {});
+  if (data.locationConflicts !== undefined) locationConflicts.set(data.locationConflicts ?? []);
 }

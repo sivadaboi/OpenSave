@@ -75,6 +75,9 @@ type Engine struct {
 	activeSyncs     map[string]bool
 	pendingSyncs    map[string]bool // a sync was requested while one ran
 	activeConflicts map[string]*Conflict
+	// rootConflicts holds divergences in a game's EXTRA save locations, keyed
+	// by game and location so several can wait on a decision at once.
+	rootConflicts map[string]*RootConflict
 }
 
 // New creates an Engine.
@@ -87,6 +90,7 @@ func New(s *store.Store, snaps *snapshot.Manager, transport Transport) *Engine {
 		activeSyncs:     map[string]bool{},
 		pendingSyncs:    map[string]bool{},
 		activeConflicts: map[string]*Conflict{},
+		rootConflicts:   map[string]*RootConflict{},
 	}
 }
 

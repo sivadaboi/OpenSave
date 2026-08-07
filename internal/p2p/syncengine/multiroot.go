@@ -88,6 +88,13 @@ func (e *Engine) syncExtraRoots(ctx context.Context, gameID string, game store.G
 }
 
 func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game, peer Peer, sr sharedRoot, remoteData ManifestResponse) error {
+	if e.hasRootConflict(gameID, sr.root.Name) {
+		// Already waiting on a decision. Syncing past it would answer the
+		// question on the user's behalf, which is the one thing a conflict
+		// exists to stop happening.
+		return nil
+	}
+
 	local, err := delta.BuildManifest(sr.root.Path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", sr.root.Path, err)
@@ -123,8 +130,9 @@ func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game
 		// agree by hand — which is the safe half of the bargain, and is said
 		// out loud rather than left to be noticed.
 		e.Log("warn", fmt.Sprintf(
-			"both devices changed the %q save location of %q since they last agreed — it is left alone on both, and stays out of sync until they match again",
+			"both devices changed the %q save location of %q since they last agreed — waiting for a decision",
 			sr.root.Name, game.Name))
+		e.registerRootConflict(gameID, sr, peer, local)
 		return nil
 	}
 
