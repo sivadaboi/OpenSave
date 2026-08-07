@@ -162,6 +162,55 @@
     }
   }
 
+  // ── Extra save locations ─────────────────────────────────────────
+  //
+  // A location learned from a peer or a backup arrives named but not placed:
+  // the name travels between devices, the folder it lives in does not. Those
+  // show as needing a folder, because until one is chosen the location is
+  // silently skipped by every sync and every restore — and silence is exactly
+  // what makes that dangerous.
+  let locations = [];
+  let locationsFor = null;
+  let newLocation = '';
+  $: if (game && tab === 'config' && locationsFor !== game.id) loadLocations();
+
+  async function loadLocations() {
+    locationsFor = game.id;
+    try {
+      locations = (await api.get(`/api/games/${game.id}/roots`)) ?? [];
+    } catch {
+      locations = [];
+    }
+  }
+
+  async function pickLocation(name) {
+    const label = String(name ?? '').trim();
+    if (!label || busy) return;
+    const dir = await native.selectDirectory(`Folder for “${label}” — ${game.name}`);
+    if (!dir) return;
+    await run(`“${label}” now covered`, async () => {
+      await api.post(`/api/games/${game.id}/roots`, { name: label, path: dir });
+      newLocation = '';
+      locationsFor = null; // force a reload
+      await loadLocations();
+    });
+  }
+
+  async function removeLocation(name) {
+    if (
+      !(await askConfirm(
+        `Stop covering the “${name}” folder for ${game.name}? Its files are left exactly where they are — this only stops OpenSave syncing and snapshotting them.`,
+        { title: 'Remove save location?', confirmText: 'Remove', danger: true }
+      ))
+    )
+      return;
+    await run(`Removed “${name}”`, async () => {
+      await api.del(`/api/games/${game.id}/roots/${encodeURIComponent(name)}`);
+      locationsFor = null;
+      await loadLocations();
+    });
+  }
+
   // Linked copies — cross-device "same game" links (the manual counterpart
   // to App-ID matching). Loaded lazily when the Manage tab is opened.
   let aliases = [];
@@ -565,6 +614,47 @@
             <span class="hint">
               Snapshots you took yourself get their own budget, so a game that auto-saves often
               can't push them out. <strong>0 = keep forever</strong> (the default).
+            </span>
+          </div>
+          <div class="locations">
+            <h4>Save locations</h4>
+            <p class="hint">
+              Some games keep their save split across more than one folder — the save data in one
+              place, settings or mods in another. Add each extra folder here and it is synced,
+              snapshotted and restored along with the main one.
+            </p>
+            <div class="loc-row">
+              <span class="loc-name">main save</span>
+              <span class="loc-path" title={game.savePath}>{game.savePath}</span>
+            </div>
+            {#each locations as loc (loc.name)}
+              <div class="loc-row" class:unmapped={!loc.mapped}>
+                <span class="loc-name">{loc.name}</span>
+                {#if loc.mapped}
+                  <span class="loc-path" title={loc.path}>{loc.path}</span>
+                {:else}
+                  <span class="loc-path missing">
+                    no folder on this device — this location isn't being synced
+                  </span>
+                {/if}
+                <button class="btn small" disabled={busy} on:click={() => pickLocation(loc.name)}>
+                  {loc.mapped ? 'Change' : 'Choose folder'}
+                </button>
+                <button class="btn small danger" disabled={busy} on:click={() => removeLocation(loc.name)}>
+                  Remove
+                </button>
+              </div>
+            {/each}
+            <div class="loc-add">
+              <input placeholder="Name for the folder (e.g. config)" bind:value={newLocation} />
+              <button class="btn" disabled={!newLocation || busy} on:click={() => pickLocation(newLocation)}>
+                + Add a folder
+              </button>
+            </div>
+            <span class="hint">
+              Give the same <strong>name</strong> on your other devices — that is what the two
+              sides match on, since the folder lives somewhere different on each machine. Removing
+              a location here never deletes its files.
             </span>
           </div>
           <div class="config-save">
@@ -1095,6 +1185,62 @@
   }
   .config-fields .field {
     margin-bottom: 14px;
+  }
+  .locations {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .locations h4 {
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .loc-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    margin-top: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.84rem;
+  }
+  .loc-row.unmapped {
+    border-color: rgba(251, 191, 36, 0.4);
+  }
+  .loc-name {
+    flex: none;
+    min-width: 90px;
+    font-weight: 600;
+  }
+  .loc-path {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .loc-path.missing {
+    color: var(--warn);
+  }
+  .loc-add {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .loc-add input {
+    flex: 1;
+    padding: 8px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.86rem;
+    outline: none;
   }
   .config-save {
     display: flex;
