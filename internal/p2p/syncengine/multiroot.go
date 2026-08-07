@@ -105,17 +105,27 @@ func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game
 		return nil
 	}
 
-	// The location's own merge base decides whether this is a divergence, so
-	// one location disagreeing says nothing about the others.
+	// Divergence is judged with the SAME detector the primary location uses,
+	// against this location's own merge base — so one folder disagreeing says
+	// nothing about the others.
+	//
+	// This was originally a hand-rolled check for "a pull and a push in the
+	// same decision", which is not the same question at all: when both devices
+	// edit the same file, the classifier can resolve it as a pull alone, the
+	// check never fires, and this side's version is silently overwritten. The
+	// point of detecting a conflict is that nobody's work disappears, and a
+	// second detector that is nearly right is worse than none, because it
+	// looks like the work has been done.
 	base := e.Store.GetAgreedHashForRoot(gameID, peer.ID, sr.root.Name)
-	if base != "" && len(decision.FilesToPull) > 0 && decision.HasPush() {
-		localHash := local.RootHash(delta.PrimaryRoot)
-		remoteHash := sr.remote.RootHash(delta.PrimaryRoot)
-		if localHash != base && remoteHash != base {
-			e.Log("warn", fmt.Sprintf("both devices changed the %q location of %q — leaving it for a decision",
-				sr.root.Name, game.Name))
-			return nil
-		}
+	if DetectConflict(local, sr.remote, e.lastSyncTimeMs(peer.ID), base) {
+		// Neither side is touched. There is no per-location resolution screen
+		// yet, so this location simply stops syncing until the two are made to
+		// agree by hand — which is the safe half of the bargain, and is said
+		// out loud rather than left to be noticed.
+		e.Log("warn", fmt.Sprintf(
+			"both devices changed the %q save location of %q since they last agreed — it is left alone on both, and stays out of sync until they match again",
+			sr.root.Name, game.Name))
+		return nil
 	}
 
 	// A "root" manifest reuses the primary field names, so the response fed
