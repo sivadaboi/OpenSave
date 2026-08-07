@@ -334,7 +334,7 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 
 	// 8. Pull changed files.
 	if len(decision.FilesToPull) > 0 {
-		if err := e.pullFiles(ctx, peer, gameID, game, localManifest, remoteData, decision.FilesToPull); err != nil {
+		if err := e.pullFiles(ctx, peer, gameID, game, primaryRootOf(game), localManifest, remoteData, decision.FilesToPull); err != nil {
 			return Result{}, err
 		}
 	}
@@ -701,7 +701,11 @@ func (e *Engine) createPulledDirs(game store.Game, dirsToPull []string) {
 // pullFiles downloads and patches every file in filesToPull with bounded
 // concurrency, progress reporting, throttling, and a mirror snapshot at
 // the end.
-func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game store.Game,
+// pullFiles patches one save location. game is carried alongside root
+// because snapshot mirroring is a game-level concern while every path
+// decision belongs to the location — keeping them separate is what stops a
+// second location's files being written relative to the primary save path.
+func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game store.Game, root syncRoot,
 	localManifest delta.Manifest, remoteData ManifestResponse, filesToPull []string) (retErr error) {
 
 	deviceName := e.deviceName()
@@ -723,8 +727,8 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 
 	// Make sure every remote directory exists before patching into it.
 	for _, dir := range remoteData.Manifest.Dirs {
-		if delta.IsSafePath(game.SavePath, dir) {
-			_ = os.MkdirAll(filepath.Join(game.SavePath, filepath.FromSlash(dir)), 0o777)
+		if delta.IsSafePath(root.Path, dir) {
+			_ = os.MkdirAll(filepath.Join(root.Path, filepath.FromSlash(dir)), 0o777)
 		}
 	}
 
@@ -761,9 +765,9 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 	}
 	const diskMargin = 16 << 20 // 16 MiB headroom
 	needed := netGrowth + maxNewSize + diskMargin
-	spaceDir := game.SavePath
+	spaceDir := root.Path
 	if fi, err := os.Stat(spaceDir); err != nil || !fi.IsDir() {
-		spaceDir = filepath.Dir(game.SavePath)
+		spaceDir = filepath.Dir(root.Path)
 	}
 	if avail, ok := availableDiskBytes(spaceDir); ok && uint64(needed) > avail {
 		return fmt.Errorf("not enough free storage: this sync needs about %s but only %s is free on the drive holding your save",
@@ -801,17 +805,17 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 	}
 
 	for _, relPath := range filesToPull {
-		if !delta.IsSafePath(game.SavePath, relPath) {
+		if !delta.IsSafePath(root.Path, relPath) {
 			return fmt.Errorf("path traversal attempt on pulled file %s", relPath)
 		}
 		remoteFile := remoteData.Manifest.Files[relPath]
 		indices := changedBlocks[relPath]
 
-		localFilePath := filepath.Join(game.SavePath, filepath.FromSlash(relPath))
-		if isFile, _ := delta.ResolveLocalSaveFilePath(game.SavePath); isFile {
-			localFilePath = game.SavePath // single-file save mode
+		localFilePath := filepath.Join(root.Path, filepath.FromSlash(relPath))
+		if isFile, _ := delta.ResolveLocalSaveFilePath(root.Path); isFile {
+			localFilePath = root.Path // single-file save mode
 		}
-		if err := e.pullFile(ctx, peer, gameID, relPath, localFilePath,
+		if err := e.pullFile(ctx, peer, FileRef{GameID: gameID, Root: root.Name, RelPath: relPath}, localFilePath,
 			remoteFile, indices, throttle, tracker, reportProgress); err != nil {
 			return err
 		}
@@ -842,9 +846,11 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 // arrives rather than collecting them all first. Memory stays proportional to
 // the blocks in flight instead of to the file — a 1 GB save used to need 1 GB
 // of RAM before a single byte was written.
-func (e *Engine) pullFile(ctx context.Context, peer Peer, gameID, relPath, localFilePath string,
+func (e *Engine) pullFile(ctx context.Context, peer Peer, ref FileRef, localFilePath string,
 	remoteFile delta.FileEntry, indices []int, throttle *throttler, tracker *progressTracker,
 	onProgress func(force bool)) error {
+
+	relPath := ref.RelPath
 
 	writer, err := delta.NewPatchWriter(localFilePath, remoteFile)
 	if err != nil {
@@ -866,7 +872,7 @@ func (e *Engine) pullFile(ctx context.Context, peer Peer, gameID, relPath, local
 		return fmt.Errorf("patch %s: %w", relPath, err)
 	}
 
-	if err := e.fetchFileBlocks(ctx, peer, gameID, relPath, remoteFile, indices,
+	if err := e.fetchFileBlocks(ctx, peer, ref, remoteFile, indices,
 		throttle, tracker, onProgress, writer); err != nil {
 		return err
 	}
@@ -883,9 +889,11 @@ func (e *Engine) pullFile(ctx context.Context, peer Peer, gameID, relPath, local
 // at every group boundary, so the slowest request in each group stalled the
 // rest — costly over a relay, where one slow round trip is common. A pool
 // keeps every slot busy until the work runs out.
-func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, gameID, relPath string,
+func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, ref FileRef,
 	remoteFile delta.FileEntry, indices []int, throttle *throttler, tracker *progressTracker,
 	onProgress func(force bool), writer *delta.PatchWriter) error {
+
+	relPath := ref.RelPath
 
 	batches := BatchIndices(indices, remoteFile.BlockSize, peer.Wan())
 	if len(batches) == 0 {
@@ -921,11 +929,6 @@ func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, gameID, relPath
 		go func() {
 			defer wg.Done()
 			for batch := range work {
-				// TODO(multi-root): Root is the primary location until the
-				// per-location pull lands. The pull chain still threads
-				// gameID+relPath rather than a FileRef, so this is the one
-				// place the root is currently assumed rather than carried.
-				ref := FileRef{GameID: gameID, Root: delta.PrimaryRoot, RelPath: relPath}
 				blocks, err := fetchWithRetry(ctx, e.Transport, peer, ref, batch, remoteFile.BlockSize, e.Log)
 				if err != nil {
 					fail(fmt.Errorf("fetch blocks for %s: %w", relPath, err))

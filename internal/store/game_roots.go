@@ -2,6 +2,8 @@ package store
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -51,13 +53,64 @@ func (s *Store) ListGameRoots(gameID string) ([]GameRoot, error) {
 	return roots, nil
 }
 
+// overlaps reports whether two save locations describe the same files —
+// identical paths, or one inside the other.
+//
+// Locations that overlap are not merely redundant, they actively fight: the
+// same file appears in two manifests under two names, so each sync patches
+// it twice, and a deletion propagated for one location is seen by the other
+// as a file the peer is missing and pushed straight back. Refusing the
+// overlap is the only way to keep each file answerable to exactly one
+// location.
+func overlaps(a, b string) bool {
+	pa, err1 := filepath.Abs(strings.TrimSpace(a))
+	pb, err2 := filepath.Abs(strings.TrimSpace(b))
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	pa, pb = filepath.Clean(pa), filepath.Clean(pb)
+	if strings.EqualFold(pa, pb) {
+		return true
+	}
+	sep := string(os.PathSeparator)
+	// Case-insensitive: on Windows C:\Saves and c:\saves\config are the same
+	// tree, and a comparison that missed that would let the overlap through.
+	la, lb := strings.ToLower(pa)+sep, strings.ToLower(pb)+sep
+	return strings.HasPrefix(lb, la) || strings.HasPrefix(la, lb)
+}
+
 // AddGameRoot records an extra location, or updates the path of one already
 // known by that name. Learning a root from a peer and later being told where
 // it lives here is the same operation.
+//
+// A path that overlaps the game's primary location or another of its
+// locations is refused; see overlaps.
 func (s *Store) AddGameRoot(gameID, name, path string) error {
 	n := NormalizeRootName(name)
 	if n == "" {
 		return fmt.Errorf("a save location needs a name")
+	}
+
+	if strings.TrimSpace(path) != "" {
+		game, err := s.GetGame(gameID)
+		if err != nil {
+			return fmt.Errorf("add game root: %w", err)
+		}
+		if overlaps(game.SavePath, path) {
+			return fmt.Errorf("%q is the game's main save folder, or inside it — every file there is already being synced", path)
+		}
+		existing, err := s.ListGameRoots(gameID)
+		if err != nil {
+			return err
+		}
+		for _, r := range existing {
+			if r.Name == n || !r.Mapped() {
+				continue
+			}
+			if overlaps(r.Path, path) {
+				return fmt.Errorf("%q overlaps the %q location — one file cannot belong to two locations", path, r.Name)
+			}
+		}
 	}
 	_, err := s.db.Exec(`
 		INSERT INTO game_roots (game_id, name, path, ordinal)
