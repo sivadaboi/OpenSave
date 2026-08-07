@@ -18,6 +18,13 @@ CREATE TABLE IF NOT EXISTS game_root_sync_state (
     -- location, which is not stored here.
     root        TEXT NOT NULL,
     agreed_hash TEXT NOT NULL DEFAULT '',
+    -- The path sets both sides were last known to hold, per location. The
+    -- classifier needs these to tell "the peer deleted this" from "the peer
+    -- has never had this": without them every file missing on one side reads
+    -- as new, and a deletion would be undone on the next sync instead of
+    -- propagating.
+    last_synced_files TEXT NOT NULL DEFAULT '[]',
+    last_synced_dirs  TEXT NOT NULL DEFAULT '[]',
     -- Mirrors game_peer_sync_state.pushed_hash: the state handed to the peer
     -- whose receipt has not been confirmed yet, cleared the moment the two
     -- are known to agree on something newer.

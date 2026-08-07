@@ -1,6 +1,11 @@
 package store
 
-import "fmt"
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+)
 
 // Merge-base lineage, per save location.
 //
@@ -87,6 +92,67 @@ func (s *Store) ForgetRootSyncState(gameID, root string) error {
 		gameID, root)
 	if err != nil {
 		return fmt.Errorf("forget root sync state %s/%s: %w", gameID, root, err)
+	}
+	return nil
+}
+
+// GetSyncStateForRoot returns the path sets both sides last held for one
+// location. Empty sets mean this location has never synced with that peer,
+// which is what makes a first sync a first sync rather than a divergence.
+func (s *Store) GetSyncStateForRoot(gameID, peerID, root string) (files, dirs []string, err error) {
+	if root == "" {
+		return s.GetSyncState(gameID, peerID)
+	}
+	var row struct {
+		LastSyncedFiles string `db:"last_synced_files"`
+		LastSyncedDirs  string `db:"last_synced_dirs"`
+	}
+	dbErr := s.db.Get(&row,
+		`SELECT last_synced_files, last_synced_dirs FROM game_root_sync_state
+		 WHERE game_id = ? AND peer_id = ? AND root = ?`, gameID, peerID, root)
+	if errors.Is(dbErr, sql.ErrNoRows) {
+		return []string{}, []string{}, nil
+	}
+	if dbErr != nil {
+		return nil, nil, fmt.Errorf("get root sync state %s/%s/%s: %w", gameID, peerID, root, dbErr)
+	}
+	if err := json.Unmarshal([]byte(row.LastSyncedFiles), &files); err != nil {
+		return nil, nil, fmt.Errorf("unmarshal root last_synced_files: %w", err)
+	}
+	if err := json.Unmarshal([]byte(row.LastSyncedDirs), &dirs); err != nil {
+		return nil, nil, fmt.Errorf("unmarshal root last_synced_dirs: %w", err)
+	}
+	return files, dirs, nil
+}
+
+// SetSyncStateForRoot replaces one location's lineage bookkeeping wholesale.
+func (s *Store) SetSyncStateForRoot(gameID, peerID, root string, files, dirs []string) error {
+	if root == "" {
+		return s.SetSyncState(gameID, peerID, files, dirs)
+	}
+	if files == nil {
+		files = []string{}
+	}
+	if dirs == nil {
+		dirs = []string{}
+	}
+	filesJSON, err := json.Marshal(files)
+	if err != nil {
+		return err
+	}
+	dirsJSON, err := json.Marshal(dirs)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		INSERT INTO game_root_sync_state (game_id, peer_id, root, last_synced_files, last_synced_dirs)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(game_id, peer_id, root) DO UPDATE SET
+			last_synced_files = excluded.last_synced_files,
+			last_synced_dirs  = excluded.last_synced_dirs`,
+		gameID, peerID, root, string(filesJSON), string(dirsJSON))
+	if err != nil {
+		return fmt.Errorf("set root sync state %s/%s/%s: %w", gameID, peerID, root, err)
 	}
 	return nil
 }
