@@ -259,3 +259,105 @@ func TestMultiRoot_ProtoGateAloneStopsExtraLocations(t *testing.T) {
 		t.Errorf("primary save = %q, want it synced as normal", got)
 	}
 }
+
+// A backup carries every save location, and restoring puts each one back
+// where the receiving device keeps it.
+//
+// This is the format people move between machines and hand to each other, so
+// the file paths inside it outlive any one install. Getting a config file
+// into a save folder here would be permanent in a way a bad sync is not.
+func TestMultiRoot_BackupCarriesEveryLocation(t *testing.T) {
+	a := testutil.NewTestDaemon(t, "BackupRoots-A")
+	a.WriteSave("save.sav", "primary data")
+	gameID := a.TrackGame("BackupRoots")
+
+	aConfig := extraDir(t, a, "config")
+	writeIn(t, aConfig, "settings.ini", "fullscreen=1")
+	addRoot(t, a, gameID, "config", aConfig)
+
+	target := filepath.Join(testutil.TempDir(t), "with-locations")
+	a.API(http.MethodPost, "/api/backup/export", map[string]any{
+		"targetPath": target,
+		"games": []map[string]string{
+			{"id": gameID, "name": "BackupRoots", "savePath": a.SaveDir},
+		},
+	}, nil)
+	archive := target + ".sscb"
+	if _, err := os.Stat(archive); err != nil {
+		t.Fatalf("export produced no archive: %v", err)
+	}
+
+	// A second device that already knows where its config folder lives.
+	b := testutil.NewTestDaemon(t, "BackupRoots-B")
+	bid := b.TrackGame("BackupRoots")
+	bConfig := extraDir(t, b, "config")
+	addRoot(t, b, bid, "config", bConfig)
+
+	if status := b.APIStatus(http.MethodPost, "/api/backup/restore",
+		map[string]any{"sourcePath": archive, "mode": "overwrite"}, nil); status >= 400 {
+		t.Fatalf("restore failed with HTTP %d: %s", status, b.LastError())
+	}
+
+	if got := b.ReadSave("save.sav"); got != "primary data" {
+		t.Errorf("primary save = %q, want it restored", got)
+	}
+	if got := readIn(bConfig, "settings.ini"); got != "fullscreen=1" {
+		t.Errorf("config = %q, want it restored into the config folder", got)
+	}
+	if got := b.ReadSave("settings.ini"); got != "" {
+		t.Errorf("the config file was restored into the save folder as %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(b.SaveDir, ".opensave-locations")); err == nil {
+		t.Error("the archive's internal location folder was restored literally into the save folder")
+	}
+}
+
+// Restoring a backup onto a machine with no folder for one of its locations
+// must not guess. The primary save comes back, the location is recorded by
+// name so it can be pointed somewhere later, and its files stay out of the
+// save folder.
+func TestMultiRoot_BackupOntoADeviceMissingTheLocation(t *testing.T) {
+	a := testutil.NewTestDaemon(t, "BackupNoLoc-A")
+	a.WriteSave("save.sav", "primary data")
+	gameID := a.TrackGame("BackupNoLoc")
+
+	aConfig := extraDir(t, a, "config")
+	writeIn(t, aConfig, "settings.ini", "fullscreen=1")
+	addRoot(t, a, gameID, "config", aConfig)
+
+	target := filepath.Join(testutil.TempDir(t), "no-location")
+	a.API(http.MethodPost, "/api/backup/export", map[string]any{
+		"targetPath": target,
+		"games": []map[string]string{
+			{"id": gameID, "name": "BackupNoLoc", "savePath": a.SaveDir},
+		},
+	}, nil)
+
+	b := testutil.NewTestDaemon(t, "BackupNoLoc-B")
+	b.TrackGame("BackupNoLoc") // no config location configured here
+	if status := b.APIStatus(http.MethodPost, "/api/backup/restore",
+		map[string]any{"sourcePath": target + ".sscb", "mode": "overwrite"}, nil); status >= 400 {
+		t.Fatalf("restore failed with HTTP %d: %s", status, b.LastError())
+	}
+
+	if got := b.ReadSave("save.sav"); got != "primary data" {
+		t.Errorf("primary save = %q, want it restored regardless", got)
+	}
+	if got := b.ReadSave("settings.ini"); got != "" {
+		t.Errorf("an unplaceable location's file was dumped into the save folder as %q", got)
+	}
+
+	// The location is remembered by name, so the app can ask where it goes
+	// instead of the files simply vanishing from the user's view.
+	var roots []struct {
+		Name   string `json:"name"`
+		Mapped bool   `json:"mapped"`
+	}
+	b.API(http.MethodGet, "/api/games/"+gameID+"/roots", nil, &roots)
+	if len(roots) != 1 || roots[0].Name != "config" {
+		t.Fatalf("locations after restore = %+v, want the config location recorded", roots)
+	}
+	if roots[0].Mapped {
+		t.Error("the location was recorded as mapped; this device has no folder for it")
+	}
+}
