@@ -221,6 +221,16 @@ func TestMultiRoot_SecondFolderSyncsBothWays(t *testing.T) {
 // handing back the wrong file, or deleting one. Belt and braces, but the
 // braces are the ones holding up the correctness of every block request.
 func TestMultiRoot_ProtoGateAloneStopsExtraLocations(t *testing.T) {
+	// Lowered before anything else, and it has to be. Lowering it after the
+	// locations are attached leaves a window in which both sides have the
+	// location AND the peer still advertises the capability — and a sync
+	// landing in that window syncs the location perfectly correctly, failing
+	// this test for the one reason that is not a bug. Under -race the window
+	// is wide enough to hit. Neither pairing nor tracking depends on the
+	// proto, so there is nothing to lose by lowering it first.
+	restore := p2p.SetServedProto(0)
+	defer p2p.SetServedProto(restore)
+
 	a, b, gameID := pairAndTrack(t, "ProtoGate", map[string]string{
 		"save.sav": "primary data",
 	})
@@ -233,11 +243,6 @@ func TestMultiRoot_ProtoGateAloneStopsExtraLocations(t *testing.T) {
 	// the gate is the only remaining reason not to sync it.
 	addRoot(t, a, gameID, "config", aConfig)
 	addRoot(t, b, gameID, "config", bConfig)
-
-	// Only now does B start answering like a build that cannot name
-	// locations. Pairing and tracking above needed a working daemon.
-	restore := p2p.SetServedProto(0)
-	defer p2p.SetServedProto(restore)
 
 	time.Sleep(syncSettleWindow)
 	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)

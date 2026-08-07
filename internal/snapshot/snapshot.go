@@ -158,7 +158,13 @@ func (m *Manager) createOnBranch(gameID, branch, comment string, isSystemAuto bo
 	// and made them fight over one file. A counter cannot be frozen.
 	stagingPath := filepath.Join(backupDir,
 		fmt.Sprintf(".staging-%d-%d.zip", os.Getpid(), m.stagingSeq.Add(1)))
-	skipped, err := ZipPath(game.SavePath, stagingPath)
+	// Every save location the game has, not just the main one. A game with
+	// none produces exactly the archive it always did.
+	extraRoots, rootsErr := m.Store.GameRootPaths(gameID)
+	if rootsErr != nil {
+		extraRoots = nil
+	}
+	skipped, err := ZipRoots(game.SavePath, extraRoots, stagingPath)
 	if err != nil {
 		os.Remove(stagingPath)
 		return store.Snapshot{}, fmt.Errorf("zip save data: %w", err)
@@ -470,7 +476,20 @@ func (m *Manager) Restore(gameID, snapshotID string) (store.Snapshot, error) {
 		}
 	}
 
-	if err := UnzipTo(restoreZip, game.SavePath); err != nil {
+	restoreRoots, rootsErr := m.Store.GameRootPaths(gameID)
+	if rootsErr != nil {
+		restoreRoots = nil
+	}
+	unplaced, err := UnzipRoots(restoreZip, game.SavePath, restoreRoots)
+	for _, name := range unplaced {
+		// Named but not placed: the snapshot holds files for a location this
+		// device has no folder for. Saying so is the only honest option —
+		// putting them anywhere else would scatter them across the save.
+		if m.Log != nil {
+			m.Log("warn", fmt.Sprintf("snapshot %s holds files for the %q save location, which this device has no folder for — they were left out of the restore", snapshotID, name))
+		}
+	}
+	if err != nil {
 		return store.Snapshot{}, fmt.Errorf("restore snapshot %s: %w", snapshotID, err)
 	}
 	return snap, nil
@@ -615,7 +634,11 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 	}
 	if len(targetSnaps) > 0 {
 		latest := targetSnaps[0] // ListSnapshots returns newest first
-		if err := UnzipTo(latest.ZipPath, game.SavePath); err != nil {
+		switchRoots, rootsErr := m.Store.GameRootPaths(gameID)
+		if rootsErr != nil {
+			switchRoots = nil
+		}
+		if _, err := UnzipRoots(latest.ZipPath, game.SavePath, switchRoots); err != nil {
 			// Same as JS: a failed restore of the incoming branch is logged
 			// but the switch itself stands (branch pointer already moved).
 			fmt.Fprintf(os.Stderr, "[snapshot] failed to restore branch snapshot: %v\n", err)
