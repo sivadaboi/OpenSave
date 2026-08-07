@@ -310,6 +310,8 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 			"peerName":     e.deviceName(),
 			"manifestHash": localManifest.ManifestHash(),
 		})
+		// The primary location agreeing says nothing about the others.
+		e.syncExtraRoots(ctx, gameID, game, peer, remoteData)
 		return Result{Status: "in_sync", Direction: "none"}, nil
 	}
 
@@ -376,6 +378,11 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	} else if freshErr == nil {
 		_ = e.Store.SetPushedHash(gameID, peer.ID, freshManifest.ManifestHash())
 	}
+
+	// Extra locations sync last and on their own terms, so the primary save —
+	// the thing anyone actually opened the app about — is already settled and
+	// recorded before any of them is touched.
+	e.syncExtraRoots(ctx, gameID, game, peer, remoteData)
 
 	return e.classifyResult(decision), nil
 }
@@ -688,13 +695,17 @@ func (e *Engine) propagateDeletions(ctx context.Context, peer Peer, gameID strin
 }
 
 func (e *Engine) createPulledDirs(game store.Game, dirsToPull []string) {
+	e.createPulledDirsIn(primaryRootOf(game), dirsToPull)
+}
+
+func (e *Engine) createPulledDirsIn(root syncRoot, dirsToPull []string) {
 	dirs := append([]string{}, dirsToPull...)
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) < len(dirs[j]) }) // parents first
 	for _, relDir := range dirs {
-		if !delta.IsSafePath(game.SavePath, relDir) {
+		if !delta.IsSafePath(root.Path, relDir) {
 			continue
 		}
-		_ = os.MkdirAll(filepath.Join(game.SavePath, filepath.FromSlash(relDir)), 0o777)
+		_ = os.MkdirAll(filepath.Join(root.Path, filepath.FromSlash(relDir)), 0o777)
 	}
 }
 
