@@ -13,17 +13,18 @@ import (
 var topLevelCommands = commandNames()
 
 var subCommands = map[string][]string{
-	"pair":    {"requests", "approve", "reject"},
-	"relay":   {"status", "join", "leave"},
-	"resolve": {"keep-both", "keep-local", "keep-remote"},
-	"daemon":  {"start", "status", "stop"},
-	"service": {"install", "uninstall", "status"},
-	"exclude":  {"list", "add", "remove"},
-	"scanpath": {"list", "add", "remove"},
-	"game":     {"set"},
-	"cloud":    {"connect", "setup", "disconnect", "status", "browse", "list", "push", "restore", "delete"},
-	"backup":  {"export", "import"},
-	"config":  {"list", "set"},
+	"pair":      {"requests", "approve", "reject"},
+	"relay":     {"status", "join", "leave"},
+	"resolve":   {"keep-both", "keep-local", "keep-remote"},
+	"daemon":    {"start", "status", "stop"},
+	"service":   {"install", "uninstall", "status"},
+	"exclude":   {"list", "add", "remove"},
+	"scanpath":  {"list", "add", "remove"},
+	"game":      {"set"},
+	"cloud":     {"connect", "setup", "disconnect", "status", "browse", "list", "push", "restore", "delete"},
+	"backup":    {"export", "import"},
+	"config":    {"list", "set"},
+	"locations": {"add", "remove"},
 }
 
 func cmdCompletion(args []string) int {
@@ -109,14 +110,15 @@ func fishCompletion() string {
 		"remove": "Stop tracking a game", "status": "Show tracked games and peers",
 		"sync": "Sync now", "peers": "List devices", "pair": "Pair a device",
 		"unpair": "Drop a paired device", "relay": "Internet sync", "conflicts": "Saves needing a decision",
-		"resolve": "Settle a conflict",
+		"resolve":  "Settle a conflict",
 		"snapshot": "Create a snapshot", "snapshots": "List snapshots",
 		"rollback": "Restore a snapshot", "branch": "Create a branch",
 		"checkout": "Switch branch", "export": "Copy a save out",
-		"backup": "Portable backup archive",
+		"backup":  "Portable backup archive",
 		"exclude": "Folders to skip when scanning", "link": "Treat two games as one",
 		"unlink": "Undo a link", "links": "Show linked ids", "config": "Read/write settings",
-		"daemon": "Run or control the daemon", "service": "Install as a service",
+		"locations": "Extra save folders for a game",
+		"daemon":    "Run or control the daemon", "service": "Install as a service",
 		"upnp": "Forward a router port", "version": "Print the version", "help": "Show help",
 	}
 	for _, c := range topLevelCommands {

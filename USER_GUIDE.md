@@ -17,6 +17,27 @@ games:
 
 Tracked games appear in the sidebar and on the Home grid.
 
+### A game whose save is split across folders
+
+Some games keep their save data in one place and their settings or mods in
+another. Open the game, go to **Configuration -> Save locations**, name the
+extra folder and pick it. It is then synced, snapshotted and restored along
+with the main one.
+
+Give the location the **same name** on your other devices. The name is what
+the two sides match on -- the folder itself lives somewhere different on each
+machine, so the path cannot be. A location whose name a device knows but has
+no folder for is shown as needing one, and is skipped until you choose it.
+
+Removing a location never deletes its files; it only stops OpenSave covering
+them. From the command line:
+
+```
+opensave locations <gameId>
+opensave locations add <gameId> config "C:/Users/me/Documents/Game"
+opensave locations remove <gameId> config
+```
+
 ## 2. Snapshots & restore
 
 Every time a save changes, OpenSave takes a **snapshot** automatically (only

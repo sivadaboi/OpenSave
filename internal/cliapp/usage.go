@@ -78,6 +78,7 @@ var commandGroups = []commandGroup{
 		{"link <gameId> <otherId>", "Treat two tracked games as the same"},
 		{"unlink <aliasId>", "Undo a link"},
 		{"links <gameId>", "Show ids linked to a game"},
+		{"locations <gameId>", "Extra save folders belonging to a game"},
 	}},
 	{"Service", []commandEntry{
 		{"daemon start [--port N]", "Run the daemon (REST API + watcher)"},

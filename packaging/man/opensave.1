@@ -151,6 +151,21 @@ Undo a link, restoring the merged game as its own entry.
 .TP
 .BI "links " gameId
 Show the ids linked to a game.
+.TP
+.BI "locations " gameId
+List a game's save locations \(em its main folder plus any extra ones.
+.TP
+.BI "locations add " "gameId name path"
+Add another folder to a game, for a title whose save is split across more than
+one place: the data in one folder, settings or mods in another. Use the SAME
+.I name
+on your other devices \(em the name is what the two sides match on, since the
+folder lives somewhere different on each machine. A folder that is the game's
+main save, or inside it, is refused: its files are covered already, and two
+locations describing the same files fight over them.
+.TP
+.BI "locations remove " "gameId name"
+Stop covering one. Its files are left exactly where they are.
 .SH SERVICE
 .TP
 .BR "daemon start " [ --port " " \fIN\fR ]

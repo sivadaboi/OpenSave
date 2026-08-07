@@ -148,6 +148,8 @@ func Run(args []string) int {
 		return cmdLink(d, rest)
 	case "unlink":
 		return cmdUnlinkGame(d, rest)
+	case "locations":
+		return withWatchReload(cmdLocations(d, rest))
 	case "links":
 		return cmdLinks(d, rest)
 	case "config":

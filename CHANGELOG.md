@@ -3,6 +3,27 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A game whose save is split across folders is one game again.** Plenty of
+  titles keep their save data in one place and their settings or mods in
+  another, and the only way to cover both was to track the same game twice:
+  two cards in the library, two conflicts to settle, two things to restore in
+  step with each other. A game can now have as many save folders as it needs.
+  Name each extra one under **Configuration -> Save locations** and it is
+  synced, snapshotted, backed up and restored along with the main folder. Give
+  it the same name on your other devices — the name is what the two sides
+  match on, since the folder itself lives somewhere different on each machine.
+  A device that knows a location's name but has no folder for it says so and
+  skips it, rather than guessing where your files belong. Each folder also
+  keeps its own sync history, so a settings folder both devices edited raises
+  a question about the settings folder instead of holding the save hostage.
+  A device on an older build is unaffected: it syncs the main save exactly as
+  before and simply does not see the extra folders. Requested by tfe on
+  Discord.
+
 ## [2.2.1] — 2026-08-05
 
 Mostly conflicts and backups. Three separate faults could raise a conflict on
