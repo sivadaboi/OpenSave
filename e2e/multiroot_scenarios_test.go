@@ -307,3 +307,130 @@ func TestMultiRootScenario_MissingLocationFolderDoesNotDeleteThePeersCopy(t *tes
 		t.Errorf("the peer's copy was deleted because the folder went missing here: %q — an unreadable location must read as absent, not empty", got)
 	}
 }
+
+// The full loop for a diverged save location: both devices edit it, the
+// divergence is raised rather than one side silently winning, the user
+// chooses, and the choice is applied to that folder alone.
+func TestMultiRootScenario_ResolveALocationConflictKeepingMine(t *testing.T) {
+	a, b, gameID, aConfig, bConfig := twoLocationPair(t, "LocResolveMine", map[string]string{
+		"settings.ini": "shared v1",
+	})
+
+	time.Sleep(syncSettleWindow)
+	writeIn(t, aConfig, "settings.ini", "A-version")
+	writeIn(t, bConfig, "settings.ini", "B-version")
+	time.Sleep(syncSettleWindow)
+	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+
+	// It is raised, not resolved by whoever synced last.
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		return len(a.Daemon.P2P.Sync.ActiveRootConflicts()) > 0
+	}) {
+		t.Fatal("a two-sided change in a save location raised no conflict")
+	}
+	got := a.Daemon.P2P.Sync.ActiveRootConflicts()[0]
+	if got.Root != "config" || got.GameID != gameID {
+		t.Fatalf("conflict = %+v, want the config location of %s", got, gameID)
+	}
+	if got.DiffTotal == 0 {
+		t.Error("the conflict lists nothing as differing, so the user is asked to choose between two things it shows as identical")
+	}
+	// Nothing was touched while it waits.
+	if readIn(aConfig, "settings.ini") != "A-version" {
+		t.Error("A's copy changed before any decision was made")
+	}
+
+	a.API(http.MethodPost, "/api/games/"+gameID+"/resolve-location-conflict",
+		map[string]string{"peerId": b.NodeID(), "root": "config", "resolution": "keep-local"}, nil)
+
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		return len(a.Daemon.P2P.Sync.ActiveRootConflicts()) == 0
+	}) {
+		t.Fatal("the conflict never cleared after a decision")
+	}
+	if got := readIn(aConfig, "settings.ini"); got != "A-version" {
+		t.Errorf("keeping mine changed my copy to %q", got)
+	}
+	// The save folder was never involved.
+	if got := a.ReadSave("save.sav"); got != "primary v1" {
+		t.Errorf("resolving a location changed the save folder: %q", got)
+	}
+}
+
+// The other answer: adopt the peer's copy of that one folder. The safety
+// snapshot taken first is what makes it undoable.
+func TestMultiRootScenario_ResolveALocationConflictKeepingTheirs(t *testing.T) {
+	a, b, gameID, aConfig, bConfig := twoLocationPair(t, "LocResolveTheirs", map[string]string{
+		"settings.ini": "shared v1",
+	})
+
+	time.Sleep(syncSettleWindow)
+	writeIn(t, aConfig, "settings.ini", "A-version")
+	writeIn(t, bConfig, "settings.ini", "B-version")
+	time.Sleep(syncSettleWindow)
+	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		return len(a.Daemon.P2P.Sync.ActiveRootConflicts()) > 0
+	}) {
+		t.Fatal("no conflict raised")
+	}
+
+	before := len(snapshotsOn(a, gameID, "main"))
+	a.API(http.MethodPost, "/api/games/"+gameID+"/resolve-location-conflict",
+		map[string]string{"peerId": b.NodeID(), "root": "config", "resolution": "keep-remote"}, nil)
+
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		return readIn(aConfig, "settings.ini") == "B-version"
+	}) {
+		t.Fatalf("adopting the peer's version never applied: %q", readIn(aConfig, "settings.ini"))
+	}
+	if len(a.Daemon.P2P.Sync.ActiveRootConflicts()) != 0 {
+		t.Error("the conflict is still open after being resolved")
+	}
+	// Undoable: a snapshot was taken before anything was overwritten.
+	if after := len(snapshotsOn(a, gameID, "main")); after <= before {
+		t.Errorf("snapshots %d -> %d; no safety snapshot was taken before overwriting", before, after)
+	}
+	if got := a.ReadSave("save.sav"); got != "primary v1" {
+		t.Errorf("resolving a location changed the save folder: %q", got)
+	}
+}
+
+// While a location waits on a decision, later syncs must not quietly answer
+// it. This is the rule that makes a conflict mean anything.
+func TestMultiRootScenario_AnOpenLocationConflictBlocksFurtherSyncsOfIt(t *testing.T) {
+	a, b, gameID, aConfig, bConfig := twoLocationPair(t, "LocBlocked", map[string]string{
+		"settings.ini": "shared v1",
+	})
+
+	time.Sleep(syncSettleWindow)
+	writeIn(t, aConfig, "settings.ini", "A-version")
+	writeIn(t, bConfig, "settings.ini", "B-version")
+	time.Sleep(syncSettleWindow)
+	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		return len(a.Daemon.P2P.Sync.ActiveRootConflicts()) > 0
+	}) {
+		t.Fatal("no conflict raised")
+	}
+
+	// Several more syncs, from both directions.
+	for i := 0; i < 3; i++ {
+		time.Sleep(syncSettleWindow)
+		a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+		b.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+	}
+	time.Sleep(syncSettleWindow)
+
+	if got := readIn(aConfig, "settings.ini"); got != "A-version" {
+		t.Errorf("A's copy became %q while a decision was still pending", got)
+	}
+	if got := readIn(bConfig, "settings.ini"); got != "B-version" {
+		t.Errorf("B's copy became %q while a decision was still pending", got)
+	}
+	if len(a.Daemon.P2P.Sync.ActiveRootConflicts()) == 0 {
+		t.Error("the conflict disappeared without anyone answering it")
+	}
+}

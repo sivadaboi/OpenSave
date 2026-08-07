@@ -91,11 +91,12 @@ func (s *Server) peersPayload() map[string]any {
 		discovered = append(discovered, d)
 	}
 	return map[string]any{
-		"peers":           peerMap,
-		"discoveredPeers": discovered,
-		"pairingRequests": s.Daemon.P2P.Pairing.PendingRequests(),
-		"wanRoom":         s.Daemon.P2P.Wan.Status(),
-		"conflicts":       s.Daemon.P2P.Sync.ActiveConflicts(),
+		"peers":             peerMap,
+		"discoveredPeers":   discovered,
+		"pairingRequests":   s.Daemon.P2P.Pairing.PendingRequests(),
+		"wanRoom":           s.Daemon.P2P.Wan.Status(),
+		"conflicts":         s.Daemon.P2P.Sync.ActiveConflicts(),
+		"locationConflicts": s.Daemon.P2P.Sync.ActiveRootConflicts(),
 	}
 }
 

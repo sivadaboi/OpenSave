@@ -28,6 +28,7 @@ func (s *Server) peerRoutes(r chi.Router) {
 	r.Post("/api/games/sync-all", s.handleSyncAll)
 	r.Post("/api/games/{gameId}/sync", s.handleSyncGame)
 	r.Post("/api/games/{gameId}/resolve-conflict", s.handleResolveConflict)
+	r.Post("/api/games/{gameId}/resolve-location-conflict", s.handleResolveRootConflict)
 
 	r.Get("/api/wan/status", s.handleWanStatus)
 	r.Get("/api/relay/health", s.handleRelayHealth)
