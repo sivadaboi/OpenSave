@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -487,7 +488,15 @@ func (e *Engine) handleManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := syncengine.ManifestResponse{Manifest: manifest, ActiveBranch: game.ActiveBranch}
+	// Proto tells the asking peer this device understands save locations
+	// beyond the primary one, so it is safe to send a root name in a block or
+	// delete request. A peer that predates this answers without it and is
+	// only ever asked about the primary location.
+	resp := syncengine.ManifestResponse{
+		Manifest:     manifest,
+		ActiveBranch: game.ActiveBranch,
+		Proto:        syncengine.ProtoMultiRoot,
+	}
 	if latest, err := e.Snapshots.LatestSnapshot(gameID, ""); err == nil {
 		resp.LatestSnapshot = &syncengine.SnapshotInfo{ID: latest.ID, Timestamp: latest.Timestamp, Comment: latest.Comment}
 	}
@@ -497,7 +506,11 @@ func (e *Engine) handleManifest(w http.ResponseWriter, r *http.Request) {
 func (e *Engine) handleBlocks(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
 	var body struct {
-		RelPath      string   `json:"relPath"`
+		RelPath string `json:"relPath"`
+		// Root names which save location the path is relative to. Absent on
+		// every peer that predates multi-root, which is why it is only ever
+		// sent to a peer that answered a manifest request with a proto.
+		Root         string   `json:"root"`
 		BlockIndices []int    `json:"blockIndices"`
 		BlockSize    int      `json:"blockSize"`
 		Encodings    []string `json:"encodings"`
@@ -512,14 +525,19 @@ func (e *Engine) handleBlocks(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "Game not found.")
 		return
 	}
-	if !delta.IsSafePath(game.SavePath, body.RelPath) {
+	base, ok := e.resolveServeRoot(gameID, game, body.Root)
+	if !ok {
+		jsonError(w, http.StatusNotFound, "This device has no save location named "+strconv.Quote(body.Root)+" for that game.")
+		return
+	}
+	if !delta.IsSafePath(base, body.RelPath) {
 		jsonError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 
-	fullPath := filepath.Join(game.SavePath, filepath.FromSlash(body.RelPath))
-	if isFile, _ := delta.ResolveLocalSaveFilePath(game.SavePath); isFile {
-		fullPath = game.SavePath
+	fullPath := filepath.Join(base, filepath.FromSlash(body.RelPath))
+	if isFile, _ := delta.ResolveLocalSaveFilePath(base); isFile {
+		fullPath = base
 	}
 
 	blocks, err := delta.ReadBlocks(fullPath, body.BlockIndices, body.BlockSize)
@@ -535,6 +553,7 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
 	var body struct {
 		RelPath string `json:"relPath"`
+		Root    string `json:"root"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RelPath == "" {
 		jsonError(w, http.StatusBadRequest, "relPath is required.")
@@ -546,12 +565,17 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "Game not found.")
 		return
 	}
-	if !delta.IsSafePath(game.SavePath, body.RelPath) {
+	base, ok := e.resolveServeRoot(gameID, game, body.Root)
+	if !ok {
+		jsonError(w, http.StatusNotFound, "This device has no save location named "+strconv.Quote(body.Root)+" for that game.")
+		return
+	}
+	if !delta.IsSafePath(base, body.RelPath) {
 		jsonError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 
-	full := filepath.Join(game.SavePath, filepath.FromSlash(body.RelPath))
+	full := filepath.Join(base, filepath.FromSlash(body.RelPath))
 	_ = os.Chmod(full, 0o666)
 	if info, statErr := os.Stat(full); statErr == nil {
 		if info.IsDir() {
@@ -720,4 +744,24 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// resolveServeRoot maps a root name from a peer request to this device's
+// path for it, defaulting to the game's primary location.
+//
+// An unknown or unmapped name is an error rather than a fallback to the
+// primary path. Falling back would mean serving — or worse, deleting — a
+// file in the save folder because a peer asked about a location this device
+// does not have, which is precisely the "files end up somewhere they should
+// not" failure the root name exists to prevent.
+func (e *Engine) resolveServeRoot(gameID string, game store.Game, root string) (string, bool) {
+	if root == delta.PrimaryRoot {
+		return game.SavePath, true
+	}
+	paths, err := e.Store.GameRootPaths(gameID)
+	if err != nil {
+		return "", false
+	}
+	path, ok := paths[root]
+	return path, ok
 }

@@ -44,7 +44,8 @@ func (f *fakeTransport) FetchManifest(ctx context.Context, peer Peer, gameID str
 	return ManifestResponse{Manifest: m, ActiveBranch: branch, LatestSnapshot: f.latestSnap}, nil
 }
 
-func (f *fakeTransport) FetchBlocks(ctx context.Context, peer Peer, gameID, relPath string, blockIndices []int, blockSize int) ([]BlockData, error) {
+func (f *fakeTransport) FetchBlocks(ctx context.Context, peer Peer, ref FileRef, blockIndices []int, blockSize int) ([]BlockData, error) {
+	relPath := ref.RelPath
 	fullPath := filepath.Join(f.remoteDir, filepath.FromSlash(relPath))
 	entry, err := delta.HashFile(fullPath)
 	if err != nil {
@@ -70,11 +71,11 @@ func (f *fakeTransport) FetchBlocks(ctx context.Context, peer Peer, gameID, relP
 	return out, nil
 }
 
-func (f *fakeTransport) DeleteRemote(ctx context.Context, peer Peer, gameID, relPath string) error {
+func (f *fakeTransport) DeleteRemote(ctx context.Context, peer Peer, ref FileRef) error {
 	f.mu.Lock()
-	f.deletedOnPeer = append(f.deletedOnPeer, relPath)
+	f.deletedOnPeer = append(f.deletedOnPeer, ref.RelPath)
 	f.mu.Unlock()
-	full := filepath.Join(f.remoteDir, filepath.FromSlash(relPath))
+	full := filepath.Join(f.remoteDir, filepath.FromSlash(ref.RelPath))
 	return os.RemoveAll(full)
 }
 
