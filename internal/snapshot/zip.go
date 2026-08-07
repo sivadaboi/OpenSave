@@ -152,8 +152,17 @@ func UnzipTo(zipPath, targetPath string) error {
 }
 
 func extractEntry(entry *zip.File, destDir string) error {
+	return extractEntryAs(entry, destDir, entry.Name)
+}
+
+// extractEntryAs writes one entry under destDir at relName, which may differ
+// from the entry's own name — a save location's files are stored inside the
+// archive under a prefix and restored without it. The zip-slip check runs on
+// the name actually being written, since that is the one that decides where
+// bytes land.
+func extractEntryAs(entry *zip.File, destDir, relName string) error {
 	// Reject entries that would escape the destination (zip-slip).
-	cleanName := filepath.Clean(filepath.FromSlash(entry.Name))
+	cleanName := filepath.Clean(filepath.FromSlash(relName))
 	if strings.HasPrefix(cleanName, "..") || filepath.IsAbs(cleanName) {
 		return fmt.Errorf("zip entry %q escapes destination", entry.Name)
 	}
