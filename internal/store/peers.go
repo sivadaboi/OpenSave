@@ -140,6 +140,12 @@ func (s *Store) PrunePeersAtAddress(address string, port int, keepID string) ([]
 		return nil, fmt.Errorf("prune stale peer sync state: %w", err)
 	}
 	if _, err := s.db.Exec(
+		`DELETE FROM game_root_sync_state WHERE peer_id IN
+		   (SELECT id FROM peers WHERE address = ? AND port = ? AND id != ?)`,
+		address, port, keepID); err != nil {
+		return nil, fmt.Errorf("prune stale peer root sync state: %w", err)
+	}
+	if _, err := s.db.Exec(
 		`DELETE FROM peers WHERE address = ? AND port = ? AND id != ?`,
 		address, port, keepID); err != nil {
 		return nil, fmt.Errorf("prune stale peers at %s:%d: %w", address, port, err)
@@ -157,6 +163,9 @@ func (s *Store) UnpairPeer(id string) error {
 
 	if _, err := tx.Exec(`DELETE FROM game_peer_sync_state WHERE peer_id = ?`, id); err != nil {
 		return fmt.Errorf("delete sync state for peer %s: %w", id, err)
+	}
+	if _, err := tx.Exec(`DELETE FROM game_root_sync_state WHERE peer_id = ?`, id); err != nil {
+		return fmt.Errorf("delete root sync state for peer %s: %w", id, err)
 	}
 	res, err := tx.Exec(`DELETE FROM peers WHERE id = ?`, id)
 	if err != nil {
