@@ -166,3 +166,86 @@ func TestRootsGoWhenTheGameDoes(t *testing.T) {
 		t.Errorf("deleting the game left %d orphaned roots", len(roots))
 	}
 }
+
+// Two locations describing the same files do not merely duplicate work, they
+// fight: the file appears in two manifests under two names, each sync patches
+// it twice, and a deletion propagated for one is seen by the other as a file
+// the peer is missing and pushed straight back.
+func TestOverlappingLocationsAreRefused(t *testing.T) {
+	s := rootsTestStore(t) // primary is C:\Saves\ER
+
+	cases := []struct {
+		name, path, why string
+	}{
+		{"same", `C:\Saves\ER`, "the primary save folder itself"},
+		{"inside", `C:\Saves\ER\config`, "a folder inside the primary save"},
+		{"parent", `C:\Saves`, "a folder containing the primary save"},
+		{"case", `c:\saves\er`, "the primary save folder in different case"},
+		{"trailing", `C:\Saves\ER\`, "the primary save folder with a trailing separator"},
+	}
+	for _, c := range cases {
+		if err := s.AddGameRoot("elden-ring", c.name, c.path); err == nil {
+			t.Errorf("%s (%s) was accepted as a separate location", c.path, c.why)
+		}
+	}
+
+	roots, _ := s.ListGameRoots("elden-ring")
+	if len(roots) != 0 {
+		t.Errorf("%d overlapping locations were stored: %+v", len(roots), roots)
+	}
+}
+
+// The same rule applies between two extra locations, not just against the
+// primary one.
+func TestLocationsCannotOverlapEachOther(t *testing.T) {
+	s := rootsTestStore(t)
+	if err := s.AddGameRoot("elden-ring", "config", `D:\Game\Config`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddGameRoot("elden-ring", "mods", `D:\Game\Config\mods`); err == nil {
+		t.Error("a location inside another location was accepted")
+	}
+	if err := s.AddGameRoot("elden-ring", "saves", `D:\Game\Saves`); err != nil {
+		t.Errorf("a genuinely separate location was refused: %v", err)
+	}
+}
+
+// Re-pointing a location at a new path must not trip over its own old one.
+func TestALocationCanBeMovedToANewPath(t *testing.T) {
+	s := rootsTestStore(t)
+	if err := s.AddGameRoot("elden-ring", "config", `D:\Game\Config`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddGameRoot("elden-ring", "config", `D:\Game\Config\v2`); err != nil {
+		t.Errorf("moving a location to a path under its own old one was refused: %v", err)
+	}
+	roots, _ := s.ListGameRoots("elden-ring")
+	if len(roots) != 1 || roots[0].Path != `D:\Game\Config\v2` {
+		t.Errorf("after moving, roots = %+v", roots)
+	}
+}
+
+// A location learned from a peer has no path yet, so there is nothing to
+// overlap and it must still be recordable.
+func TestUnmappedLocationSkipsTheOverlapCheck(t *testing.T) {
+	s := rootsTestStore(t)
+	if err := s.AddGameRoot("elden-ring", "config", ""); err != nil {
+		t.Errorf("a location learned from a peer was refused: %v", err)
+	}
+}
+
+// Root names are map keys, never path segments — but a name that looks like
+// a traversal must not be able to become one if that ever changes.
+func TestTraversalLikeNamesAreInert(t *testing.T) {
+	s := rootsTestStore(t)
+	if err := s.AddGameRoot("elden-ring", "..", `D:\Elsewhere`); err != nil {
+		t.Fatal(err)
+	}
+	paths, err := s.GameRootPaths("elden-ring")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := paths[".."]; got != `D:\Elsewhere` {
+		t.Errorf("name %q resolved to %q, want the configured path and nothing derived from the name", "..", got)
+	}
+}

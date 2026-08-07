@@ -224,7 +224,7 @@ func (e *Engine) overwriteLocalWithRemote(ctx context.Context, gameID string, pe
 	}
 
 	if len(filesToPull) > 0 {
-		if err := e.pullFiles(ctx, peer, gameID, game, localManifest, remoteData, filesToPull); err != nil {
+		if err := e.pullFiles(ctx, peer, gameID, game, primaryRootOf(game), localManifest, remoteData, filesToPull); err != nil {
 			return err
 		}
 	} else if remoteData.LatestSnapshot != nil {
