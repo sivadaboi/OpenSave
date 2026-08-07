@@ -162,3 +162,28 @@ func (s *Store) GameRootPaths(gameID string) (map[string]string, error) {
 	}
 	return out, nil
 }
+
+// NoteGameRoot records that a location by this name exists, WITHOUT touching
+// where it lives if this device already knows.
+//
+// This is the difference between learning a name and setting a path, and
+// conflating the two is destructive: an archive or a peer mentioning
+// "config" would otherwise blank the folder the user had already chosen for
+// it, so the next sync or restore would skip the location entirely and the
+// files would appear to vanish. Use AddGameRoot to set a path deliberately;
+// use this to learn that a name exists.
+func (s *Store) NoteGameRoot(gameID, name string) error {
+	n := NormalizeRootName(name)
+	if n == "" {
+		return fmt.Errorf("a save location needs a name")
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO game_roots (game_id, name, path, ordinal)
+		VALUES (?, ?, '', COALESCE((SELECT MAX(ordinal) + 1 FROM game_roots WHERE game_id = ?), 0))
+		ON CONFLICT(game_id, name) DO NOTHING`,
+		gameID, n, gameID)
+	if err != nil {
+		return fmt.Errorf("note game root: %w", err)
+	}
+	return nil
+}

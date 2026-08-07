@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,7 +79,27 @@ func (s *Server) handleRestoreFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "snapshot not found")
 		return
 	}
-	if !delta.IsSafePath(game.SavePath, body.RelPath) {
+	// Which of the game's save locations the file belongs to. A path under
+	// the archive's location prefix is NOT a file in the save folder, and
+	// restoring it there would put a config file among the saves — the exact
+	// misplacement the prefix exists to prevent. It goes to that location's
+	// own folder, or nowhere.
+	target := game.SavePath
+	if rootName, isRoot := snapshot.RootOfArchiveEntry(body.RelPath); isRoot {
+		paths, rootsErr := s.Daemon.Store.GameRootPaths(gameID)
+		if rootsErr != nil {
+			writeError(w, http.StatusInternalServerError, rootsErr.Error())
+			return
+		}
+		path, ok := paths[rootName]
+		if !ok {
+			writeError(w, http.StatusBadRequest,
+				"That file belongs to the "+strconv.Quote(rootName)+" save location, which this device has no folder for.")
+			return
+		}
+		target = path
+	}
+	if !delta.IsSafePath(target, snapshot.ArchiveEntryRelPath(body.RelPath)) {
 		writeError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
@@ -88,7 +109,7 @@ func (s *Server) handleRestoreFile(w http.ResponseWriter, r *http.Request) {
 		s.Daemon.Log.Log("warn", "safety snapshot before file restore failed: "+err.Error())
 	}
 
-	if err := extractSingleFile(snap.ZipPath, body.RelPath, game.SavePath); err != nil {
+	if err := extractSingleFile(snap.ZipPath, body.RelPath, snapshot.ArchiveEntryRelPath(body.RelPath), target); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -99,14 +120,18 @@ func (s *Server) handleRestoreFile(w http.ResponseWriter, r *http.Request) {
 // extractSingleFile pulls one entry from a snapshot ZIP into the save
 // location (savePath may be a directory root or, for single-file saves,
 // the file itself).
-func extractSingleFile(zipPath, relPath, savePath string) error {
+// entryName is the path inside the archive; destRel is where it goes
+// relative to savePath. They differ for a file belonging to an extra save
+// location: the archive stores it under a prefix, and it must land in that
+// location's folder without the prefix coming along.
+func extractSingleFile(zipPath, entryName, destRel, savePath string) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return fmt.Errorf("open snapshot zip: %w", err)
 	}
 	defer zr.Close()
 
-	want := strings.ReplaceAll(relPath, "\\", "/")
+	want := strings.ReplaceAll(entryName, "\\", "/")
 	for _, f := range zr.File {
 		if strings.ReplaceAll(f.Name, "\\", "/") != want {
 			continue
@@ -133,7 +158,7 @@ func extractSingleFile(zipPath, relPath, savePath string) error {
 		_, err = io.Copy(dst, src)
 		return err
 	}
-	return fmt.Errorf("file %q not found in snapshot", relPath)
+	return fmt.Errorf("file %q not found in snapshot", entryName)
 }
 
 // ── .sscb format v2 ──────────────────────────────────────────────────
@@ -171,6 +196,12 @@ type backupManifestGame struct {
 	// Guessing put the save one directory too high. Empty means an archive
 	// written before this was recorded; those still fall back to the guess.
 	SaveKind string `json:"saveKind,omitempty"`
+	// Locations names the game's extra save folders, if it has any. Only the
+	// names travel: a folder called "config" means the same thing on the
+	// machine this is restored onto, while the path it lives at does not.
+	// Restoring names any location the target machine has no folder for
+	// rather than putting its files somewhere arbitrary.
+	Locations []string `json:"locations,omitempty"`
 }
 
 // skippedGame reports one game an export/import couldn't include and why.
@@ -255,6 +286,14 @@ func (s *Server) handleBackupExport(w http.ResponseWriter, r *http.Request) {
 		if info, statErr := os.Stat(entry.SavePath); statErr == nil && !info.IsDir() {
 			entry.SaveKind = "file"
 		}
+		// Name the extra locations so a restore can say which ones it could
+		// not place, rather than silently dropping them. Names only — where
+		// each one lives is this machine's business, not the archive's.
+		if roots, rootsErr := s.Daemon.Store.ListGameRoots(entry.ID); rootsErr == nil {
+			for _, root := range roots {
+				entry.Locations = append(entry.Locations, root.Name)
+			}
+		}
 		games = append(games, entry)
 	}
 
@@ -295,7 +334,11 @@ func (s *Server) exportSelectedSaves(outPath string, games []backupManifestGame)
 		tmpPath := tmp.Name()
 		tmp.Close()
 
-		skippedFiles, zipErr := snapshot.ZipPath(g.SavePath, tmpPath)
+		gameRoots, rootsErr := s.Daemon.Store.GameRootPaths(g.ID)
+		if rootsErr != nil {
+			gameRoots = nil
+		}
+		skippedFiles, zipErr := snapshot.ZipRoots(g.SavePath, gameRoots, tmpPath)
 		if zipErr != nil {
 			os.Remove(tmpPath)
 			skipped = append(skipped, skippedGame{g.ID, g.Name, zipErr.Error()})
@@ -556,6 +599,22 @@ func (s *Server) importBackupV2(zr *zip.Reader, manifest *backupManifest, mode s
 			continue
 		}
 
+		// Record the archive's extra save locations by name, before the
+		// tracked/untracked paths diverge. A game already tracked here takes a
+		// different branch entirely and returns from it, so doing this on one
+		// side only means the locations are learned for games arriving fresh
+		// and silently lost for games the user already has — the more common
+		// case, and the one where the files matter most.
+		//
+		// Names only, with no path: the app can then ask where each one lives
+		// here rather than the files quietly going nowhere.
+		for _, name := range g.Locations {
+			if err := s.Daemon.Store.NoteGameRoot(g.ID, name); err != nil {
+				s.Daemon.Log.Log("warn", fmt.Sprintf(
+					"backup import: could not record the %q save location of %q: %v", name, g.Name, err))
+			}
+		}
+
 		// Stage the inner save zip on disk.
 		tmp, err := os.CreateTemp("", "opensave-import-save-*.zip")
 		if err != nil {
@@ -650,7 +709,11 @@ func (s *Server) importBackupV2(zr *zip.Reader, manifest *backupManifest, mode s
 			safetyDir := filepath.Join(settings.BackupsDir, "_import-safety")
 			safetyPath := filepath.Join(safetyDir, fmt.Sprintf("%s-%d.zip", sanitizeFilename(g.ID), baseMs))
 			if err := os.MkdirAll(safetyDir, 0o777); err == nil {
-				_, err = snapshot.ZipPath(target, safetyPath)
+				safetyRoots, safetyErr := s.Daemon.Store.GameRootPaths(g.ID)
+				if safetyErr != nil {
+					safetyRoots = nil
+				}
+				_, err = snapshot.ZipRoots(target, safetyRoots, safetyPath)
 			}
 			if err != nil {
 				os.Remove(tmpPath)
@@ -680,7 +743,15 @@ func (s *Server) importBackupV2(zr *zip.Reader, manifest *backupManifest, mode s
 			}
 		}
 
-		err = snapshot.UnzipTo(tmpPath, target)
+		importRoots, importErr := s.Daemon.Store.GameRootPaths(g.ID)
+		if importErr != nil {
+			importRoots = nil
+		}
+		unplaced, unzipErr := snapshot.UnzipRoots(tmpPath, target, importRoots)
+		for _, name := range unplaced {
+			s.Daemon.Log.Log("warn", fmt.Sprintf("%q in this backup includes a %q save location, which this device has no folder for — those files were not restored", g.Name, name))
+		}
+		err = unzipErr
 		os.Remove(tmpPath)
 		if err != nil {
 			res.Action, res.Error = "skipped", err.Error()

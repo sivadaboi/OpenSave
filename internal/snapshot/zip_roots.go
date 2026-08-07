@@ -260,3 +260,20 @@ func UnzipRoots(zipPath, primary string, extra map[string]string) (unplaced []st
 	sort.Strings(unplaced)
 	return unplaced, nil
 }
+
+// RootOfArchiveEntry reports which extra save location an archive entry
+// belongs to, and whether it belongs to one at all. Exported so callers that
+// work on single entries — restoring one file out of a snapshot — can send it
+// to the right folder instead of assuming the save folder.
+func RootOfArchiveEntry(entry string) (string, bool) { return rootOfEntry(entry) }
+
+// ArchiveEntryRelPath strips the location prefix from an entry, giving the
+// path relative to that location's own folder. Entries outside the prefix are
+// returned unchanged, since they are already relative to the save folder.
+func ArchiveEntryRelPath(entry string) string {
+	name, ok := rootOfEntry(entry)
+	if !ok {
+		return entry
+	}
+	return strings.TrimPrefix(entry, RootPrefix+name+"/")
+}

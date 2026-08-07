@@ -249,3 +249,48 @@ func TestTraversalLikeNamesAreInert(t *testing.T) {
 		t.Errorf("name %q resolved to %q, want the configured path and nothing derived from the name", "..", got)
 	}
 }
+
+// Learning that a location exists must never unset where it lives.
+//
+// An archive or a peer mentioning "config" arrives with a name and no path,
+// because paths are local. If that blanked the folder the user had already
+// chosen, the next sync and the next restore would both skip the location —
+// and from where the user sits, their config files would simply stop being
+// backed up, silently, because they imported a backup.
+func TestLearningALocationNameDoesNotEraseItsPath(t *testing.T) {
+	s := rootsTestStore(t)
+	if err := s.AddGameRoot("elden-ring", "config", `D:\Docs\ER`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.NoteGameRoot("elden-ring", "config"); err != nil {
+		t.Fatal(err)
+	}
+
+	roots, _ := s.ListGameRoots("elden-ring")
+	if len(roots) != 1 {
+		t.Fatalf("roots = %+v, want 1", roots)
+	}
+	if roots[0].Path != `D:\Docs\ER` {
+		t.Errorf("path = %q after learning the name again; the configured folder was erased", roots[0].Path)
+	}
+	if !roots[0].Mapped() {
+		t.Error("the location stopped being mapped, so syncing and restoring would now skip it")
+	}
+}
+
+// A name not seen before is recorded unmapped, so the app can ask where it
+// goes rather than the files quietly having nowhere to land.
+func TestLearningANewLocationRecordsItUnmapped(t *testing.T) {
+	s := rootsTestStore(t)
+	if err := s.NoteGameRoot("elden-ring", "Config"); err != nil {
+		t.Fatal(err)
+	}
+	roots, _ := s.ListGameRoots("elden-ring")
+	if len(roots) != 1 || roots[0].Name != "config" {
+		t.Fatalf("roots = %+v, want one normalized 'config'", roots)
+	}
+	if roots[0].Mapped() {
+		t.Error("a location learned by name alone was recorded as mapped")
+	}
+}
