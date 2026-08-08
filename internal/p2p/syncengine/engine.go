@@ -325,7 +325,7 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	// any snapshot yet, those unsaved changes would be lost. Surface it as a
 	// conflict for the user to resolve instead of silently overwriting.
 	if len(decision.FilesToPull) > 0 && game.LastManifestHash != "" &&
-		localManifest.ManifestHash() != game.LastManifestHash {
+		e.contentHashOf(gameID, localManifest, game.SavePath) != game.LastManifestHash {
 		e.Log("warn", fmt.Sprintf("uncaptured local changes on %q would be overwritten by %q — raising conflict", game.Name, peer.Name))
 		e.registerConflict(gameID, peer, localManifest, remoteData)
 		return Result{Status: "conflict", PeerID: peer.ID, PeerName: peer.Name}, nil
@@ -539,6 +539,32 @@ func (e *Engine) RefreshLineage(ctx context.Context, gameID string, peer Peer) {
 	// verified convergence — ratchet the merge-base.
 	if local.ManifestHash() == remoteData.Manifest.ManifestHash() {
 		_ = e.Store.SetAgreedHash(gameID, peer.ID, local.ManifestHash())
+	}
+	e.refreshRootLineage(gameID, remoteData, peer)
+}
+
+// refreshRootLineage does the same for a game's extra save locations.
+//
+// Without it those locations only ever get lineage on the side that STARTED a
+// sync. The receiving side stays blank, and a blank lineage cannot tell "the
+// other device deleted this file" from "the other device has never had it" —
+// so it reads a deletion as a file it ought to push, and sends it straight
+// back. The deletion undoes itself, on the very device that made it.
+//
+// That went unnoticed until extra locations became watched: before that,
+// nothing ever prompted the receiving side to start a sync of one, so its
+// empty lineage was never consulted.
+func (e *Engine) refreshRootLineage(gameID string, remoteData ManifestResponse, peer Peer) {
+	for _, sr := range e.sharedRoots(gameID, remoteData) {
+		local, err := delta.BuildManifest(sr.root.Path)
+		if err != nil {
+			continue
+		}
+		e.persistRootLineage(gameID, peer.ID, sr.root.Name, local, sr.remote)
+		if local.RootHash(delta.PrimaryRoot) == sr.remote.RootHash(delta.PrimaryRoot) {
+			_ = e.Store.SetAgreedHashForRoot(gameID, peer.ID, sr.root.Name,
+				local.RootHash(delta.PrimaryRoot))
+		}
 	}
 }
 
@@ -1029,7 +1055,16 @@ func (e *Engine) recordMirrorSnapshot(gameID string, game store.Game, peer Peer,
 		return
 	}
 	zipPath := filepath.Join(destDir, remoteSnap.ID+".zip")
-	if _, err := snapshot.ZipPath(game.SavePath, zipPath); err != nil {
+	// Every save location, like any other snapshot. Archiving only the main
+	// folder here would quietly put entries in the history that hold half the
+	// game — and nothing about them would look different, so someone rolling
+	// back to one would find their settings folder untouched and no
+	// explanation for it.
+	mirrorRoots, rootsErr := e.Store.GameRootPaths(gameID)
+	if rootsErr != nil {
+		mirrorRoots = nil
+	}
+	if _, err := snapshot.ZipRoots(game.SavePath, mirrorRoots, zipPath); err != nil {
 		e.Log("warn", fmt.Sprintf("mirror snapshot zip failed: %v", err))
 		return
 	}

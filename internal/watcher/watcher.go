@@ -65,7 +65,13 @@ type Engine struct {
 type gameWatch struct {
 	gameID   string
 	savePath string
-	isFile   bool
+	// extra maps a save location's name to its path on this device, for the
+	// games whose save is split across more than one folder. Watched the same
+	// way the main folder is: a change in any of them is a change to the game,
+	// and without this a settings folder would only ever sync when the user
+	// pressed the button.
+	extra  map[string]string
+	isFile bool
 	fsw      *fsnotify.Watcher
 	cancel   context.CancelFunc
 	done     chan struct{}
@@ -83,6 +89,16 @@ func New(cb Callbacks) *Engine {
 // Watch/Unwatch calls for other games (a wedged engine can otherwise only
 // be fixed by restarting the app).
 func (e *Engine) Watch(gameID, savePath string) error {
+	return e.WatchWithLocations(gameID, savePath, nil)
+}
+
+// WatchWithLocations watches a game's main save folder plus any extra save
+// locations it has, by name.
+//
+// One fsnotify watcher covers all of them: an event in any location means the
+// game changed, and what follows — snapshot, then sync — is the same work
+// whichever folder it came from.
+func (e *Engine) WatchWithLocations(gameID, savePath string, extra map[string]string) error {
 	isFile, err := delta.ResolveLocalSaveFilePath(savePath)
 	if err != nil {
 		return fmt.Errorf("inspect save path: %w", err)
@@ -112,6 +128,25 @@ func (e *Engine) Watch(gameID, savePath string) error {
 		}
 	}
 
+	// A location that cannot be watched is logged and skipped rather than
+	// failing the game: losing automatic snapshots of a mods folder is not a
+	// reason to stop watching the save.
+	watched := map[string]string{}
+	for name, path := range extra {
+		if path == "" {
+			continue
+		}
+		if err := os.MkdirAll(path, 0o777); err != nil {
+			e.log("warn", fmt.Sprintf("cannot watch the %q save location of %s: %v", name, gameID, err))
+			continue
+		}
+		if err := addRecursive(fsw, path); err != nil {
+			e.log("warn", fmt.Sprintf("cannot watch the %q save location of %s: %v", name, gameID, err))
+			continue
+		}
+		watched[name] = path
+	}
+
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
@@ -129,6 +164,7 @@ func (e *Engine) Watch(gameID, savePath string) error {
 	gw := &gameWatch{
 		gameID:   gameID,
 		savePath: savePath,
+		extra:    watched,
 		isFile:   isFile,
 		fsw:      fsw,
 		cancel:   cancel,
@@ -290,12 +326,19 @@ func (e *Engine) handleChange(ctx context.Context, gw *gameWatch) {
 		}
 	}
 
-	manifest, err := delta.BuildManifest(gw.savePath)
+	manifest, failures, err := delta.BuildMultiManifest(gw.savePath, gw.extra)
 	if err != nil {
 		e.log("warn", fmt.Sprintf("manifest build failed for %q: %v", gw.gameID, err))
 		return
 	}
-	currentHash := manifest.ManifestHash()
+	for name, failure := range failures {
+		e.log("warn", fmt.Sprintf("cannot read the %q save location of %s: %v", name, gw.gameID, failure))
+	}
+	// ContentHash, not ManifestHash: this asks "did anything about this game
+	// change", which has to cover every one of its folders. For a game with
+	// one folder the two are the same value, so nothing already recorded is
+	// invalidated by the upgrade.
+	currentHash := manifest.ContentHash()
 
 	lastHash, err := e.cb.GetLastManifestHash(gw.gameID)
 	if err == nil && lastHash == currentHash {

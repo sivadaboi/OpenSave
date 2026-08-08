@@ -56,6 +56,8 @@ func (s *Server) handleAddGameRoot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Start watching it now, not at the next restart.
+	s.Daemon.RewatchGame(gameID)
 	s.BroadcastGamesUpdate()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -72,6 +74,9 @@ func (s *Server) handleRemoveGameRoot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Stop watching it now, or it keeps waking the game up over a folder
+	// nobody is covering any more.
+	s.Daemon.RewatchGame(gameID)
 	s.BroadcastGamesUpdate()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

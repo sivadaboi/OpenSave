@@ -610,15 +610,45 @@ func (m *Manager) SwitchBranch(gameID, targetBranch string) error {
 	// disk, a locked file, a database error, and the save folder was emptied
 	// anyway with nothing to go back to. A switch that cannot be undone is not
 	// a switch worth making automatically.
-	if savePathHasContent(game.SavePath) {
+	hasContent := savePathHasContent(game.SavePath)
+	if !hasContent {
+		// A game whose main save is empty may still have a settings or mods
+		// folder full of work, and the switch below clears those too. Backing
+		// up only when the main folder has something in it would skip the
+		// backup in exactly the case where it is the only copy.
+		if paths, err := m.Store.GameRootPaths(gameID); err == nil {
+			for _, p := range paths {
+				if savePathHasContent(p) {
+					hasContent = true
+					break
+				}
+			}
+		}
+	}
+	if hasContent {
 		comment := fmt.Sprintf("Auto backup before switching to branch %q", targetBranch)
 		if _, err := m.Create(gameID, comment, true); err != nil {
 			return fmt.Errorf("could not back up the current save before switching, so nothing was changed: %w", err)
 		}
 	}
 
+	// Every one of the game's folders, not just the main save. A branch
+	// deliberately started empty is meant to be empty: leaving the settings
+	// and mods folders as the previous branch left them makes a "fresh run"
+	// that quietly is not one, and nothing on screen would say so. Switching
+	// to a branch that HAS a snapshot re-clears each location on the way in
+	// anyway, so this only ever adds correctness.
+	switchPaths, pathsErr := m.Store.GameRootPaths(gameID)
+	if pathsErr != nil {
+		return fmt.Errorf("read the game's save locations: %w", pathsErr)
+	}
 	if err := clearSavePath(game.SavePath); err != nil {
 		return fmt.Errorf("clear save path: %w", err)
+	}
+	for name, path := range switchPaths {
+		if err := clearSavePath(path); err != nil {
+			return fmt.Errorf("clear the %q save location: %w", name, err)
+		}
 	}
 
 	if err := m.Store.SwitchActiveBranch(gameID, targetBranch); err != nil {

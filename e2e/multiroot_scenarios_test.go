@@ -47,6 +47,20 @@ func twoLocationPair(t *testing.T, name string, configFiles map[string]string) (
 	return a, b, gameID, aConfig, bConfig
 }
 
+// pauseAutoSync stops both devices syncing this game on their own.
+//
+// Needed to stage a genuine two-sided divergence. With auto-sync running, the
+// first edit reaches the other device before the second one is made, so the
+// second is an ordinary later change rather than a disagreement — correct
+// behaviour, and the opposite of what a conflict test needs to set up. The
+// same trick is used by the deletion tests for the same reason.
+func pauseAutoSync(t *testing.T, a, b *testutil.TestDaemon, gameID string) {
+	t.Helper()
+	a.API(http.MethodPatch, "/api/games/"+gameID, map[string]any{"autoSync": false}, nil)
+	b.API(http.MethodPatch, "/api/games/"+gameID, map[string]any{"autoSync": false}, nil)
+	time.Sleep(syncSettleWindow)
+}
+
 // Deleting a file in an extra location must propagate, the same as in the
 // save folder. This exercises the per-location lineage: without it the peer
 // reads the missing file as one it simply never had and pushes it straight
@@ -101,7 +115,7 @@ func TestMultiRootScenario_DisagreementInOneLocationDoesNotBlockTheOther(t *test
 		"settings.ini": "v1",
 	})
 
-	time.Sleep(syncSettleWindow)
+	pauseAutoSync(t, a, b, gameID)
 	// Both sides change the config differently: a real divergence.
 	writeIn(t, aConfig, "settings.ini", "A-version")
 	writeIn(t, bConfig, "settings.ini", "B-version")
@@ -316,7 +330,7 @@ func TestMultiRootScenario_ResolveALocationConflictKeepingMine(t *testing.T) {
 		"settings.ini": "shared v1",
 	})
 
-	time.Sleep(syncSettleWindow)
+	pauseAutoSync(t, a, b, gameID)
 	writeIn(t, aConfig, "settings.ini", "A-version")
 	writeIn(t, bConfig, "settings.ini", "B-version")
 	time.Sleep(syncSettleWindow)
@@ -364,7 +378,7 @@ func TestMultiRootScenario_ResolveALocationConflictKeepingTheirs(t *testing.T) {
 		"settings.ini": "shared v1",
 	})
 
-	time.Sleep(syncSettleWindow)
+	pauseAutoSync(t, a, b, gameID)
 	writeIn(t, aConfig, "settings.ini", "A-version")
 	writeIn(t, bConfig, "settings.ini", "B-version")
 	time.Sleep(syncSettleWindow)
@@ -404,7 +418,7 @@ func TestMultiRootScenario_AnOpenLocationConflictBlocksFurtherSyncsOfIt(t *testi
 		"settings.ini": "shared v1",
 	})
 
-	time.Sleep(syncSettleWindow)
+	pauseAutoSync(t, a, b, gameID)
 	writeIn(t, aConfig, "settings.ini", "A-version")
 	writeIn(t, bConfig, "settings.ini", "B-version")
 	time.Sleep(syncSettleWindow)
@@ -432,5 +446,41 @@ func TestMultiRootScenario_AnOpenLocationConflictBlocksFurtherSyncsOfIt(t *testi
 	}
 	if len(a.Daemon.P2P.Sync.ActiveRootConflicts()) == 0 {
 		t.Error("the conflict disappeared without anyone answering it")
+	}
+}
+
+// A change in an extra save location has to act like a change to the game:
+// snapshot, then sync, without anyone pressing anything.
+//
+// This did not work at all when the locations feature was first built. The
+// watcher took one path per game, so the main save was watched and every
+// other folder was not — the feature appeared to work because the tests
+// always called sync explicitly, and a real user would have found their
+// settings folder silently never syncing.
+func TestMultiRootScenario_ChangesInAnExtraLocationSyncOnTheirOwn(t *testing.T) {
+	a, b, gameID, aConfig, bConfig := twoLocationPair(t, "LocAuto", map[string]string{
+		"settings.ini": "v1",
+	})
+	_ = gameID
+
+	// Control: the main save auto-syncs, so a failure below is about the
+	// location rather than about auto-sync being broken generally.
+	time.Sleep(syncSettleWindow)
+	a.WriteSave("save.sav", "auto-primary")
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		return b.ReadSave("save.sav") == "auto-primary"
+	}) {
+		t.Fatal("the main save did not auto-sync; this test cannot tell you anything about locations")
+	}
+
+	// The subject: no explicit sync call anywhere after this write.
+	time.Sleep(syncSettleWindow)
+	writeIn(t, aConfig, "settings.ini", "auto-config")
+
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		return readIn(bConfig, "settings.ini") == "auto-config"
+	}) {
+		t.Fatalf("a change in an extra save location never synced on its own: peer has %q — the folder is not being watched",
+			readIn(bConfig, "settings.ini"))
 	}
 }

@@ -116,7 +116,7 @@ func (e *Engine) markResolvedConverged(gameID string, peer Peer) {
 	e.persistLineage(gameID, peer.ID, local, local)
 	_ = e.Store.SetAgreedHash(gameID, peer.ID, local.ManifestHash())
 	_ = e.Store.UpdatePeerLastSynced(peer.ID, time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
-	_ = e.Store.SetLastManifestHash(gameID, local.ManifestHash())
+	_ = e.Store.SetLastManifestHash(gameID, e.contentHashOf(gameID, local, game.SavePath))
 	e.Transport.ReportSyncEvent(peer, gameID, "in-sync", map[string]any{
 		"peerName":     e.deviceName(),
 		"manifestHash": local.ManifestHash(),
@@ -148,7 +148,7 @@ func (e *Engine) markResolvedLocal(gameID string, peer Peer) error {
 	}
 	e.persistLineage(gameID, peer.ID, local, local)
 	_ = e.Store.SetAgreedHash(gameID, peer.ID, local.ManifestHash())
-	_ = e.Store.SetLastManifestHash(gameID, local.ManifestHash())
+	_ = e.Store.SetLastManifestHash(gameID, e.contentHashOf(gameID, local, game.SavePath))
 	_ = e.Store.UpdatePeerLastSynced(peer.ID, time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
 	return nil
 }

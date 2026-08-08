@@ -298,3 +298,49 @@ func TestManagerSnapshotAndRestoreAcrossLocations(t *testing.T) {
 		t.Errorf("the config file was restored into the save folder as %q", got)
 	}
 }
+
+// Switching to a branch that was deliberately started empty must empty every
+// one of the game's folders, not just the main save.
+//
+// Otherwise a "fresh run" branch inherits the previous branch's settings and
+// mods — the folders are simply left as they were, so the run is not fresh
+// and nothing says so.
+func TestSwitchingToAnEmptyBranchClearsEveryLocation(t *testing.T) {
+	env := setup(t)
+	config := t.TempDir()
+	write(t, env.saveDir, "player.sav", "main run")
+	write(t, config, "settings.ini", "main run settings")
+	if err := env.store.AddGameRoot("game1", "config", config); err != nil {
+		t.Fatal(err)
+	}
+	// Snapshot the main branch so switching back is possible.
+	if _, err := env.mgr.Create("game1", "main run", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// A branch deliberately started with nothing in it.
+	if _, err := env.mgr.CreateBranch("game1", "fresh", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := env.mgr.SwitchBranch("game1", "fresh"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := read(env.saveDir, "player.sav"); got != "" {
+		t.Errorf("the main save survived the switch to an empty branch: %q", got)
+	}
+	if got := read(config, "settings.ini"); got != "" {
+		t.Errorf("the config folder still holds the other branch's contents (%q) — an empty branch is not empty", got)
+	}
+
+	// And switching back brings everything, both folders, together.
+	if err := env.mgr.SwitchBranch("game1", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(env.saveDir, "player.sav"); got != "main run" {
+		t.Errorf("main save after switching back = %q", got)
+	}
+	if got := read(config, "settings.ini"); got != "main run settings" {
+		t.Errorf("config after switching back = %q — the location did not come back with the branch", got)
+	}
+}
