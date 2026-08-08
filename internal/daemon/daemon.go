@@ -200,7 +200,7 @@ func (d *Daemon) Start() error {
 		if !game.AutoSync {
 			continue
 		}
-		if err := d.Watcher.Watch(game.ID, game.SavePath); err != nil {
+		if err := d.watchGame(game.ID, game.SavePath); err != nil {
 			d.Log.Log("warn", fmt.Sprintf("could not watch %q: %v", game.Name, err))
 		}
 	}
@@ -376,7 +376,7 @@ func (d *Daemon) ResyncWatchers() (started, stopped int) {
 			stopped++
 		case path != current:
 			// The save was relocated; the existing watch is on the wrong tree.
-			if err := d.Watcher.Watch(id, path); err != nil {
+			if err := d.watchGame(id, path); err != nil {
 				d.Log.Log("warn", fmt.Sprintf("could not re-watch %q: %v", id, err))
 				continue
 			}
@@ -388,7 +388,7 @@ func (d *Daemon) ResyncWatchers() (started, stopped int) {
 		if _, watching := d.Watcher.Watching(id); watching {
 			continue
 		}
-		if err := d.Watcher.Watch(id, path); err != nil {
+		if err := d.watchGame(id, path); err != nil {
 			d.Log.Log("warn", fmt.Sprintf("could not watch %q: %v", id, err))
 			continue
 		}
@@ -486,7 +486,7 @@ func (d *Daemon) TrackGame(game store.Game) (store.Game, error) {
 			d.Log.Log("info", fmt.Sprintf("%q was untracked during its initial snapshot; skipping watch", game.Name))
 			return
 		}
-		if err := d.Watcher.Watch(game.ID, game.SavePath); err != nil {
+		if err := d.watchGame(game.ID, game.SavePath); err != nil {
 			d.Log.Log("warn", fmt.Sprintf("could not watch %q: %v", game.Name, err))
 		}
 		d.Log.Log("success", fmt.Sprintf("now tracking %q at %q", game.Name, game.SavePath))
@@ -709,10 +709,43 @@ func (d *Daemon) LinkGames(canonicalID, aliasID string) error {
 	// unlink can restore it) and remove that entry so the alias takes effect.
 	if merged, err := d.Store.GetGame(aliasID); err == nil {
 		_ = d.Store.SetAliasSnapshot(aliasID, merged.Name, merged.SavePath, merged.AppID)
+
+		// Carry the merged entry's extra save locations over to the canonical
+		// game. Linking says these are the same game, so its folders are that
+		// game's folders — and deleting the entry below cascades them away,
+		// which would silently stop covering folders the user had set up
+		// without saying anything. The files stay either way; what would be
+		// lost is OpenSave knowing about them.
+		//
+		// A name the canonical game already uses is left alone: it has its own
+		// folder for that name here, and the merged entry's path is no more
+		// authoritative than the one already chosen.
+		if mergedRoots, rootsErr := d.Store.ListGameRoots(aliasID); rootsErr == nil {
+			existing, _ := d.Store.GameRootPaths(canonicalID)
+			for _, root := range mergedRoots {
+				if _, taken := existing[root.Name]; taken {
+					continue
+				}
+				var addErr error
+				if root.Mapped() {
+					addErr = d.Store.AddGameRoot(canonicalID, root.Name, root.Path)
+				} else {
+					addErr = d.Store.NoteGameRoot(canonicalID, root.Name)
+				}
+				if addErr != nil {
+					d.Log.Log("warn", fmt.Sprintf(
+						"linking %q: could not carry over its %q save location: %v", aliasID, root.Name, addErr))
+				}
+			}
+		}
+
 		d.Watcher.Unwatch(aliasID)
 		if err := d.Store.DeleteGame(aliasID); err != nil {
 			return err
 		}
+		// The canonical game may have gained locations just now; its watch was
+		// set up before they existed.
+		d.RewatchGame(canonicalID)
 	}
 	return nil
 }
@@ -749,7 +782,7 @@ func (d *Daemon) UnlinkGame(aliasID string) error {
 		if _, err := d.Snapshots.Create(aliasID, "Restored after unlink", true); err != nil {
 			d.Log.Log("warn", fmt.Sprintf("restore snapshot for %q failed: %v", aliasID, err))
 		}
-		if err := d.Watcher.Watch(aliasID, restored.SavePath); err != nil {
+		if err := d.watchGame(aliasID, restored.SavePath); err != nil {
 			d.Log.Log("warn", fmt.Sprintf("could not watch restored %q: %v", aliasID, err))
 		}
 	}()
@@ -772,4 +805,38 @@ func (d *Daemon) untrackFromPeer(gameID string) {
 // device will accept the game again when the peer's sync-on-track arrives.
 func (d *Daemon) retrackFromPeer(gameID string) {
 	_ = d.Store.ClearUntrackedTombstone(gameID)
+}
+
+// watchGame starts watching a game's main save folder and every extra save
+// location it has.
+//
+// Every watch goes through here. A game watched on only its main folder looks
+// like it is working — right up until someone edits the folder that was not
+// watched and nothing happens: no snapshot, no sync, no message. Silence is
+// the worst failure this feature can have, because it is indistinguishable
+// from there being nothing to do.
+func (d *Daemon) watchGame(gameID, savePath string) error {
+	extra, err := d.Store.GameRootPaths(gameID)
+	if err != nil {
+		extra = nil // watch what we can rather than nothing
+	}
+	return d.Watcher.WatchWithLocations(gameID, savePath, extra)
+}
+
+// RewatchGame restarts a game's watch, picking up any change to its set of
+// save locations.
+//
+// Adding or removing a location does not change the game's main save path, so
+// the periodic watcher reconcile has nothing to notice — it compares paths.
+// Without this, a location added while the app is running is not watched until
+// the next restart, and a location removed keeps firing events for a folder
+// nobody is covering any more.
+func (d *Daemon) RewatchGame(gameID string) {
+	game, err := d.Store.GetGame(gameID)
+	if err != nil || !game.AutoSync {
+		return
+	}
+	if err := d.watchGame(game.ID, game.SavePath); err != nil {
+		d.Log.Log("warn", fmt.Sprintf("could not re-watch %q after its save locations changed: %v", game.Name, err))
+	}
 }

@@ -184,3 +184,30 @@ func (e *Engine) persistRootLineage(gameID, peerID, root string, local, remote d
 		e.Log("warn", fmt.Sprintf("persist lineage for the %q location failed: %v", root, err))
 	}
 }
+
+// contentHashOf is the "has anything about this game changed" value, spanning
+// every save location it has.
+//
+// It must agree with what the watcher records, because the two are compared
+// against each other: the watcher stores this after an auto-snapshot, and the
+// sync engine reads it back to decide whether the local save holds changes no
+// snapshot has captured. If one side counted the extra locations and the other
+// did not, a multi-location game would look like it had uncaptured changes
+// forever, and every single pull would raise a conflict over nothing.
+//
+// For a game with one folder it is exactly ManifestHash, so nothing recorded
+// before locations existed is invalidated.
+func (e *Engine) contentHashOf(gameID string, primary delta.Manifest, savePath string) string {
+	extra, err := e.Store.GameRootPaths(gameID)
+	if err != nil || len(extra) == 0 {
+		return primary.ManifestHash()
+	}
+	full, _, err := delta.BuildMultiManifest(savePath, extra)
+	if err != nil {
+		// Fall back to the primary-only value rather than a wrong one: it can
+		// cost a spurious conflict prompt, which is recoverable, where a made-up
+		// hash silently overwrites.
+		return primary.ManifestHash()
+	}
+	return full.ContentHash()
+}
