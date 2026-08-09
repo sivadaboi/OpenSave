@@ -39,6 +39,14 @@ Folders holding no files are hidden, since Steam creates one for every game
 you own whether or not saves go there.
 .B --all
 lists them too, for tracking a folder before the game has first saved to it.
+.IP
+Results are listed one game at a time. A game found in more than one place has
+its other folders indented beneath it, each labelled as part of the same save,
+as already inside the folder above, or as another copy \(em usually one an
+install left behind. Every folder still gets its own number, so
+.B add
+takes the one you are looking at; joining several to one game is
+.BR "locations add" .
 .TP
 .BI "add " "name path"
 Track a save folder or file.

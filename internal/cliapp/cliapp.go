@@ -310,10 +310,16 @@ func cmdScan(d *daemon.Daemon, args []string) int {
 		return 0
 	}
 
-	// Grouped by kind, because a flat list of 250 entries is unreadable.
-	byType := map[string][]presets.DiscoveredSave{}
-	for _, f := range found {
-		byType[f.Type] = append(byType[f.Type], f)
+	// One entry per game, its other folders underneath. A scan finds the same
+	// game several times over — different detection passes, so its rows are
+	// scattered rather than adjacent — and a flat list leaves working out
+	// which of 250 lines are the same title to the reader.
+	presets.Group(found)
+	groups := presets.Groups(found)
+
+	byType := map[string][][]presets.DiscoveredSave{}
+	for _, g := range groups {
+		byType[g[0].Type] = append(byType[g[0].Type], g)
 	}
 	labels := []struct{ kind, title string }{
 		{"game", "Games"}, {"emulator", "Emulators"}, {"repack", "Repacks"},
@@ -323,7 +329,7 @@ func cmdScan(d *daemon.Daemon, args []string) int {
 	// `add <n>` resolves.
 	var numbered []presets.DiscoveredSave
 
-	header := fmt.Sprintf("Auto-scan %s %d save location(s)", symDot(), len(found))
+	header := fmt.Sprintf("Auto-scan %s %d save location(s) in %d game(s)", symDot(), len(found), len(groups))
 	if hidden := total - len(found); hidden > 0 {
 		header += fmt.Sprintf(" %s %d empty hidden", symDot(), hidden)
 	}
@@ -334,11 +340,17 @@ func cmdScan(d *daemon.Daemon, args []string) int {
 			continue
 		}
 		fmt.Printf("\n  %s %s\n", faint(strings.ToUpper(l.title)), faint(fmt.Sprintf("(%d)", len(list))))
-		for _, f := range list {
-			numbered = append(numbered, f)
-			fmt.Printf("    %s %s\n", accent(fmt.Sprintf("[%d]", len(numbered))), bold(f.Name))
-			fmt.Printf("        %s\n", faint(f.SavePath))
-			fmt.Printf("        %s\n", faint(scanContents(f)))
+		for _, g := range list {
+			numbered = append(numbered, g[0])
+			fmt.Printf("    %s %s\n", accent(fmt.Sprintf("[%d]", len(numbered))), bold(g[0].Name))
+			fmt.Printf("        %s\n", faint(g[0].SavePath))
+			fmt.Printf("        %s\n", faint(scanContents(g[0])))
+			for _, m := range g[1:] {
+				numbered = append(numbered, m)
+				fmt.Printf("      %s %s %s\n",
+					accent(fmt.Sprintf("[%d]", len(numbered))), faint(roleNote(m.Role)), faint(m.SavePath))
+				fmt.Printf("           %s\n", faint(scanContents(m)))
+			}
 		}
 	}
 
@@ -353,12 +365,45 @@ func cmdScan(d *daemon.Daemon, args []string) int {
 		"opensave add <number>          track one of these",
 		"opensave add <name> <path>     track something else",
 	}
+	// Only worth saying when the listing actually shows a split save. `add`
+	// stays one folder per call — the number you type is the folder you are
+	// looking at — so joining them up is a second, explicit step.
+	if countRole(found, presets.RoleLocation) > 0 {
+		hints = append(hints, "opensave locations add <id> <name> <path>",
+			"                               join a game's other folders to it")
+	}
 	if !showEmpty && emptyCount > 0 {
 		hints = append(hints, fmt.Sprintf("opensave scan --all            also show %d empty folder(s)", emptyCount))
 	}
 	hint(hints...)
 	fmt.Println()
 	return 0
+}
+
+// roleNote labels a folder listed under the game it belongs to. Written for
+// someone who did not ask why the same game appears twice, so each says what
+// to do about it rather than naming the category.
+func roleNote(role string) string {
+	switch role {
+	case presets.RoleLocation:
+		return "part of the same save:"
+	case presets.RoleInside:
+		return "inside the folder above:"
+	case presets.RoleAlternative:
+		return "another copy, probably an old install:"
+	default:
+		return "also:"
+	}
+}
+
+func countRole(saves []presets.DiscoveredSave, role string) int {
+	n := 0
+	for _, s := range saves {
+		if s.Role == role {
+			n++
+		}
+	}
+	return n
 }
 
 // scanContents renders one location's size and age: what is in the folder,

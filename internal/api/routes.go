@@ -625,6 +625,9 @@ func (s *Server) handlePresetScan(w http.ResponseWriter, r *http.Request) {
 	// client hides them behind a toggle, and deciding that here would take
 	// away the only way to reach a folder a game has not written to yet.
 	presets.Measure(found)
+	// After measuring: which folder of a game is the one to track depends on
+	// which of them hold anything and when they were last written.
+	presets.Group(found)
 	if found == nil {
 		found = []presets.DiscoveredSave{} // never null on the wire
 	}

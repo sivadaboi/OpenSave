@@ -23,6 +23,25 @@ detected in three or four places — the Steam folder, wherever the launcher put
 it, and one left behind by an install you have moved on from — and the one
 with a recent date is the live save.
 
+**One tile per game.** When a game is found in several places you get a single
+tile with **found in N folders** underneath it. Click that to see them all,
+each labelled with what OpenSave thinks it is:
+
+| Label | What it means |
+|---|---|
+| **the save folder** | the one to track — the freshest of the group |
+| **part of the same save** | sits beside the save folder and holds another piece of it. Ticked by default, tracked as one game |
+| **another copy — probably an old install** | the same game somewhere unrelated. Not ticked; tick it if it is the one you actually play |
+| **already inside the folder above** | covered already, so it cannot be ticked |
+
+Clicking a tile ticks the save folder plus anything marked *part of the same
+save*, and **Track** adds them as one game with extra locations — not as
+several games that share a name. Open the list to overrule any of it.
+
+If OpenSave puts two folders in different tiles when they are really one game
+— it has nothing to match on when the names differ and there is no Steam AppID
+— tick both and use **Track as one game** at the bottom.
+
 Folders holding no files are hidden, because Steam creates one for every game
 you own whether or not saves go there; on a typical library that is a fifth of
 the results. Tick **Show N empty** in the scan toolbar to see them, which is
