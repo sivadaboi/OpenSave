@@ -610,7 +610,27 @@ func TestIgnore_ExcludingAnAlreadySyncedFileNeverDeletesIt(t *testing.T) {
 // exclusion should not be asked about a divergence that does not exist, so
 // this is a real defect and not a test artefact.
 func TestIgnore_AddingARuleLaterShouldNotHoldUpTheSave(t *testing.T) {
-	t.Skip("known: adding an exclusion to an already-synced file can raise one spurious conflict; the file itself is never lost")
+	a, b, gameID := pairAndTrack(t, "IgnoreLaterSync", map[string]string{
+		"Progress.gs": "v1",
+		"Config.gs":   "shared before the rule",
+	})
+	setIgnore(t, a, gameID, "Config.gs")
+	setIgnore(t, b, gameID, "Config.gs")
+
+	time.Sleep(syncSettleWindow)
+	a.WriteSave("Progress.gs", "v2")
+	time.Sleep(syncSettleWindow)
+	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		return b.ReadSave("Progress.gs") == "v2"
+	}) {
+		t.Fatalf("adding an exclusion held the save up: peer still has %q — a rule change must not read as a divergence",
+			b.ReadSave("Progress.gs"))
+	}
+	if got := b.ReadSave("Config.gs"); got != "shared before the rule" {
+		t.Errorf("the excluded file changed on the peer: %q", got)
+	}
 }
 
 // Exclusions govern syncing only. Snapshots keep everything, because

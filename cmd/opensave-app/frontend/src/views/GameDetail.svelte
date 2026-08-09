@@ -38,7 +38,8 @@
       coverUrl: game.coverUrl ?? '',
       autoSync: game.autoSync ?? true,
       maxSnapshots: game.maxSnapshots ?? 5,
-      maxManualSnapshots: game.maxManualSnapshots ?? 0
+      maxManualSnapshots: game.maxManualSnapshots ?? 0,
+      syncIgnore: game.syncIgnore ?? ''
     };
   }
   // Cover preview for the config editor: a custom URL wins, else the proxied
@@ -313,7 +314,8 @@
         coverUrl: cfg.coverUrl,
         autoSync: cfg.autoSync,
         maxSnapshots: Number(cfg.maxSnapshots),
-        maxManualSnapshots: Number(cfg.maxManualSnapshots)
+        maxManualSnapshots: Number(cfg.maxManualSnapshots),
+        syncIgnore: cfg.syncIgnore ?? ''
       })
     );
   }
@@ -614,6 +616,31 @@
             <span class="hint">
               Snapshots you took yourself get their own budget, so a game that auto-saves often
               can't push them out. <strong>0 = keep forever</strong> (the default).
+            </span>
+          </div>
+          <div class="excludes">
+            <h4>Files that shouldn't sync</h4>
+            <p class="hint">
+              Some games keep device-specific settings in the same folder as the save, and copying
+              those to another machine can break the game there. List them here and they stay put:
+              never sent, never received, never deleted by a sync.
+            </p>
+            <textarea
+              class="exclude-box"
+              rows="4"
+              spellcheck="false"
+              placeholder={'Config.gs\n*.log\nlogs/'}
+              bind:value={cfg.syncIgnore}
+            ></textarea>
+            <span class="hint">
+              One pattern per line, like a <code>.gitignore</code> — <code>Config.gs</code> by name,
+              <code>/Config.gs</code> only at the top, <code>*.log</code> by extension,
+              <code>logs/</code> for a whole folder, <code>!keep.log</code> for an exception. Case
+              doesn't matter. Set the same list on your other devices; each one applies its own.
+            </span>
+            <span class="hint">
+              <strong>Snapshots still capture these files</strong>, so a restore brings them back —
+              excluding something stops it travelling, it never stops it being backed up.
             </span>
           </div>
           <div class="locations">
@@ -1185,6 +1212,36 @@
   }
   .config-fields .field {
     margin-bottom: 14px;
+  }
+  .excludes {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .excludes h4 {
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .exclude-box {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+  }
+  .exclude-box:focus {
+    border-color: var(--accent);
+  }
+  .excludes .hint + .hint {
+    margin-top: 6px;
   }
   .locations {
     margin-top: 18px;
