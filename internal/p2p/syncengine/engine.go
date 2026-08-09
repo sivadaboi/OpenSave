@@ -231,9 +231,11 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	// not exist: it cannot be pulled, pushed, deleted, or counted into a merge
 	// base. See ignore.go for why filtering the manifest at build time instead
 	// would propagate a deletion of the very file being protected.
-	if rules := e.rulesFor(gameID); !rules.Empty() {
-		localManifest = filterManifest(localManifest, rules)
-		remoteData.Manifest = filterManifest(remoteData.Manifest, rules)
+	ignoreRules := e.rulesFor(gameID)
+	unfilteredLocal, unfilteredRemote := localManifest, remoteData.Manifest
+	if !ignoreRules.Empty() {
+		localManifest = filterManifest(localManifest, ignoreRules)
+		remoteData.Manifest = filterManifest(remoteData.Manifest, ignoreRules)
 	}
 
 	// 3. Existing unresolved conflict blocks further syncing.
@@ -293,6 +295,26 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 		if remoteHash := remoteData.Manifest.ManifestHash(); agreedHash != remoteHash && remoteHash == pushed {
 			_ = e.Store.SetAgreedHash(gameID, peer.ID, remoteHash)
 			agreedHash = remoteHash
+		}
+	}
+
+	// A merge base recorded before the exclusion rules existed was hashed over
+	// the whole save, so it cannot equal either side's filtered hash — and a
+	// base that matches neither side reads as both having moved: a conflict on
+	// the first sync after anyone adds a rule.
+	//
+	// Rewriting the base when the rules change is not enough on its own,
+	// because an in-flight sync can record an unfiltered one straight
+	// afterwards. Translating it here needs no such timing to hold: if a
+	// side's UNFILTERED state still hashes to the base then that side has not
+	// changed since, whichever view the base was written in, and its filtered
+	// hash is the same fact expressed in today's terms.
+	if !ignoreRules.Empty() && agreedHash != "" {
+		switch agreedHash {
+		case unfilteredLocal.ManifestHash():
+			agreedHash = localManifest.ManifestHash()
+		case unfilteredRemote.ManifestHash():
+			agreedHash = remoteData.Manifest.ManifestHash()
 		}
 	}
 

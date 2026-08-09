@@ -79,6 +79,7 @@ var commandGroups = []commandGroup{
 		{"unlink <aliasId>", "Undo a link"},
 		{"links <gameId>", "Show ids linked to a game"},
 		{"locations <gameId>", "Extra save folders belonging to a game"},
+		{"ignore <gameId>", "Files in a save folder that should not sync"},
 	}},
 	{"Service", []commandEntry{
 		{"daemon start [--port N]", "Run the daemon (REST API + watcher)"},

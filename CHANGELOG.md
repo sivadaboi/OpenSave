@@ -7,6 +7,20 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **Files that shouldn't sync can be excluded per game.** Some games keep
+  device-specific settings in the same folder as the save — Neva keeps
+  `Config.gs` beside `Progress.gs` — and copying those to another machine can
+  break the game there. The folder cannot be narrowed without losing the save,
+  so the exclusion has to be per file. List them under **Configuration ->
+  Files that shouldn't sync**, one per line, written like a `.gitignore`:
+  names, `*` wildcards, `logs/` for a folder, `!` for an exception. Matching
+  ignores case, so a rule written on a PC keeps working on a Steam Deck. Each
+  device applies its own list, and a device without one is unaffected.
+  **Snapshots still capture excluded files**, so a restore brings them back —
+  excluding something stops it travelling, never stops it being backed up.
+  From the command line, `opensave ignore <gameId> add <pattern>`, and
+  `opensave ignore <gameId> test <path>` answers "would this sync?" without
+  waiting to find out on the other device. Requested by RrOoSsSsOo.
 - **A game whose save is split across folders is one game again.** Plenty of
   titles keep their save data in one place and their settings or mods in
   another, and the only way to cover both was to track the same game twice:

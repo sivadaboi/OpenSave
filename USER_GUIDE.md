@@ -38,6 +38,34 @@ opensave locations add <gameId> config "C:/Users/me/Documents/Game"
 opensave locations remove <gameId> config
 ```
 
+### Files that shouldn't sync
+
+Some games keep device-specific settings in the same folder as the save, and
+copying those to another machine can break the game there. Open the game, go
+to **Configuration -> Files that shouldn't sync**, and list them one per line,
+like a `.gitignore`:
+
+```
+Config.gs      # a file of that name, at any depth
+/Config.gs     # only at the top of the save folder
+*.log          # by extension
+logs/          # a folder and everything in it
+!keep.log      # an exception to an earlier line
+```
+
+Matching ignores case. Set the same list on your other devices -- each applies
+its own, and a device without the list is unaffected.
+
+**Snapshots still capture these files**, so a restore brings them back.
+Excluding something stops it travelling between devices; it never stops it
+being backed up. From the command line:
+
+```
+opensave ignore <gameId>
+opensave ignore <gameId> add Config.gs
+opensave ignore <gameId> test Config.gs      # would this sync?
+```
+
 ## 2. Snapshots & restore
 
 Every time a save changes, OpenSave takes a **snapshot** automatically (only

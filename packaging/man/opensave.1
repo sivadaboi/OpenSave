@@ -152,6 +152,26 @@ Undo a link, restoring the merged game as its own entry.
 .BI "links " gameId
 Show the ids linked to a game.
 .TP
+.BI "ignore " gameId
+List the files excluded from syncing for a game.
+.TP
+.BI "ignore " "gameId add|remove pattern..."
+Stop, or resume, syncing files matching a pattern. Patterns are written like
+a .gitignore: a bare name matches at any depth, a leading / anchors to the top
+of the save folder, a trailing / means a folder and its contents, and a leading
+! re-includes something an earlier line excluded. Matching ignores case.
+.IP
+These rules decide what SYNCS and nothing else \(em excluded files are still
+captured in snapshots and restored by rollbacks, so an exclusion can never be
+the thing that loses one. Each device applies its own list; set the same
+patterns on both.
+.TP
+.BI "ignore " "gameId clear"
+Remove every pattern.
+.TP
+.BI "ignore " "gameId test path..."
+Report whether each path would sync under the current rules.
+.TP
 .BI "locations " gameId
 List a game's save locations \(em its main folder plus any extra ones.
 .TP

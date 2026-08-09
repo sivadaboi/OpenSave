@@ -25,6 +25,7 @@ var subCommands = map[string][]string{
 	"backup":    {"export", "import"},
 	"config":    {"list", "set"},
 	"locations": {"add", "remove"},
+	"ignore":    {"add", "remove", "clear", "test"},
 }
 
 func cmdCompletion(args []string) int {
@@ -118,6 +119,7 @@ func fishCompletion() string {
 		"exclude": "Folders to skip when scanning", "link": "Treat two games as one",
 		"unlink": "Undo a link", "links": "Show linked ids", "config": "Read/write settings",
 		"locations": "Extra save folders for a game",
+		"ignore":    "Files that should not sync",
 		"daemon":    "Run or control the daemon", "service": "Install as a service",
 		"upnp": "Forward a router port", "version": "Print the version", "help": "Show help",
 	}
