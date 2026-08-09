@@ -298,12 +298,33 @@ A headless box has no update banner to click, which is why this exists.
 ```bash
 opensave config                                   # show everything
 opensave config set device-name "Living Room PC"
+opensave config set port 8390                     # local API + peer port (default 8383)
 opensave config set relay-url wss://relay.example.com
 opensave config set snapshot-limit 20             # automatic snapshots kept per branch
 opensave config set manual-snapshot-limit 0       # 0 = keep yours forever (the default)
 opensave config set match-by-app-id true
 opensave config set update-channel beta
 ```
+
+### When 8383 is taken
+
+Something else on the machine may already have that port — most often a second
+OpenSave. Three ways out, depending on how permanent you want it:
+
+```bash
+opensave daemon status                  # is one already running?
+opensave daemon start --port 8390       # this run only
+opensave daemon start --port auto       # any free port the system has
+opensave config set port 8390           # for good; takes effect next start
+```
+
+Whatever port it ends up on is written to `~/.opensave/daemon.addr`, and the
+CLI reads that — so `--port auto` does not leave you having to tell it where
+the daemon went.
+
+Note that this port is also how **other devices reach this one** over the LAN.
+Changing it means the address you give to `opensave pair <host:port>` changes
+with it.
 
 Per game:
 
