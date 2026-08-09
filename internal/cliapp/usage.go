@@ -23,7 +23,7 @@ type commandGroup struct {
 
 var commandGroups = []commandGroup{
 	{"Games", []commandEntry{
-		{"scan", "Auto-detect game saves on this machine"},
+		{"scan [--all]", "Auto-detect game saves (--all includes empty folders)"},
 		{"add <name> <path>", "Track a game save folder or file"},
 		{"add <number>", "Track one of the last scan's results"},
 		{"remove <gameId>", "Stop tracking a game"},

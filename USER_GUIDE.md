@@ -15,6 +15,20 @@ games:
 - **+ Track folder** — point OpenSave at any save folder or single save file
   manually.
 
+### Reading the scan results
+
+Each result shows how many files the folder holds, how big it is, and when it
+was last written. That last one is the useful one: the same game is often
+detected in three or four places — the Steam folder, wherever the launcher put
+it, and one left behind by an install you have moved on from — and the one
+with a recent date is the live save.
+
+Folders holding no files are hidden, because Steam creates one for every game
+you own whether or not saves go there; on a typical library that is a fifth of
+the results. Tick **Show N empty** in the scan toolbar to see them, which is
+worth doing if you want to track a game before it has saved for the first
+time. From the command line, `opensave scan --all` does the same.
+
 Tracked games appear in the sidebar and on the Home grid.
 
 ### A game whose save is split across folders

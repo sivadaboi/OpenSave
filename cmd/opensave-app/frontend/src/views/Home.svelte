@@ -80,6 +80,11 @@
   let selected = new Set();
   let selectedCount = 0; // reactive mirror of selected.size
   let showTracked = false; // include saves already being tracked
+  // Folders with nothing in them are hidden by default — a fifth of a real
+  // machine's results, mostly userdata shells Steam creates for every game
+  // you own. Kept reachable, since tracking a folder before the game's first
+  // save is a legitimate thing to want.
+  let showEmpty = false;
 
   async function scan() {
     scanning = true;
@@ -133,7 +138,18 @@
   const isTracked = (r) => trackedPaths.has(normPath(r.savePath));
   // Note: reference trackedPaths directly (not via isTracked) so Svelte sees
   // it as a dependency and refreshes the list when tracked-state changes.
-  $: filteredResults = (scanResults ?? []).filter((r) => {
+  // A folder holding no files. Mirrors DiscoveredSave.IsEmpty in Go, and the
+  // `measured` half matters: a location the daemon could not read reports
+  // zero files, and hiding one of those would take a real save off the list.
+  const isEmptyResult = (r) => r.measured && r.fileCount === 0;
+
+  // Everything the type tabs and the counts describe. Empty folders are out
+  // of the pool entirely unless asked for, so the tab counts match what the
+  // grid shows rather than counting rows nobody can see.
+  $: scanPool = (scanResults ?? []).filter((r) => showEmpty || !isEmptyResult(r));
+  $: emptyCount = (scanResults ?? []).filter(isEmptyResult).length;
+
+  $: filteredResults = scanPool.filter((r) => {
     if (!showTracked && trackedPaths.has(normPath(r.savePath))) return false;
     if (scanType !== 'all' && r.type !== scanType) return false;
     if (scanFilter && !`${r.name} ${r.savePath}`.toLowerCase().includes(scanFilter.toLowerCase())) return false;
@@ -147,11 +163,46 @@
   $: orderedResults = [...availableResults, ...trackedResults];
   $: shownAvailable = availableResults.length;
   $: scanCounts = {
-    all: (scanResults ?? []).length,
-    emulator: (scanResults ?? []).filter((r) => r.type === 'emulator').length,
-    repack: (scanResults ?? []).filter((r) => r.type === 'repack').length,
-    game: (scanResults ?? []).filter((r) => r.type === 'game').length
+    all: scanPool.length,
+    emulator: scanPool.filter((r) => r.type === 'emulator').length,
+    repack: scanPool.filter((r) => r.type === 'repack').length,
+    game: scanPool.filter((r) => r.type === 'game').length
   };
+
+  // ── What's actually in a detected folder ─────────────────────────
+  // Size and age are how you tell a save still in use from one an install
+  // left behind — the same game is often detected in three places, and only
+  // one of them is live.
+  function fmtBytes(n) {
+    if (!n) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) {
+      n /= 1024;
+      i++;
+    }
+    return `${i === 0 ? n : n.toFixed(1)} ${units[i]}`;
+  }
+
+  // Deliberately rough. The question is "is this folder still in use", and a
+  // date is something you have to do arithmetic on to answer it.
+  function fmtAge(unix) {
+    if (!unix) return 'never';
+    const secs = Date.now() / 1000 - unix;
+    if (secs < 60) return 'just now';
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+    if (secs < 86400 * 365) return `${Math.floor(secs / 86400)}d ago`;
+    const years = secs / 86400 / 365;
+    return years < 2 ? 'over a year ago' : `${Math.round(years)} years ago`;
+  }
+
+  function contentsLabel(r) {
+    if (!r.measured) return 'size unknown';
+    if (r.fileCount === 0) return 'empty — nothing saved here yet';
+    const files = `${r.fileCount}${r.truncated ? '+' : ''} file${r.fileCount === 1 ? '' : 's'}`;
+    return `${files} · ${fmtBytes(r.totalBytes)} · ${fmtAge(r.latestMtime)}`;
+  }
 
   function toggleSelect(id) {
     if (selected.has(id)) selected.delete(id);
@@ -309,7 +360,7 @@
         <div>
           <h2>🔍 Auto-scan results</h2>
           <p class="scan-modal-sub">
-            {#if scanning}Scanning your system…{:else}Found {scanCounts.all} save location{scanCounts.all === 1 ? '' : 's'} — {shownAvailable} available to track{/if}
+            {#if scanning}Scanning your system…{:else}Found {scanCounts.all} save location{scanCounts.all === 1 ? '' : 's'} — {shownAvailable} available to track{#if emptyCount > 0 && !showEmpty}, {emptyCount} empty hidden{/if}{/if}
           </p>
         </div>
         <button class="btn icon" on:click={closeScan} title="Close">✕</button>
@@ -331,6 +382,12 @@
             <input type="checkbox" bind:checked={showTracked} />
             Show tracked
           </label>
+          {#if emptyCount > 0}
+            <label class="scan-show-tracked" title="Folders that exist but hold no files. Steam creates one for every game you own, whether or not saves go there.">
+              <input type="checkbox" bind:checked={showEmpty} />
+              Show {emptyCount} empty
+            </label>
+          {/if}
         </div>
 
         <div class="scan-modal-list">
@@ -345,6 +402,7 @@
                 class="cover-tile"
                 class:sel={selected.has(item.id)}
                 class:tracked={isTracked(item)}
+                class:empty-result={isEmptyResult(item)}
                 on:click={() => !isTracked(item) && toggleSelect(item.id)}
                 on:keydown={(e) => !isTracked(item) && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleSelect(item.id))}
                 role="button"
@@ -387,6 +445,7 @@
                   {/if}
                 </div>
                 <div class="cover-name" title={item.name}>{item.name}</div>
+                <div class="cover-meta" title={item.savePath}>{contentsLabel(item)}</div>
               </div>
             {:else}
               <div class="scan-empty">
@@ -834,6 +893,23 @@
   }
   .cover-tile.sel .cover-name {
     color: var(--text);
+  }
+  .cover-meta {
+    margin-top: 2px;
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* An empty folder is shown greyed rather than removed: it is still
+     trackable on purpose, for a game that has not saved yet. */
+  .cover-tile.empty-result .cover-art {
+    opacity: 0.45;
+  }
+  .cover-tile.empty-result .cover-meta {
+    font-style: italic;
   }
   .scan-empty {
     grid-column: 1 / -1;

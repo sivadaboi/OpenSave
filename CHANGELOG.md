@@ -7,6 +7,26 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **Auto-scan says what is actually in each folder, and hides the ones holding
+  nothing.** Every result now shows its file count, its size, and when it was
+  last written. The last of those is the one that earns its place: the same
+  game is routinely detected in three or four places at once — the Steam
+  folder, wherever the launcher wrote it, and one left behind by an install
+  that has moved on — and until now there was nothing on screen to say which
+  was the live save. On the library this was built against, 24 of the 30 games
+  found in more than one place had over two months between the freshest folder
+  and the stalest.
+
+  Folders holding no files are hidden by default, because Steam creates one
+  for every game you own whether or not saves go there. That was 48 of 235
+  results — a fifth of the list, all of it rows nobody could use. **Show N
+  empty** in the scan toolbar brings them back, for tracking a game before it
+  has saved for the first time, and `opensave scan --all` is the same thing.
+
+  A folder that could not be read is reported as unknown, never as empty, and
+  is never hidden. Measuring can fail — an unreadable subfolder, a path the
+  walk chokes on — and a folder we failed to look inside is exactly the one
+  that must stay on the list.
 - **Files that shouldn't sync can be excluded per game.** Some games keep
   device-specific settings in the same folder as the save — Neva keeps
   `Config.gs` beside `Progress.gs` — and copying those to another machine can

@@ -28,9 +28,17 @@ Emit machine\-readable JSON instead of formatted text. Accepted by every
 command, for use in scripts.
 .SH GAMES
 .TP
-.B scan
+.BR scan " [" --all ]
 Auto\-detect game saves on this machine: Steam libraries, Proton prefixes,
-emulators, and thousands of titles from the Ludusavi manifest.
+emulators, and thousands of titles from the Ludusavi manifest. Each result
+shows how many files the folder holds, how big it is, and when it was last
+written \(em which is what tells a save still in use from one an install left
+behind.
+.IP
+Folders holding no files are hidden, since Steam creates one for every game
+you own whether or not saves go there.
+.B --all
+lists them too, for tracking a folder before the game has first saved to it.
 .TP
 .BI "add " "name path"
 Track a save folder or file.
