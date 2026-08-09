@@ -422,5 +422,7 @@ way to get an answer, and where new builds get discussed before they ship.
 Bugs and feature requests are welcome on
 [GitHub issues](https://github.com/Liquid-co/OpenSave/issues).
 
-Next: the [User Guide](USER_GUIDE.md) is the full reference — every setting,
-every command, and what each one changes.
+Next: the [User Guide](USER_GUIDE.md) is the full reference — every setting and
+what it changes. If you would rather drive OpenSave from a terminal, or you are
+setting up a headless machine, the [CLI guide](docs/CLI.md) covers that end to
+end.
