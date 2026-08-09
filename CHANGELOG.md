@@ -58,6 +58,21 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **A one-command relay installer.** Self-hosting meant fetching a binary,
+  writing a systemd unit, opening a port, and — for the encryption clients
+  default to — a reverse proxy with the two WebSocket settings everyone
+  misses. All of it identical on every machine, which makes it a script's job.
+  `packaging/relay/install-relay.sh` does the lot, takes `--domain` to get a
+  certificate automatically via Caddy, prints the relay URL and the exact
+  client commands when it finishes, and `--uninstall` reverses it.
+
+  It runs as root, so two things are not optional: the download is verified
+  against the release's `SHA256SUMS` before anything is installed, and
+  `--dry-run` prints every change it would make — the systemd unit included —
+  without privileges and without touching the machine. It cannot point DNS at
+  your server; that is the one step only your registrar can do, and without it
+  the relay serves plain `ws://` and says so.
+
 - **`OPENSAVE_RELAY_URL` pins the relay from the environment.** Settings live
   in SQLite, which is awkward for a machine that is provisioned rather than
   configured — a container, or an image rebuilt onto a fresh volume, where
