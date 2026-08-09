@@ -28,6 +28,12 @@ type DiscoveredSave struct {
 	TotalBytes  int64 `json:"totalBytes"`
 	LatestMtime int64 `json:"latestMtime"` // unix seconds; 0 when there are no files
 	Truncated   bool  `json:"truncated"`   // counting stopped at a cap, so the numbers are a floor
+
+	// Which game this row belongs to, and what it is within that game, filled
+	// in by Group. Rows sharing a GroupID are the same game found more than
+	// once. See group.go.
+	GroupID string `json:"groupId"`
+	Role    string `json:"role"`
 }
 
 type preset struct {

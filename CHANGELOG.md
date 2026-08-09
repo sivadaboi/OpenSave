@@ -27,6 +27,27 @@ All notable changes to OpenSave are documented here. This project adheres to
   is never hidden. Measuring can fail — an unreadable subfolder, a path the
   walk chokes on — and a folder we failed to look inside is exactly the one
   that must stay on the list.
+- **Auto-scan shows one tile per game, not one per folder.** A game found in
+  several places used to produce several rows, scattered through the list
+  rather than adjacent, because each came from a different detection pass.
+  They are one tile now, with **found in N folders** underneath; opening it
+  labels each folder with what it is.
+
+  The labels matter more than the collapsing, because the duplicates are not
+  one thing. A folder **inside** another is the same files seen twice, and
+  cannot be tracked separately at all — two locations over one set of files
+  fight over them. A folder **beside** the save folder is another piece of the
+  same save, and those are now offered together as one game with extra
+  locations: TrackMania's Scores, Tracks and Profiles go in with one click.
+  A folder somewhere unrelated is **another copy**, usually left by an install
+  you have moved on from, and is offered but never assumed.
+
+  Two folders are only treated as one game when they share a Steam AppID, or a
+  name specific enough to mean something. Rows called "Saves" or "User Data"
+  are left alone: grouping on a name that could belong to anything would merge
+  unrelated titles, which is the one mistake here that ends with a save in a
+  folder nobody chose. When the grouping does miss a pair, ticking both and
+  choosing **Track as one game** overrides it.
 - **Files that shouldn't sync can be excluded per game.** Some games keep
   device-specific settings in the same folder as the save — Neva keeps
   `Config.gs` beside `Progress.gs` — and copying those to another machine can
