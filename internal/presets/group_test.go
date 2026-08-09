@@ -2,6 +2,7 @@ package presets
 
 import (
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -251,5 +252,49 @@ func TestGroups_SplitsAndOrdersWithinAGroup(t *testing.T) {
 	}
 	if tm[len(tm)-1].Role != RoleInside {
 		t.Errorf("already-covered folders belong last, got %q", tm[len(tm)-1].Role)
+	}
+}
+
+// Windows reports the same folder with whatever case the caller used, and
+// different detection passes produce different casing for one path. The
+// nesting check has to see through that, or the inner folder is offered as a
+// separate location — which the roots API then refuses, leaving someone with
+// a suggestion that cannot be acted on.
+func TestGroup_NestingIsCaseInsensitiveOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
+		t.Skip("only case-insensitive filesystems compare paths this way")
+	}
+	saves := []DiscoveredSave{
+		mk("outer", "Repo", "3241660", filepath.Join("C:", "LocalLow", "semiwork", "REPO"), 5, 1),
+		mk("inner", "Repo", "3241660", filepath.Join("C:", "LocalLow", "semiwork", "Repo", "saves"), 4, 1),
+	}
+	Group(saves)
+
+	got := rolesByID(saves)
+	if got["inner"] != RoleInside {
+		t.Errorf("inner = %q, want %q — REPO and Repo are the same folder", got["inner"], RoleInside)
+	}
+}
+
+// Group must cope with the shapes a real scan produces at its extremes.
+func TestGroup_EmptyAndSingleInputs(t *testing.T) {
+	Group(nil)                // must not panic
+	Group([]DiscoveredSave{}) // must not panic
+
+	// A row with no name and no AppID cannot be grouped with anything, and
+	// must still come out usable rather than sharing a bucket with every
+	// other nameless row.
+	saves := []DiscoveredSave{
+		{ID: "a", SavePath: filepath.Join("C:", "one")},
+		{ID: "b", SavePath: filepath.Join("C:", "two")},
+	}
+	Group(saves)
+	if saves[0].GroupID == saves[1].GroupID {
+		t.Error("two nameless rows were grouped together")
+	}
+	for _, s := range saves {
+		if s.Role != RoleOnly || s.GroupID == "" {
+			t.Errorf("%s: role=%q group=%q, want a lone group", s.ID, s.Role, s.GroupID)
+		}
 	}
 }

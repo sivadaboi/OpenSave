@@ -751,3 +751,49 @@ func TestIgnore_AppliesToExtraLocationsToo(t *testing.T) {
 		t.Errorf("deleting A's excluded config deleted B's copy too: %q", got)
 	}
 }
+
+// The promise the whole exclusion feature rests on: a rule stops a file
+// travelling, and never stops it being backed up. Rollback empties a folder
+// before putting the snapshot back, so a file left out of snapshots would be
+// destroyed by the first restore — and the folders that just started applying
+// exclusions are exactly the ones where that has never been checked.
+func TestIgnore_ExcludedFilesInExtraLocationsAreStillSnapshotted(t *testing.T) {
+	td := testutil.NewTestDaemon(t, "IgnoreSnap")
+	td.WriteSave("save.dat", "v1")
+	gameID := td.TrackGame("IgnoreSnap")
+
+	cfg := extraDir(t, td, "config")
+	writeIn(t, cfg, "settings.ini", "shared v1")
+	writeIn(t, cfg, "Config.gs", "this machine only")
+	addRoot(t, td, gameID, "config", cfg)
+	setIgnore(t, td, gameID, "Config.gs")
+	time.Sleep(syncSettleWindow)
+
+	var snap struct {
+		ID string `json:"id"`
+	}
+	td.API(http.MethodPost, "/api/games/"+gameID+"/snapshot",
+		map[string]string{"comment": "with an excluded file in a location"}, &snap)
+	if snap.ID == "" {
+		t.Fatal("no snapshot id")
+	}
+
+	// Wreck everything, including the excluded file.
+	td.WriteSave("save.dat", "ruined")
+	writeIn(t, cfg, "settings.ini", "ruined")
+	writeIn(t, cfg, "Config.gs", "ruined")
+
+	td.API(http.MethodPost, "/api/games/"+gameID+"/rollback",
+		map[string]string{"snapshotId": snap.ID}, nil)
+
+	if got := td.ReadSave("save.dat"); got != "v1" {
+		t.Errorf("main save after rollback = %q", got)
+	}
+	if got := readIn(cfg, "settings.ini"); got != "shared v1" {
+		t.Errorf("the location's synced file was not restored: %q", got)
+	}
+	if got := readIn(cfg, "Config.gs"); got != "this machine only" {
+		t.Errorf("the EXCLUDED file in the extra location was not restored: %q — "+
+			"rollback empties the folder first, so anything missing from the snapshot is destroyed", got)
+	}
+}

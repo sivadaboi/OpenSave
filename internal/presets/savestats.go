@@ -124,6 +124,14 @@ func measureOne(path string, deadline time.Time) (count int, bytes int64, latest
 			}
 			return nil
 		}
+		// A junction is not a directory as far as Go is concerned, so without
+		// this it falls through and is counted as a file — inflating the
+		// count, and letting a folder holding nothing but a junction look
+		// like it holds a save. delta.BuildManifest skips these for the same
+		// reason, and the two numbers are read side by side.
+		if d.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return nil
+		}
 		if d.IsDir() {
 			return nil
 		}
