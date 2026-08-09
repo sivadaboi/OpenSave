@@ -64,6 +64,16 @@ All notable changes to OpenSave are documented here. This project adheres to
   type — so a rule can be checked before it is trusted, rather than after.
   Patterns still matter for files that do not exist yet, like `*.log`; this
   is a way in, not a replacement.
+- **A CLI guide and a relay guide.** The command reference has always listed
+  what exists; neither said where a command belongs. Somebody self-hosting a
+  relay had the container running and asked for the command to join the room
+  from the CLI *on the relay* — a question with no answer, because the relay
+  is a passive broker and joining is something gaming devices do. Both guides
+  now lead with that: [`docs/CLI.md`](docs/CLI.md) opens on which machine runs
+  what and which commands need a daemon, then gives worked sequences for
+  pairing, internet sync, headless setup, snapshots, split saves, exclusions
+  and scripting; [`docs/RELAY.md`](docs/RELAY.md) covers self-hosting, TLS,
+  and the reverse-proxy settings WebSockets need.
 - **A Getting Started guide**, for people who have not used OpenSave before:
   the whole thing from a fresh install, explaining each term as it arrives,
   including how to read a scan result, what to do when two devices disagree,

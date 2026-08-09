@@ -185,7 +185,12 @@ No account, no token, no server to sign up to.
 </p>
 
 Run `opensave` on its own and it tells you what is happening right now, and what
-to do next. There is a fuller walkthrough on the
+to do next.
+
+**[→ Full CLI guide](docs/CLI.md)** — the daemon model, which machine each
+command belongs on, and worked sequences for pairing, internet sync, running
+headless, snapshots, split saves and scripting. The tables below are the
+summary; that is the walkthrough. There is also one on the
 [website](https://open-save.vercel.app/cli.html).
 
 ### Install
@@ -471,6 +476,8 @@ Issues and pull requests are welcome. Please run `go test ./...` before opening 
 
 - [Getting Started](GETTING_STARTED.md) — start here if OpenSave is new to you. The whole thing from a fresh install, in plain language
 - [User Guide](USER_GUIDE.md) — the reference: every feature, what each setting does, troubleshooting
+- [Command line](docs/CLI.md) — the CLI end to end: the daemon model, which machine each command runs on, task-by-task sequences, scripting
+- [Running your own relay](docs/RELAY.md) — self-hosting, TLS, and the reverse-proxy settings WebSockets need
 - [Changelog](CHANGELOG.md) — release notes
 - [Privacy](PRIVACY.md) — what OpenSave does and doesn't do with your data
 
