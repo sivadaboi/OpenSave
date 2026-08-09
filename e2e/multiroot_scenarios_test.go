@@ -679,3 +679,75 @@ func TestIgnore_ExcludedFilesAreStillSnapshottedAndRestored(t *testing.T) {
 		t.Errorf("the excluded file was not in the snapshot (%q) — restoring would have destroyed it", got)
 	}
 }
+
+// An exclusion covers every one of a game's folders, not just the main one.
+//
+// It did not, and nothing said so. A rule protected the save folder and was
+// ignored for the extra locations, so a device-specific config living in a
+// game's settings folder — which is the commonest reason to have a second
+// location at all — travelled to the other machine anyway. The failure is
+// silent by nature: nothing reports a file that synced.
+//
+// The give-away was internal. contentHashOf has always filtered every
+// location, so the guard hash left the file out while the sync carried it
+// across; the two disagreed about whether the file existed.
+func TestIgnore_AppliesToExtraLocationsToo(t *testing.T) {
+	a, b, gameID := pairAndTrack(t, "IgnoreRoots", map[string]string{"save.dat": "v1"})
+
+	aCfg, bCfg := extraDir(t, a, "config"), extraDir(t, b, "config")
+	addRoot(t, a, gameID, "config", aCfg)
+	addRoot(t, b, gameID, "config", bCfg)
+
+	// The rule is on A ONLY, and that is what makes this test mean anything.
+	//
+	// With the rule on both devices it passes either way, and the first
+	// version of this test did. A "push" is not an upload — it asks the peer
+	// to pull — and the manifest a device serves is deliberately unfiltered,
+	// so what stops an excluded file crossing is always the RECEIVING side's
+	// own rule. Giving B the rule too meant B's copy of the feature did the
+	// work while A's did nothing, which is precisely the bug being fixed.
+	//
+	// One-sided, the question is only ever "what does A do", and A is the
+	// device under test. It is also the realistic shape: one machine gets the
+	// rule first.
+	setIgnore(t, a, gameID, "Config.gs")
+	time.Sleep(syncSettleWindow)
+
+	// B, which has no rule, writes a config into its copy of the location.
+	writeIn(t, bCfg, "Config.gs", "B's machine")
+	writeIn(t, bCfg, "keybinds.ini", "shared v1")
+	time.Sleep(syncSettleWindow)
+
+	syncNow(a, gameID)
+	waitFile(t, aCfg, "keybinds.ini", "shared v1", "the extra location should still sync what is not excluded")
+	time.Sleep(syncSettleWindow)
+
+	if got := readIn(aCfg, "Config.gs"); got != "" {
+		t.Errorf("A pulled an excluded file into its extra location: %q", got)
+	}
+
+	// A's own copy, which B has never had. A must not push it, and must not
+	// delete it because B lacks it.
+	writeIn(t, aCfg, "Config.gs", "A's machine")
+	time.Sleep(syncSettleWindow)
+	syncNow(a, gameID)
+	time.Sleep(syncSettleWindow)
+	if got := readIn(aCfg, "Config.gs"); got != "A's machine" {
+		t.Errorf("A's excluded file was altered or removed where it lives: %q", got)
+	}
+
+	// Deleting it must not travel: filtering the lineage is what stops "we
+	// both had this and now I do not" being read as a deletion to propagate,
+	// and that is the path where the rule destroys the file it was written to
+	// protect. B keeps its own copy.
+	time.Sleep(syncSettleWindow)
+	if err := os.Remove(filepath.Join(aCfg, "Config.gs")); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(syncSettleWindow)
+	syncNow(a, gameID)
+	time.Sleep(syncSettleWindow)
+	if got := readIn(bCfg, "Config.gs"); got != "B's machine" {
+		t.Errorf("deleting A's excluded config deleted B's copy too: %q", got)
+	}
+}

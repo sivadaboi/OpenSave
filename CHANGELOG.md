@@ -5,7 +5,42 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exclusions now cover a game's extra save locations, not just its main
+  folder.** A rule protected the save folder and was quietly ignored
+  everywhere else — so a device-specific config kept in a game's settings
+  folder, which is one of the commonest reasons to have a second location at
+  all, travelled to the other machine anyway. Worse than travelling: with the
+  rule on one device only, that device pushed its own copy over the other's,
+  destroying the very file the rule was written to protect.
+
+  It was invisible from outside, because nothing reports a file that synced.
+  The signal was internal — the guard hash has always been computed with every
+  location filtered, so it left the file out while the sync carried it across.
+  The two halves disagreed about whether the file existed.
+
+  Every location now applies the rules exactly as the main folder does:
+  filtered on both sides before anything is compared, filtered out of the
+  lineage so a missing file is never read as a deletion to propagate, and with
+  the merge base translated so adding a rule does not raise a one-off conflict.
+
 ### Added
+
+- **Files that shouldn't sync can be picked from a list instead of typed.**
+  The pattern box asked you to name a file you had to already know, in a
+  folder you could not see, in a syntax you had to learn — and said nothing
+  until the file turned up on another machine days later. **Pick from your
+  save folder** now lists what is actually there, across every save location,
+  each file marked *syncs* or *won't sync*.
+
+  Ticking a file writes the pattern, anchored so it can only ever mean that
+  one file. Unticking one caught by a wildcard adds an `!` exception rather
+  than discarding the wildcard. The verdicts are computed by the same matcher
+  the sync engine uses, on the same relative paths, and they update as you
+  type — so a rule can be checked before it is trusted, rather than after.
+  Patterns still matter for files that do not exist yet, like `*.log`; this
+  is a way in, not a replacement.
 
 - **Auto-scan says what is actually in each folder, and hides the ones holding
   nothing.** Every result now shows its file count, its size, and when it was

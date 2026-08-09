@@ -39,6 +39,7 @@ func (s *Server) routes(r chi.Router) {
 
 	r.Post("/api/games/{gameId}/snapshot", s.handleCreateSnapshot)
 	r.Post("/api/games/{gameId}/rollback", s.handleRollback)
+	r.Get("/api/games/{gameId}/save-files", s.handleGameSaveFiles)
 	r.Get("/api/games/{gameId}/snapshot/{snapshotId}/files", s.handleSnapshotFiles)
 	r.Post("/api/games/{gameId}/snapshot/{snapshotId}/restore-file", s.handleRestoreFile)
 	r.Delete("/api/games/{gameId}/snapshot/{snapshotId}", s.handleDeleteSnapshot)

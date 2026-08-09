@@ -89,6 +89,17 @@ logs/          # a folder and everything in it
 Matching ignores case. Set the same list on your other devices -- each applies
 its own, and a device without the list is unaffected.
 
+You don't have to know the filenames in advance. Click **Pick from your save
+folder** under the box to list what is actually in there, each file marked
+**syncs** or **won't sync**. Tick one and the pattern is written for you,
+anchored so it can only mean that file; untick one caught by a wildcard and an
+`!` exception is added instead of the wildcard being thrown away. The verdicts
+come from the same matcher the sync itself uses, and they update as you type,
+so you can see a rule working before you rely on it.
+
+A pattern applies to every one of a game's folders, so if the same filename
+appears in two save locations it is excluded in both.
+
 **Snapshots still capture these files**, so a restore brings them back.
 Excluding something stops it travelling between devices; it never stops it
 being backed up. From the command line:

@@ -100,14 +100,40 @@ func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game
 		return fmt.Errorf("read %s: %w", sr.root.Path, err)
 	}
 
+	// The game's exclusion rules apply here exactly as they do to the main
+	// save folder, and for the same reason: a rule names a file, not the
+	// folder it happens to sit in.
+	//
+	// They were missing, so an exclusion protected the main folder and did
+	// nothing for the others — silently, since nothing reports a file that
+	// synced. The asymmetry was visible from contentHashOf, which has always
+	// filtered every location: the guard hash left an excluded file out while
+	// the sync carried it across anyway.
+	rules := e.rulesFor(gameID)
+	remote := sr.remote
+	unfilteredLocal, unfilteredRemote := local, remote
+	if !rules.Empty() {
+		local = filterManifest(local, rules)
+		remote = filterManifest(remote, rules)
+	}
+
 	fileList, dirList, err := e.Store.GetSyncStateForRoot(gameID, peer.ID, sr.root.Name)
 	if err != nil {
 		return err
 	}
-	decision := Compute(local, sr.remote, toSet(fileList), toSet(dirList))
+	lineageFiles, lineageDirs := toSet(fileList), toSet(dirList)
+	if !rules.Empty() {
+		// Without this an exclusion added to a location that had already
+		// synced reads as "we both had this file and now I do not", and the
+		// deletion travels to the peer — destroying the copy the rule was
+		// written to protect.
+		lineageFiles = filterLineage(lineageFiles, rules)
+		lineageDirs = filterLineage(lineageDirs, rules)
+	}
+	decision := Compute(local, remote, lineageFiles, lineageDirs)
 
 	if !decision.HasChanges() {
-		e.persistRootLineage(gameID, peer.ID, sr.root.Name, local, sr.remote)
+		e.persistRootLineage(gameID, peer.ID, sr.root.Name, local, remote)
 		_ = e.Store.SetAgreedHashForRoot(gameID, peer.ID, sr.root.Name, local.RootHash(delta.PrimaryRoot))
 		return nil
 	}
@@ -124,7 +150,21 @@ func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game
 	// second detector that is nearly right is worse than none, because it
 	// looks like the work has been done.
 	base := e.Store.GetAgreedHashForRoot(gameID, peer.ID, sr.root.Name)
-	if DetectConflict(local, sr.remote, e.lastSyncTimeMs(peer.ID), base) {
+	// A base recorded before the rules existed was hashed over everything, so
+	// it can equal neither filtered side — and a base matching neither reads
+	// as both having moved, which is a conflict on the first sync after anyone
+	// adds a rule. If a side's UNFILTERED state still hashes to the base then
+	// that side has not changed, and its filtered hash says the same thing in
+	// today's terms. Same translation the main folder does.
+	if !rules.Empty() && base != "" {
+		switch base {
+		case unfilteredLocal.RootHash(delta.PrimaryRoot):
+			base = local.RootHash(delta.PrimaryRoot)
+		case unfilteredRemote.RootHash(delta.PrimaryRoot):
+			base = remote.RootHash(delta.PrimaryRoot)
+		}
+	}
+	if DetectConflict(local, remote, e.lastSyncTimeMs(peer.ID), base) {
 		// Neither side is touched. There is no per-location resolution screen
 		// yet, so this location simply stops syncing until the two are made to
 		// agree by hand — which is the safe half of the bargain, and is said
@@ -140,7 +180,9 @@ func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game
 	// to the pull path describes this location and nothing else — the pull
 	// then resolves every path against this location's own directory.
 	rootResp := ManifestResponse{
-		Manifest:     sr.remote,
+		// The filtered view: pullFiles reads block lists out of this, and an
+		// excluded path must not be reachable through it.
+		Manifest:     remote,
 		ActiveBranch: remoteData.ActiveBranch,
 		Proto:        remoteData.Proto,
 	}
@@ -160,7 +202,11 @@ func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game
 
 	fresh, freshErr := delta.BuildManifest(sr.root.Path)
 	if freshErr == nil {
-		e.persistRootLineage(gameID, peer.ID, sr.root.Name, mergeManifestPaths(fresh, local), sr.remote)
+		// fresh is unfiltered, and does not need to be: persistRootLineage
+		// intersects the two sides, and the remote side passed here has the
+		// excluded paths removed — so they cannot reach the lineage from
+		// either direction. Same arrangement as the main folder.
+		e.persistRootLineage(gameID, peer.ID, sr.root.Name, mergeManifestPaths(fresh, local), remote)
 	}
 
 	// Same ratchet as the primary location, for the same reason: after a pure
@@ -171,9 +217,12 @@ func (e *Engine) syncOneRoot(ctx context.Context, gameID string, game store.Game
 	// every later one-sided edit into a false conflict.
 	if !decision.HasPush() &&
 		len(decision.FilesToDeleteOnPeer) == 0 && len(decision.DirsToDeleteOnPeer) == 0 {
-		_ = e.Store.SetAgreedHashForRoot(gameID, peer.ID, sr.root.Name, sr.remote.RootHash(delta.PrimaryRoot))
+		_ = e.Store.SetAgreedHashForRoot(gameID, peer.ID, sr.root.Name, remote.RootHash(delta.PrimaryRoot))
 	} else if freshErr == nil {
-		_ = e.Store.SetPushedHashForRoot(gameID, peer.ID, sr.root.Name, fresh.RootHash(delta.PrimaryRoot))
+		// Recorded in the filtered view too, since that is what the next pass
+		// compares it against.
+		_ = e.Store.SetPushedHashForRoot(gameID, peer.ID, sr.root.Name,
+			filterManifest(fresh, rules).RootHash(delta.PrimaryRoot))
 	}
 	return nil
 }

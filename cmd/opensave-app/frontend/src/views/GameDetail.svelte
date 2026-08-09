@@ -47,6 +47,100 @@
   $: cfgCover =
     cfg?.coverUrl && !cfg.coverUrl.includes('steamstatic.com') ? cfg.coverUrl : coverURL(cfg?.appId);
 
+  // ── Picking files to exclude ─────────────────────────────────────
+  // The pattern box on its own asks you to type a filename you have to
+  // already know, for a folder you cannot see, in a syntax you have to learn
+  // — and gives no answer until the file turns up on another machine days
+  // later. This lists what is actually in the game's folders and marks each
+  // file with the verdict the sync engine itself would reach, so the rule and
+  // its effect are on screen together.
+  let showFiles = false;
+  let saveFiles = null;
+  let filesTruncated = false;
+  let filesError = '';
+  $: excludedCount = (saveFiles ?? []).filter((f) => f.excluded).length;
+
+  // Reset with the game, like the other per-game view state above.
+  $: if (params.gameId !== filesLoadedFor) {
+    filesLoadedFor = params.gameId;
+    showFiles = false;
+    saveFiles = null;
+    filesError = '';
+  }
+  let filesLoadedFor = null;
+
+  // Ask the daemon to judge a rule list against the real folders. The rules
+  // are sent rather than saved first: the point of a verdict is watching it
+  // change as you type, and saving to find out would mean writing a rule to
+  // discover whether it was the rule you meant.
+  async function refreshSaveFiles(rulesText) {
+    if (!game) return;
+    try {
+      const q = encodeURIComponent(rulesText ?? '');
+      const res = await api.get(`/api/games/${game.id}/save-files?rules=${q}`);
+      saveFiles = res?.files ?? [];
+      filesTruncated = !!res?.truncated;
+      filesError = '';
+    } catch (e) {
+      filesError = e.message;
+    }
+  }
+
+  async function toggleFilePicker() {
+    showFiles = !showFiles;
+    if (showFiles && saveFiles === null) await refreshSaveFiles(cfg?.syncIgnore ?? '');
+  }
+
+  // Typing in the box re-judges the list, but not on every keystroke.
+  let previewTimer = null;
+  let lastPreviewed = null;
+  $: if (showFiles && cfg && cfg.syncIgnore !== lastPreviewed) {
+    lastPreviewed = cfg.syncIgnore;
+    clearTimeout(previewTimer);
+    const text = cfg.syncIgnore ?? '';
+    previewTimer = setTimeout(() => refreshSaveFiles(text), 250);
+  }
+
+  // A rule is matched against the path relative to each save location, so
+  // anchoring with a leading slash pins it to one file rather than every file
+  // of that name at any depth.
+  const anchoredPattern = (f) => '/' + f.path;
+
+  function ruleLines(text) {
+    return (text ?? '').split('\n');
+  }
+
+  // Ticking a file adds its pattern. Unticking removes the lines that name it
+  // outright — and if it is still caught after that, by a wildcard or a folder
+  // rule, adds a "!" exception, which is the only thing that can rescue one
+  // file from a broader rule without abandoning the rule.
+  async function toggleFileExcluded(f) {
+    if (!cfg) return;
+    const anchored = anchoredPattern(f);
+    let text;
+    if (!f.excluded) {
+      const lines = ruleLines(cfg.syncIgnore).filter((l) => l.trim() !== '');
+      if (!lines.some((l) => l.trim() === anchored || l.trim() === f.path)) lines.push(anchored);
+      text = lines.join('\n');
+    } else {
+      // Drop any line naming it directly, plus a stale exception for it.
+      const lines = ruleLines(cfg.syncIgnore).filter((l) => {
+        const t = l.trim();
+        return t !== anchored && t !== f.path && t !== '!' + anchored && t !== '!' + f.path;
+      });
+      text = lines.join('\n').replace(/\n{3,}/g, '\n\n');
+      // Ask the real matcher whether that was enough before guessing.
+      await refreshSaveFiles(text);
+      const still = (saveFiles ?? []).find((x) => x.path === f.path && x.location === f.location);
+      if (still?.excluded) {
+        text = (text.trimEnd() + '\n!' + anchored).replace(/^\n+/, '');
+      }
+    }
+    cfg.syncIgnore = text;
+    lastPreviewed = text;
+    await refreshSaveFiles(text);
+  }
+
   // Cloud explorer state.
   let cloudSnaps = null;
   let cloudLoading = false;
@@ -642,6 +736,49 @@
               <strong>Snapshots still capture these files</strong>, so a restore brings them back —
               excluding something stops it travelling, it never stops it being backed up.
             </span>
+
+            <div class="picker-head">
+              <button class="btn small" on:click={toggleFilePicker}>
+                {showFiles ? '▾' : '▸'} Pick from your save folder
+              </button>
+              {#if showFiles && saveFiles}
+                <span class="hint picker-count">
+                  {excludedCount} of {saveFiles.length} files excluded
+                  {#if filesTruncated}· first {saveFiles.length} shown{/if}
+                </span>
+              {/if}
+            </div>
+
+            {#if showFiles}
+              {#if filesError}
+                <p class="hint err">{filesError}</p>
+              {:else if !saveFiles}
+                <p class="hint"><span class="cspin"></span> Reading the save folder…</p>
+              {:else if saveFiles.length === 0}
+                <p class="hint">This game's folders are empty, so there is nothing to pick yet.</p>
+              {:else}
+                <div class="file-picker">
+                  {#each saveFiles as f (f.location + '/' + f.path)}
+                    <label class="file-row" class:excluded={f.excluded}>
+                      <input type="checkbox" checked={f.excluded} on:change={() => toggleFileExcluded(f)} />
+                      <span class="file-name">
+                        {#if f.location}<span class="file-loc">{f.location} ›</span>{/if}{f.path}
+                      </span>
+                      <span class="file-verdict">{f.excluded ? "won't sync" : 'syncs'}</span>
+                    </label>
+                  {/each}
+                </div>
+                <span class="hint">
+                  Ticking a file writes the pattern for you, anchored so it can only ever mean that
+                  one file. Unticking a file caught by a wildcard adds a <code>!</code> exception
+                  rather than deleting the wildcard.
+                  {#if locations.length > 0}
+                    A pattern applies to <strong>every one of this game's folders</strong>, so a
+                    name that appears in two of them is excluded in both.
+                  {/if}
+                </span>
+              {/if}
+            {/if}
           </div>
           <div class="locations">
             <h4>Save locations</h4>
@@ -1242,6 +1379,66 @@
   }
   .excludes .hint + .hint {
     margin-top: 6px;
+  }
+  .picker-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .picker-count {
+    margin-top: 0;
+  }
+  .file-picker {
+    margin-top: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  .file-row:last-child {
+    border-bottom: 0;
+  }
+  .file-row:hover {
+    background: var(--bg-elev, rgba(127, 127, 127, 0.06));
+  }
+  .file-name {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+    word-break: break-all;
+  }
+  /* The location a file lives in, when the game has more than its save
+     folder — the same filename can appear in two of them. */
+  .file-loc {
+    color: var(--accent);
+    margin-right: 6px;
+  }
+  .file-verdict {
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    color: var(--text-faint);
+  }
+  .file-row.excluded .file-name {
+    text-decoration: line-through;
+    color: var(--text-faint);
+  }
+  .file-row.excluded .file-verdict {
+    color: var(--warn, var(--accent));
+  }
+  .hint.err {
+    color: var(--danger, #e5484d);
   }
   .locations {
     margin-top: 18px;
