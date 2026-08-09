@@ -761,6 +761,14 @@ func (d *Daemon) LinkGames(canonicalID, aliasID string) error {
 // LinkGames, brings it back as its own tracked entry. Its save files on disk
 // were never touched; prior snapshot history isn't restored (a fresh initial
 // snapshot is taken).
+//
+// Extra save locations are not handed back either, and that is deliberate
+// rather than missing. Linking copies the merged game's locations onto the
+// canonical one, so they are still covered — just attached to the game that
+// absorbed them. Splitting them again would mean guessing which of the
+// canonical game's locations had originally belonged to which half, and a
+// wrong guess stops a folder being synced without saying so. Re-pointing a
+// folder by hand is a smaller cost than that, and it is visible.
 func (d *Daemon) UnlinkGame(aliasID string) error {
 	alias, ok := d.Store.GetGameAlias(aliasID)
 	if err := d.Store.RemoveGameAlias(aliasID); err != nil {

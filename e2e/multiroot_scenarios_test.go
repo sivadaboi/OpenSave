@@ -123,7 +123,22 @@ func TestMultiRootScenario_DisagreementInOneLocationDoesNotBlockTheOther(t *test
 	a.WriteSave("save.sav", "primary v2-from-A")
 	time.Sleep(syncSettleWindow)
 
+	// Snapshot on B first, and sync both sides explicitly.
+	//
+	// Pausing auto-sync above also stops B's watcher, so nothing refreshes its
+	// record of what the last snapshot held. The sync engine reads that record
+	// to decide whether a pull would overwrite work no snapshot has captured,
+	// and a stale one makes it refuse — correctly, on the information it has.
+	// Snapshotting by hand is what the watcher would have done. Both sides are
+	// then synced explicitly, because a push only ASKS the peer to pull and a
+	// peer with auto-sync off will not act on the ask.
+	b.API(http.MethodPost, "/api/games/"+gameID+"/snapshot",
+		map[string]string{"comment": "capture B's own edit"}, nil)
+	time.Sleep(syncSettleWindow)
+
 	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+	time.Sleep(syncSettleWindow)
+	b.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
 
 	if !testutil.WaitFor(45*time.Second, func() bool {
 		return b.ReadSave("save.sav") == "primary v2-from-A"

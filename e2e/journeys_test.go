@@ -396,3 +396,68 @@ func TestJourney_RestoreOntoAFreshMachineAfterALoss(t *testing.T) {
 		t.Errorf("step 6: the new machine's identity file changed to %q", got)
 	}
 }
+
+// A multi-location snapshot that went to the cloud has to come back whole.
+//
+// Cloud restore takes a different route from a local rollback — it downloads
+// the archive, registers it as a snapshot, then restores that — so "the local
+// path is covered" does not by itself say this one is.
+func TestJourney_CloudRestoreBringsBackEveryLocation(t *testing.T) {
+	td := testutil.NewTestDaemon(t, "CloudLoc")
+	td.WriteSave("save.dat", "v1")
+	gameID := td.TrackGame("CloudLoc")
+
+	cfg := extraDir(t, td, "config")
+	writeIn(t, cfg, "settings.ini", "keybinds v1")
+	addRoot(t, td, gameID, "config", cfg)
+
+	// A local folder standing in for a cloud provider: same code path as any
+	// other provider, without the network.
+	remote := filepath.Join(testutil.TempDir(t), "cloud")
+	if err := os.MkdirAll(remote, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	td.API(http.MethodPost, "/api/settings", map[string]any{
+		"cloudSync": map[string]any{"enabled": true, "provider": "local", "url": remote},
+	}, nil)
+
+	// Snapshot, push it up, then wreck both folders.
+	var snap struct {
+		ID string `json:"id"`
+	}
+	td.API(http.MethodPost, "/api/games/"+gameID+"/snapshot",
+		map[string]string{"comment": "before the cloud"}, &snap)
+	if snap.ID == "" {
+		t.Fatal("no snapshot id")
+	}
+	// The upload happens on its own, in the background, as every snapshot
+	// does — so wait for the provider to actually hold something.
+	var listed []struct {
+		Name string `json:"name"`
+	}
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		listed = nil
+		td.API(http.MethodGet, "/api/cloud/snapshots/"+gameID, nil, &listed)
+		return len(listed) > 0
+	}) {
+		t.Fatalf("the snapshot never reached the cloud provider: %s", td.LastError())
+	}
+
+	td.WriteSave("save.dat", "ruined")
+	writeIn(t, cfg, "settings.ini", "ruined")
+
+	if status := td.APIStatus(http.MethodPost, "/api/cloud/restore/"+gameID,
+		map[string]string{"fileName": listed[0].Name}, nil); status >= 400 {
+		t.Fatalf("cloud restore failed with HTTP %d: %s", status, td.LastError())
+	}
+
+	if got := td.ReadSave("save.dat"); got != "v1" {
+		t.Errorf("main save after cloud restore = %q, want v1", got)
+	}
+	if got := readIn(cfg, "settings.ini"); got != "keybinds v1" {
+		t.Errorf("the second location was not restored from the cloud: %q", got)
+	}
+	if got := td.ReadSave("settings.ini"); got != "" {
+		t.Errorf("the location's file was restored into the save folder: %q", got)
+	}
+}

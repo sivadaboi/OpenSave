@@ -21,6 +21,11 @@ All notable changes to OpenSave are documented here. This project adheres to
   From the command line, `opensave ignore <gameId> add <pattern>`, and
   `opensave ignore <gameId> test <path>` answers "would this sync?" without
   waiting to find out on the other device. Requested by RrOoSsSsOo.
+  On a fleet where one device has not updated yet, the rule protects the
+  updated one and leaves the other exactly as it was: the older device may
+  still receive the file, because the alternative — hiding it from that
+  device — would make it read the gap as a deletion and remove its own copy.
+  Once both devices have the rule, the file stops travelling entirely.
 - **A game whose save is split across folders is one game again.** Plenty of
   titles keep their save data in one place and their settings or mods in
   another, and the only way to cover both was to track the same game twice:

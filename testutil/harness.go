@@ -337,3 +337,23 @@ func WaitFor(timeout time.Duration, cond func() bool) bool {
 
 // Fmt is a tiny helper for readable failure messages.
 func Fmt(format string, args ...any) string { return fmt.Sprintf(format, args...) }
+
+// RemoveTree deletes a directory tree, retrying briefly.
+//
+// On Windows a directory cannot be removed while anything holds a handle to
+// it, and the save watcher holds one on every folder it is watching. A test
+// that wipes a save folder is racing the watcher's release, which is a race
+// about the test's own setup rather than about the behaviour under test — and
+// it surfaces as "The process cannot access the file because it is being used
+// by another process", which reads like a product fault and is not one.
+func RemoveTree(t *testing.T, path string) {
+	t.Helper()
+	var err error
+	for i := 0; i < 40; i++ {
+		if err = os.RemoveAll(path); err == nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("could not remove %s after retrying: %v", path, err)
+}
