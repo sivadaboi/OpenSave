@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/opensave/opensave/internal/daemon"
+	"github.com/opensave/opensave/internal/presets"
 )
 
 type testServer struct {
@@ -383,6 +384,80 @@ func TestPresetScanEndpoint(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&found); err != nil {
 		t.Fatalf("scan response should be a JSON array: %v", err)
 	}
+}
+
+// The scan endpoint reports empty folders rather than dropping them, and
+// carries the measurements the client needs to decide what to hide. Filtering
+// here instead would take away the only route to a folder a game has not
+// written to yet — and the client cannot re-derive `measured`, which is what
+// separates "nothing in it" from "could not look".
+func TestPresetScanEndpointMeasuresAndKeepsEmpties(t *testing.T) {
+	ts := startTestServer(t)
+	ts.daemon.Scanner.SteamUserdataPaths = []string{}
+	ts.daemon.Scanner.ResolveAppName = nil
+
+	// A custom scan path with one folder holding a save and one holding
+	// nothing — the shape a real machine produces in bulk.
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "Played", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Played", "sub", "game.sav"), []byte("0123456789"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "NeverPlayed"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := ts.daemon.Store.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.CustomScanPaths = []string{root}
+	if err := ts.daemon.Store.UpdateSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.Get(ts.base + "/api/presets/scan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var found []presets.DiscoveredSave
+	if err := json.NewDecoder(resp.Body).Decode(&found); err != nil {
+		t.Fatal(err)
+	}
+
+	byName := map[string]presets.DiscoveredSave{}
+	for _, f := range found {
+		byName[f.Name] = f
+	}
+	played, ok := byName["Played"]
+	if !ok {
+		t.Fatalf("the folder with a save in it was not returned; got %v", keysOfSaves(byName))
+	}
+	if !played.Measured || played.FileCount != 1 || played.TotalBytes != 10 {
+		t.Errorf("Played measured=%v files=%d bytes=%d, want measured 1 file / 10 bytes",
+			played.Measured, played.FileCount, played.TotalBytes)
+	}
+	if played.LatestMtime == 0 {
+		t.Error("a folder with a file in it should carry a last-written time")
+	}
+
+	never, ok := byName["NeverPlayed"]
+	if !ok {
+		t.Fatal("the empty folder was dropped; the client needs it for the 'show empty' toggle")
+	}
+	if !never.Measured || never.FileCount != 0 {
+		t.Errorf("NeverPlayed measured=%v files=%d, want measured and empty", never.Measured, never.FileCount)
+	}
+}
+
+func keysOfSaves(m map[string]presets.DiscoveredSave) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 // TestDeleteSnapshotAndBranch covers the per-snapshot and per-branch

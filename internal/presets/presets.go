@@ -19,6 +19,15 @@ type DiscoveredSave struct {
 	Type     string `json:"type"` // "emulator" | "repack" | "game"
 	SavePath string `json:"savePath"`
 	AppID    string `json:"appId,omitempty"`
+
+	// What is actually in the folder, filled in by Measure. Detection leaves
+	// these zero, and zero means "not measured" rather than "empty" —
+	// Measured is what tells the two apart. See savestats.go.
+	Measured    bool  `json:"measured"`
+	FileCount   int   `json:"fileCount"`
+	TotalBytes  int64 `json:"totalBytes"`
+	LatestMtime int64 `json:"latestMtime"` // unix seconds; 0 when there are no files
+	Truncated   bool  `json:"truncated"`   // counting stopped at a cap, so the numbers are a floor
 }
 
 type preset struct {

@@ -101,6 +101,20 @@ func NewTestDaemon(t *testing.T, name string) *TestDaemon {
 	// Hermetic: no background Ludusavi manifest download from test daemons
 	// (races t.TempDir cleanup on Windows, wastes 17 MB per daemon).
 	d.Scanner.ManifestURL = ""
+	// And no detection against the machine the tests are running on. Every
+	// source below defaults to the real thing — the developer's Steam
+	// libraries, their LocalLow, Steam's store API over the network — so a
+	// test daemon that scans was reading a live library that differs on every
+	// machine and in CI. Now that a scan also measures what it finds, it was
+	// walking hundreds of real folders as well, which is IO the rest of the
+	// suite has to share.
+	//
+	// The env-derived roots (%LOCALAPPDATA%, Saved Games, fixed drives) have
+	// no override and are still visited; these four are the expensive ones.
+	d.Scanner.SteamUserdataPaths = []string{}
+	d.Scanner.SteamRoots = []string{}
+	d.Scanner.LocalLowDir = filepath.Join(home, "no-locallow")
+	d.Scanner.ResolveAppName = nil
 
 	// Set the device name for readable pairing flows.
 	settings, err := d.Store.GetSettings()

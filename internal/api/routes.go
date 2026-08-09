@@ -620,6 +620,11 @@ func (s *Server) handlePresetScan(w http.ResponseWriter, r *http.Request) {
 	}
 	found := s.Daemon.Scanner.Scan(settings.CustomScanPaths)
 	found = presets.FilterExcluded(found, settings.ExcludePaths)
+	// Measured after excluding, so the budget is spent only on locations that
+	// will actually be offered. Empty ones are reported, not dropped: the
+	// client hides them behind a toggle, and deciding that here would take
+	// away the only way to reach a folder a game has not written to yet.
+	presets.Measure(found)
 	if found == nil {
 		found = []presets.DiscoveredSave{} // never null on the wire
 	}

@@ -319,6 +319,10 @@
       const knownIds = new Set(tracked.map((g) => g.id));
       const detected = (scan ?? [])
         .filter((d) => !knownPaths.has(d.savePath.toLowerCase()) && !knownIds.has(d.id))
+        // A folder holding no files has nothing to back up. `measured` guards
+        // the case where the daemon could not read it — unknown is not empty,
+        // and dropping one of those would quietly skip a real save.
+        .filter((d) => !(d.measured && d.fileCount === 0))
         .map((d) => ({
           id: d.id, name: d.name, savePath: d.savePath, appId: d.appId,
           cover: d.appId ? portraitUrl(d.appId) : '', tracked: false,

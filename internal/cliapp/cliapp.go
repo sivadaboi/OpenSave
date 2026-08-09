@@ -123,7 +123,7 @@ func Run(args []string) int {
 	// exist, where they live, or whether they auto-sync tells it to catch up.
 	switch cmd {
 	case "scan":
-		return cmdScan(d)
+		return cmdScan(d, rest)
 	case "add":
 		return withWatchReload(cmdAdd(d, rest))
 	case "status":
@@ -269,7 +269,20 @@ func cmdUpnp(args []string) int {
 	return 0
 }
 
-func cmdScan(d *daemon.Daemon) int {
+func cmdScan(d *daemon.Daemon, args []string) int {
+	// Folders holding nothing are hidden by default. They are a fifth of a
+	// real machine's results — Steam makes a userdata folder for every game
+	// you own whether or not saves go there — and a listing where most rows
+	// are places nothing has ever been written is a listing nobody reads.
+	// --all brings them back, for the case of wanting to track a folder
+	// before the game has first saved.
+	showEmpty := false
+	for _, a := range args {
+		if a == "--all" {
+			showEmpty = true
+		}
+	}
+
 	settings, err := d.Store.GetSettings()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -277,9 +290,21 @@ func cmdScan(d *daemon.Daemon) int {
 	}
 	found := d.Scanner.Scan(settings.CustomScanPaths)
 	found = presets.FilterExcluded(found, settings.ExcludePaths)
+	presets.Measure(found)
+
+	total, emptyCount := len(found), presets.CountEmpty(found)
+	if !showEmpty {
+		found = presets.WithoutEmpty(found)
+	}
+
 	if len(found) == 0 {
 		section("Auto-scan")
-		note("No game saves detected.")
+		if emptyCount > 0 {
+			note(fmt.Sprintf("No saved games found. %d detected folder(s) hold no files yet.", emptyCount))
+			hint("opensave scan --all            show them anyway")
+		} else {
+			note("No game saves detected.")
+		}
 		hint("opensave add <name> <path>     track a folder yourself")
 		fmt.Println()
 		return 0
@@ -298,7 +323,11 @@ func cmdScan(d *daemon.Daemon) int {
 	// `add <n>` resolves.
 	var numbered []presets.DiscoveredSave
 
-	section(fmt.Sprintf("Auto-scan %s %d save location(s)", symDot(), len(found)))
+	header := fmt.Sprintf("Auto-scan %s %d save location(s)", symDot(), len(found))
+	if hidden := total - len(found); hidden > 0 {
+		header += fmt.Sprintf(" %s %d empty hidden", symDot(), hidden)
+	}
+	section(header)
 	for _, l := range labels {
 		list := byType[l.kind]
 		if len(list) == 0 {
@@ -309,6 +338,7 @@ func cmdScan(d *daemon.Daemon) int {
 			numbered = append(numbered, f)
 			fmt.Printf("    %s %s\n", accent(fmt.Sprintf("[%d]", len(numbered))), bold(f.Name))
 			fmt.Printf("        %s\n", faint(f.SavePath))
+			fmt.Printf("        %s\n", faint(scanContents(f)))
 		}
 	}
 
@@ -319,10 +349,65 @@ func cmdScan(d *daemon.Daemon) int {
 	// the papercut this exists to remove.
 	saveScanResults(d.Paths.HomeDir, numbered)
 
-	hint("opensave add <number>          track one of these",
-		"opensave add <name> <path>     track something else")
+	hints := []string{
+		"opensave add <number>          track one of these",
+		"opensave add <name> <path>     track something else",
+	}
+	if !showEmpty && emptyCount > 0 {
+		hints = append(hints, fmt.Sprintf("opensave scan --all            also show %d empty folder(s)", emptyCount))
+	}
+	hint(hints...)
 	fmt.Println()
 	return 0
+}
+
+// scanContents renders one location's size and age: what is in the folder,
+// and when the game last wrote to it. Together they are what separates a save
+// still in use from one left behind by an install that has moved on.
+func scanContents(f presets.DiscoveredSave) string {
+	if !f.Measured {
+		return "size unknown"
+	}
+	if f.FileCount == 0 {
+		return "empty"
+	}
+	// The "+" belongs on the number, not after the noun: counting stopped at a
+	// cap, so 20000+ files is a floor, not twenty thousand files and a bit.
+	plus := ""
+	if f.Truncated {
+		plus = "+"
+	}
+	count := fmt.Sprintf("%d%s files", f.FileCount, plus)
+	if f.FileCount == 1 && !f.Truncated {
+		count = "1 file"
+	}
+	return fmt.Sprintf("%s %s %s %s last written %s",
+		count, symDot(), humanBytes(f.TotalBytes), symDot(), humanAge(f.LatestMtime))
+}
+
+// humanAge renders a unix timestamp as a rough age. Rough on purpose: the
+// question it answers is "is this folder still in use", and to that a date is
+// something you have to do arithmetic on.
+func humanAge(unix int64) string {
+	if unix <= 0 {
+		return "never"
+	}
+	d := time.Since(time.Unix(unix, 0))
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+	years := d.Hours() / 24 / 365
+	if years < 2 {
+		return "over a year ago"
+	}
+	return fmt.Sprintf("%.0f years ago", years)
 }
 
 // scanResultsPath is where the last listing is remembered for `add <n>`.

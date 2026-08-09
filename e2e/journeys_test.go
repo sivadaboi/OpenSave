@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -431,31 +432,56 @@ func TestJourney_CloudRestoreBringsBackEveryLocation(t *testing.T) {
 		t.Fatal("no snapshot id")
 	}
 	// The upload happens on its own, in the background, as every snapshot
-	// does — so wait for the provider to actually hold something.
+	// does — so wait for the provider to hold THIS snapshot, by id.
+	//
+	// Waiting for merely any file is a trap, and one this test fell into:
+	// tracking a game snapshots it immediately, and that happens before the
+	// second location has been added. Both snapshots go to the cloud, and
+	// whichever finishes uploading first is whichever the machine felt like
+	// that run. Restoring the earlier one puts the main save back correctly —
+	// so the assertion above still passes — while the location this test
+	// exists to check is simply not in the archive. It looked like a flake
+	// and was a test reading a snapshot it never meant to name.
 	var listed []struct {
-		Name string `json:"name"`
+		Name       string `json:"name"`
+		SnapshotID string `json:"snapshotId"`
 	}
+	var wanted string
 	if !testutil.WaitFor(45*time.Second, func() bool {
-		listed = nil
+		listed, wanted = nil, ""
 		td.API(http.MethodGet, "/api/cloud/snapshots/"+gameID, nil, &listed)
-		return len(listed) > 0
+		for _, l := range listed {
+			if l.SnapshotID == snap.ID {
+				wanted = l.Name
+				return true
+			}
+		}
+		return false
 	}) {
 		t.Fatalf("the snapshot never reached the cloud provider: %s", td.LastError())
 	}
+
+	// What the provider holds, for the failure messages below. This test
+	// failed twice in a full-package run and passed alone, with the main save
+	// restored and the second location untouched — the signature of restoring
+	// an archive that predates the location. Selecting by id above rules that
+	// out; if it recurs anyway, the cause is elsewhere and the next person
+	// should not have to re-derive the state from scratch.
+	held := fmt.Sprintf("%d cloud snapshot(s) %v, restored %s", len(listed), listed, snap.ID)
 
 	td.WriteSave("save.dat", "ruined")
 	writeIn(t, cfg, "settings.ini", "ruined")
 
 	if status := td.APIStatus(http.MethodPost, "/api/cloud/restore/"+gameID,
-		map[string]string{"fileName": listed[0].Name}, nil); status >= 400 {
+		map[string]string{"fileName": wanted}, nil); status >= 400 {
 		t.Fatalf("cloud restore failed with HTTP %d: %s", status, td.LastError())
 	}
 
 	if got := td.ReadSave("save.dat"); got != "v1" {
-		t.Errorf("main save after cloud restore = %q, want v1", got)
+		t.Errorf("main save after cloud restore = %q, want v1 (%s)", got, held)
 	}
 	if got := readIn(cfg, "settings.ini"); got != "keybinds v1" {
-		t.Errorf("the second location was not restored from the cloud: %q", got)
+		t.Errorf("the second location was not restored from the cloud: %q (%s)", got, held)
 	}
 	if got := td.ReadSave("settings.ini"); got != "" {
 		t.Errorf("the location's file was restored into the save folder: %q", got)
