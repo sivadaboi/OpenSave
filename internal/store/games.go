@@ -47,7 +47,12 @@ type Game struct {
 	// auto-snapshot; the watcher compares against it before snapshotting
 	// again, preventing feedback loops (snapshot -> event -> snapshot).
 	LastManifestHash string `db:"last_manifest_hash" json:"-"`
-	CreatedAt        string `db:"created_at" json:"createdAt"`
+	// SyncIgnore is the game's exclusion list, written like a .gitignore: one
+	// pattern per line, "#" for comments. It decides what SYNCS and nothing
+	// else — snapshots keep capturing every file, so a restore can never be
+	// the thing that deletes an excluded config.
+	SyncIgnore string `db:"sync_ignore" json:"syncIgnore"`
+	CreatedAt  string `db:"created_at" json:"createdAt"`
 }
 
 // CreateGame inserts a new game and its default "main" branch in one
@@ -133,7 +138,8 @@ func (s *Store) UpdateGame(g Game) error {
 			app_id = :app_id,
 			exe_path = :exe_path,
 			cover_url = :cover_url,
-			last_manifest_hash = :last_manifest_hash
+			last_manifest_hash = :last_manifest_hash,
+			sync_ignore = :sync_ignore
 		WHERE id = :id`, g)
 	if err != nil {
 		return fmt.Errorf("update game %s: %w", g.ID, err)

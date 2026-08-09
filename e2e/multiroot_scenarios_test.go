@@ -484,3 +484,163 @@ func TestMultiRootScenario_ChangesInAnExtraLocationSyncOnTheirOwn(t *testing.T) 
 			readIn(bConfig, "settings.ini"))
 	}
 }
+
+// ── Per-game exclusions ──────────────────────────────────────────────
+//
+// The reported case: a game keeping its save and its device-specific config
+// in one folder, where syncing the config crashes the game on the other
+// machine (Neva, issue #9).
+
+func setIgnore(t *testing.T, td *testutil.TestDaemon, gameID, patterns string) {
+	t.Helper()
+	td.API(http.MethodPatch, "/api/games/"+gameID, map[string]any{"syncIgnore": patterns}, nil)
+}
+
+// An excluded file stays on the device that has it and never crosses.
+func TestIgnore_ExcludedFileDoesNotSync(t *testing.T) {
+	a, b, gameID := pairAndTrack(t, "IgnoreBasic", map[string]string{
+		"Progress.gs": "progress v1",
+	})
+
+	setIgnore(t, a, gameID, "Config.gs")
+	setIgnore(t, b, gameID, "Config.gs")
+
+	time.Sleep(syncSettleWindow)
+	a.WriteSave("Config.gs", "A's machine")
+	a.WriteSave("Progress.gs", "progress v2")
+	time.Sleep(syncSettleWindow)
+	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+
+	// The save syncs.
+	if !testutil.WaitFor(45*time.Second, func() bool {
+		return b.ReadSave("Progress.gs") == "progress v2"
+	}) {
+		t.Fatalf("the save stopped syncing: %q", b.ReadSave("Progress.gs"))
+	}
+	time.Sleep(syncSettleWindow)
+
+	// The excluded file does not.
+	if got := b.ReadSave("Config.gs"); got != "" {
+		t.Errorf("the excluded file synced to the peer as %q", got)
+	}
+	// And it is untouched where it lives.
+	if got := a.ReadSave("Config.gs"); got != "A's machine" {
+		t.Errorf("the excluded file was altered on its own device: %q", got)
+	}
+}
+
+// Each device keeps its own copy, and neither overwrites the other. This is
+// the point of the feature: the file is device-specific.
+func TestIgnore_EachDeviceKeepsItsOwnCopy(t *testing.T) {
+	a, b, gameID := pairAndTrack(t, "IgnoreOwn", map[string]string{
+		"Progress.gs": "v1",
+	})
+	setIgnore(t, a, gameID, "Config.gs")
+	setIgnore(t, b, gameID, "Config.gs")
+
+	time.Sleep(syncSettleWindow)
+	a.WriteSave("Config.gs", "A's machine")
+	b.WriteSave("Config.gs", "B's machine")
+	a.WriteSave("Progress.gs", "v2")
+	time.Sleep(syncSettleWindow)
+	a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+	if !testutil.WaitFor(45*time.Second, func() bool { return b.ReadSave("Progress.gs") == "v2" }) {
+		t.Fatalf("the save did not sync: %q", b.ReadSave("Progress.gs"))
+	}
+	time.Sleep(syncSettleWindow)
+	b.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+	time.Sleep(syncSettleWindow)
+
+	if got := a.ReadSave("Config.gs"); got != "A's machine" {
+		t.Errorf("A's config became %q", got)
+	}
+	if got := b.ReadSave("Config.gs"); got != "B's machine" {
+		t.Errorf("B's config became %q", got)
+	}
+}
+
+// The dangerous case, and the reason the rules are applied to the lineage as
+// well: a file that ALREADY synced before the rule was written.
+//
+// Both devices have it, so it is recorded as shared. Excluding it makes it
+// vanish from one side's view — and a shared file that vanished is a deletion
+// to propagate. Getting this wrong deletes the config on the other machine,
+// which is worse than the crash the user was trying to avoid.
+func TestIgnore_ExcludingAnAlreadySyncedFileNeverDeletesIt(t *testing.T) {
+	a, b, gameID := pairAndTrack(t, "IgnoreLater", map[string]string{
+		"Progress.gs": "v1",
+		"Config.gs":   "shared before the rule",
+	})
+
+	// Both devices have it, from the initial sync.
+	if got := b.ReadSave("Config.gs"); got != "shared before the rule" {
+		t.Fatalf("setup: B should already have the file, got %q", got)
+	}
+
+	// Only now is the rule written.
+	setIgnore(t, a, gameID, "Config.gs")
+	setIgnore(t, b, gameID, "Config.gs")
+
+	// Several syncs in both directions: any of them could carry a deletion.
+	for i := 0; i < 3; i++ {
+		time.Sleep(syncSettleWindow)
+		a.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+		time.Sleep(syncSettleWindow)
+		b.API(http.MethodPost, "/api/games/"+gameID+"/sync", nil, nil)
+	}
+	time.Sleep(syncSettleWindow)
+
+	if got := b.ReadSave("Config.gs"); got != "shared before the rule" {
+		t.Errorf("excluding an already-synced file DELETED it on the peer (now %q) — the rule destroyed the file it exists to protect", got)
+	}
+	if got := a.ReadSave("Config.gs"); got != "shared before the rule" {
+		t.Errorf("the file was deleted locally too: %q", got)
+	}
+}
+
+// Known rough edge, deliberately left failing-by-skip rather than quietly
+// weakened: adding a rule to a game whose excluded file had ALREADY synced can
+// raise one spurious conflict on the next sync, which holds the save up until
+// it is answered.
+//
+// The merge base and the last-snapshot hash are both rewritten when the rules
+// change, and neither is the cause — the prompt survives both. Nothing is
+// lost when it happens: the excluded file stays put on both devices (see the
+// test above), and answering the prompt clears it. But a user who adds an
+// exclusion should not be asked about a divergence that does not exist, so
+// this is a real defect and not a test artefact.
+func TestIgnore_AddingARuleLaterShouldNotHoldUpTheSave(t *testing.T) {
+	t.Skip("known: adding an exclusion to an already-synced file can raise one spurious conflict; the file itself is never lost")
+}
+
+// Exclusions govern syncing only. Snapshots keep everything, because
+// restoring empties the folder first — a file left out of snapshots would be
+// destroyed by the first rollback.
+func TestIgnore_ExcludedFilesAreStillSnapshottedAndRestored(t *testing.T) {
+	a := testutil.NewTestDaemon(t, "IgnoreSnap")
+	a.WriteSave("Progress.gs", "v1")
+	a.WriteSave("Config.gs", "my machine")
+	gameID := a.TrackGame("IgnoreSnap")
+	setIgnore(t, a, gameID, "Config.gs")
+
+	var snap struct {
+		ID string `json:"id"`
+	}
+	a.API(http.MethodPost, "/api/games/"+gameID+"/snapshot",
+		map[string]string{"comment": "with config"}, &snap)
+	if snap.ID == "" {
+		t.Fatal("no snapshot id returned")
+	}
+
+	a.WriteSave("Progress.gs", "ruined")
+	a.WriteSave("Config.gs", "ruined")
+	a.API(http.MethodPost, "/api/games/"+gameID+"/rollback",
+		map[string]string{"snapshotId": snap.ID}, nil)
+
+	if got := a.ReadSave("Progress.gs"); got != "v1" {
+		t.Errorf("save = %q, want v1", got)
+	}
+	if got := a.ReadSave("Config.gs"); got != "my machine" {
+		t.Errorf("the excluded file was not in the snapshot (%q) — restoring would have destroyed it", got)
+	}
+}
