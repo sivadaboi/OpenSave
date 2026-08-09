@@ -231,6 +231,15 @@ func cmdConfig(d *daemon.Daemon, args []string) int {
 			return fail(asJSON, fmt.Errorf("manual-snapshot-limit must be a non-negative number (0 keeps them forever)"))
 		}
 		settings.DefaultMaxManualSnapshots = n
+	case "port":
+		// Settable at last. `daemon start --port` only ever covered one run,
+		// and the field in the window is no use on a headless box — so a
+		// machine where 8383 was taken had no durable way to move off it.
+		var n int
+		if _, err := fmt.Sscanf(value, "%d", &n); err != nil || n < 1 || n > 65535 {
+			return fail(asJSON, fmt.Errorf("port must be a number from 1 to 65535"))
+		}
+		settings.Port = n
 	case "relay-url":
 		// Refused rather than silently ignored: the write would be accepted,
 		// the next read would return the environment's value anyway, and the
@@ -273,6 +282,7 @@ const configUsage = `usage:
   opensave config set snapshot-limit <n>    Automatic snapshots kept per branch (0 = all)
   opensave config set manual-snapshot-limit <n>
                                             Manual snapshots kept per branch (0 = keep forever)
+  opensave config set port <n>              Local API/peer port (default 8383)
   opensave config set relay-url <url>       Relay server for internet sync
   opensave config set update-channel <stable|beta>
                                             Whether updates include pre-releases`

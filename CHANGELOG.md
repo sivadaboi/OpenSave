@@ -7,6 +7,19 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- **The daemon's port can be changed and stay changed, and a clash says what
+  to do.** `daemon start --port` only ever applied to one run, the field in
+  the window is no use on a headless box, and there was no `config set` key —
+  so a machine where 8383 was already taken had no durable way off it. There
+  is now `opensave config set port <n>`.
+
+  `--port auto` also does what it looks like. `--port 0` used to be
+  indistinguishable from not passing the flag at all, because 0 was the
+  internal "not given" sentinel, so asking for any free port silently started
+  on the configured one instead. And a clash printed the raw bind error and
+  nothing else; it now says a second OpenSave is the usual cause and lists the
+  three ways out.
+
 - **`opensave-relay` no longer ignores its arguments.** It accepted anything
   you typed, discarded it, and started a server. Somebody self-hosting ran
   `opensave-relay config set relay-url wss://...` — reasonable, since that is

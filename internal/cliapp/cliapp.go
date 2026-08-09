@@ -170,10 +170,19 @@ func Run(args []string) int {
 }
 
 func runDaemon(args []string) int {
-	port := 0 // resolved from settings below
+	// -1, not 0, means "not given". 0 is a real request: bind whatever the OS
+	// has free. They were the same value before, so `--port 0` — the obvious
+	// way to ask for any free port — silently started on the configured one
+	// instead.
+	port := -1
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--port" && i+1 < len(args) {
-			fmt.Sscanf(args[i+1], "%d", &port)
+			if args[i+1] == "auto" {
+				port = 0
+			} else if _, err := fmt.Sscanf(args[i+1], "%d", &port); err != nil || port < 0 || port > 65535 {
+				fmt.Fprintf(os.Stderr, "error: --port needs a number from 0 to 65535, or \"auto\"\n")
+				return 1
+			}
 			i++
 		}
 	}
@@ -185,7 +194,7 @@ func runDaemon(args []string) int {
 	}
 	defer d.Stop()
 
-	if port == 0 {
+	if port < 0 {
 		settings, err := d.Store.GetSettings()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -203,6 +212,17 @@ func runDaemon(args []string) int {
 	addr, err := server.Start(port)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		// A port clash here is nearly always a second OpenSave, and the raw
+		// bind error says nothing about that or about the ways out of it.
+		if isAddrInUse(err) {
+			fmt.Fprintf(os.Stderr, `
+Port %d is already taken — usually the desktop app or another `+"`opensave daemon start`"+`.
+
+  opensave daemon status          is one already running?
+  opensave daemon start --port auto   use any free port, just this once
+  opensave config set port <n>    change it for good (takes effect next start)
+`, port)
+		}
 		return 1
 	}
 	defer server.Stop()
@@ -777,4 +797,16 @@ func cmdRemove(d *daemon.Daemon, args []string) int {
 	}
 	fmt.Printf("No longer tracking %q (snapshot files kept on disk)\n", args[0])
 	return 0
+}
+
+// isAddrInUse reports whether a listen failure was a port clash. Matched on
+// the message rather than syscall.EADDRINUSE so it reads the same on Windows,
+// where the equivalent errno has a different name and a different value.
+func isAddrInUse(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "address already in use") ||
+		strings.Contains(msg, "only one usage of each socket address")
 }
