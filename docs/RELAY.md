@@ -34,6 +34,34 @@ If your VPS is not itself a machine you play games on, it never joins a room.
 
 ---
 
+## The short way
+
+On a Linux server, one command does the lot — binary, systemd service,
+firewall, and a certificate if you have a domain pointed here:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/packaging/relay/install-relay.sh -o install-relay.sh
+sudo bash install-relay.sh --domain relay.example.com
+```
+
+Leave `--domain` off and it still works, over unencrypted `ws://`. It prints
+the relay URL and the two commands to run on your gaming devices when it
+finishes, and `sudo bash install-relay.sh --uninstall` removes everything.
+
+**Read it before you run it as root.** It has a `--dry-run` that needs no
+privileges and prints every change it would make, including the systemd unit
+in full:
+
+```bash
+bash install-relay.sh --dry-run --domain relay.example.com
+```
+
+The download is checked against the release's `SHA256SUMS` before anything is
+installed.
+
+The rest of this page is the same thing done by hand, and what to do when it
+does not work.
+
 ## 1. Run the relay
 
 ### Docker
