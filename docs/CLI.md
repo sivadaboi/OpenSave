@@ -320,11 +320,33 @@ opensave scanpath add /mnt/games        # also look here
 opensave exclude add /mnt/old-backups   # never offer this again
 ```
 
-> There is currently **no environment-variable configuration** — no
-> `RELAY_URL` or equivalent. Settings live in the database, so provisioning a
-> new device means running `opensave config set …` once. A first-run
-> `--relay-url` flag or env override would be a reasonable addition; if you
-> want it, say so on [Discord](https://discord.gg/hvBv92DZvn) or in an issue.
+### Pinning the relay without a database
+
+Settings normally live in SQLite, which is awkward for a machine that is
+provisioned rather than configured — a container, or an image rebuilt onto a
+fresh volume, where "run a command once after first boot" is not a step you get
+to take.
+
+One setting can therefore come from the environment:
+
+```bash
+OPENSAVE_RELAY_URL=wss://relay.example.com opensave daemon start
+```
+
+```yaml
+# docker-compose
+environment:
+  - OPENSAVE_RELAY_URL=wss://relay.example.com
+```
+
+While it is set it **wins over the stored value**, on every read, so the app,
+the CLI and the sync engine all agree on which relay is in use. The field in
+the window shows it and says where it came from; `opensave config set
+relay-url` refuses rather than pretending to save. Your stored setting is left
+untouched, so unsetting the variable goes back to whatever you had configured.
+
+This is the only setting that works this way. Everything else is
+`opensave config set …`.
 
 ---
 

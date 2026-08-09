@@ -66,6 +66,11 @@ Both forms are configured with environment variables — there are no flags:
 | `MAX_PER_ROOM` | `20` | Most devices allowed in one room |
 | `GOOGLE_DRIVE_CLIENT_SECRET` | unset | Only for the optional OAuth token proxy. Leave it alone unless you know you need it |
 
+`opensave-relay --help` prints the same list. It takes **no commands** — if you
+give it one it says so and exits rather than starting a server that ignored
+half its command line. In particular `relay-url` is a *client* setting and does
+nothing here; see step 4.
+
 ## 2. Check it is up
 
 ```bash
@@ -128,6 +133,19 @@ opensave config set relay-url wss://relay.example.com
 opensave relay join purple-otter-42     # the same code on every device
 opensave relay status                   # shows the room and the relay in use
 ```
+
+Provisioning devices rather than configuring them by hand? Set
+`OPENSAVE_RELAY_URL` in the environment instead and skip the `config set` — it
+overrides the stored value for as long as it is set, so a container gets the
+right relay without anyone running a command inside it:
+
+```bash
+OPENSAVE_RELAY_URL=wss://relay.example.com opensave daemon start
+```
+
+Note the prefix: it is `OPENSAVE_RELAY_URL`, not a bare `RELAY_URL`, so it
+cannot collide with something else on the same box and quietly redirect your
+sync traffic.
 
 Use the **same room code and the same relay URL on every device**. The code is
 the only thing that decides who can find whom, so treat it like a password —

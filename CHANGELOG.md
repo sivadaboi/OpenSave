@@ -7,6 +7,16 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- **`opensave-relay` no longer ignores its arguments.** It accepted anything
+  you typed, discarded it, and started a server. Somebody self-hosting ran
+  `opensave-relay config set relay-url wss://...` — reasonable, since that is
+  roughly what the client command looks like — and got `bind: address already
+  in use`, because the arguments went nowhere and the only thing left to do
+  was start a second relay beside the one already running. The error described
+  neither what they asked for nor what was wrong with it. It now recognises
+  that shape, says `relay-url` is a client setting and where it belongs, and
+  exits non-zero. `--help` and `--version` work too, and a port clash on
+  startup now says what a port clash usually means.
 - **OneDrive can be connected at all now.** It has never shipped with built-in
   OAuth credentials — Microsoft does not allow a shared public app — and
   nothing in the interface set a custom one, so the card could be selected and
@@ -21,7 +31,6 @@ All notable changes to OpenSave are documented here. This project adheres to
   again every week, since the built-in credentials are a shared app still in
   testing. Changing the id while connected signs you out, because the tokens
   belonged to the previous app and no refresh of them would be accepted.
-
 - **`opensave scan --json` no longer ignores the flag.** It printed the
   formatted listing and exited 0, which is the worst way to not support
   something: a script piping it to `jq` got a parse error rather than an
@@ -29,7 +38,6 @@ All notable changes to OpenSave are documented here. This project adheres to
   It now emits the results in the same order the printed listing numbers them,
   so index *n* is what `add n` tracks, with the file count, size, last-written
   time and grouping each row carries.
-
 - **Exclusions now cover a game's extra save locations, not just its main
   folder.** A rule protected the save folder and was quietly ignored
   everywhere else — so a device-specific config kept in a game's settings
@@ -50,6 +58,17 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **`OPENSAVE_RELAY_URL` pins the relay from the environment.** Settings live
+  in SQLite, which is awkward for a machine that is provisioned rather than
+  configured — a container, or an image rebuilt onto a fresh volume, where
+  running a command once after first boot is not a step you get to take.
+  While the variable is set it overrides the stored value on every read, so
+  the window, the CLI and the sync engine all agree on which relay is in use;
+  the field shows it and says where it came from, and `config set relay-url`
+  refuses rather than pretending to save. Your stored setting is untouched, so
+  unsetting the variable returns to it. Prefixed deliberately — a bare
+  `RELAY_URL` is a name other things use, and silently redirecting someone's
+  sync traffic over a collision is not worth eight characters.
 - **Files that shouldn't sync can be picked from a list instead of typed.**
   The pattern box asked you to name a file you had to already know, in a
   folder you could not see, in a syntax you had to learn — and said nothing
@@ -79,7 +98,6 @@ All notable changes to OpenSave are documented here. This project adheres to
   including how to read a scan result, what to do when two devices disagree,
   and a glossary. [`GETTING_STARTED.md`](GETTING_STARTED.md). The User Guide
   stays as the reference.
-
 - **Auto-scan says what is actually in each folder, and hides the ones holding
   nothing.** Every result now shows its file count, its size, and when it was
   last written. The last of those is the one that earns its place: the same
