@@ -165,7 +165,7 @@
   // works out which rows are one game and what each folder is (see
   // internal/presets/group.go); this turns that into one tile per game with
   // the rest folded underneath.
-  function buildGroups(rows) {
+  function buildGroups(rows, tracked) {
     const byID = new Map();
     for (const r of rows) {
       const id = r.groupId || `id:${r.id}`;
@@ -192,7 +192,15 @@
         // Folders offered alongside the primary as one game. The daemon marks
         // these; the ones it marked "inside" or "alternative" are deliberately
         // not here.
-        suggested: members.filter((m) => m === primary || m.role === 'location')
+        //
+        // A folder already tracked as its own game is left out too. Adding it
+        // as a location of another game would leave one folder owned twice —
+        // watched twice, synced by two entries — and the two would then fight
+        // over it. It still appears in the list below the tile, labelled and
+        // not tickable, so it is visible rather than silently dropped.
+        suggested: members.filter(
+          (m) => m === primary || (m.role === 'location' && !tracked.has(normPath(m.savePath)))
+        )
       };
     });
   }
@@ -200,7 +208,7 @@
   // Keep the saves you can actually add at the top and push already-tracked
   // ones below a divider — with "Show tracked" on, interleaving them buries
   // the actionable entries in a wall of tiles.
-  $: allGroups = buildGroups(filteredResults);
+  $: allGroups = buildGroups(filteredResults, trackedPaths);
   $: availableGroups = allGroups.filter((g) => !trackedPaths.has(normPath(g.primary.savePath)));
   $: trackedGroups = allGroups.filter((g) => trackedPaths.has(normPath(g.primary.savePath)));
   $: orderedGroups = [...availableGroups, ...trackedGroups];

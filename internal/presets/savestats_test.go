@@ -2,7 +2,9 @@ package presets
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -155,5 +157,57 @@ func TestScanLeavesStatsUnmeasured(t *testing.T) {
 		if f.Measured || f.FileCount != 0 {
 			t.Errorf("Scan filled in stats for %q; measurement belongs to Measure", f.ID)
 		}
+	}
+}
+
+// A junction is not a directory as far as Go is concerned, so a naive walk
+// counts it as a file. That inflates the count and — worse — lets a folder
+// holding nothing but a junction look like it holds a save, which is the one
+// thing the empty-hiding rule must get right. delta.BuildManifest skips
+// reparse points too, so counting them here would also disagree with what
+// actually syncs.
+func TestMeasure_SkipsReparsePoints(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("junctions are a Windows thing; the same code path covers symlinks elsewhere")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real")
+	writeFile(t, filepath.Join(target, "save.dat"), "12345")
+
+	link := filepath.Join(dir, "link")
+	if err := exec.Command("cmd", "/c", "mklink", "/J", link, target).Run(); err != nil {
+		t.Skipf("could not create a junction here: %v", err)
+	}
+
+	saves := []DiscoveredSave{{ID: "a", SavePath: dir}}
+	Measure(saves)
+
+	if saves[0].FileCount != 1 {
+		t.Errorf("FileCount = %d, want 1 — the junction was counted as a file", saves[0].FileCount)
+	}
+	if saves[0].TotalBytes != 5 {
+		t.Errorf("TotalBytes = %d, want 5", saves[0].TotalBytes)
+	}
+}
+
+// A folder whose only content is a junction holds no save, and must be
+// hidden like any other empty one.
+func TestMeasure_FolderHoldingOnlyAJunctionIsEmpty(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("junctions are a Windows thing")
+	}
+	elsewhere := t.TempDir()
+	writeFile(t, filepath.Join(elsewhere, "other.dat"), "data")
+
+	dir := t.TempDir()
+	if err := exec.Command("cmd", "/c", "mklink", "/J", filepath.Join(dir, "link"), elsewhere).Run(); err != nil {
+		t.Skipf("could not create a junction here: %v", err)
+	}
+
+	saves := []DiscoveredSave{{ID: "a", SavePath: dir}}
+	Measure(saves)
+	if !saves[0].IsEmpty() {
+		t.Errorf("a folder holding only a junction reported %d file(s); it holds no save",
+			saves[0].FileCount)
 	}
 }

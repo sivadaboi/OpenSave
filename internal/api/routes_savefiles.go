@@ -39,12 +39,11 @@ type saveFile struct {
 	Excluded bool `json:"excluded"`
 }
 
-const (
-	// saveFileListCap bounds the response. A save folder with more files than
-	// this is not something anyone is going to pick through by eye, and the
-	// pattern box is still there for it.
-	saveFileListCap = 3000
-)
+// saveFileListCap bounds the response. A save folder with more files than
+// this is not something anyone is going to pick through by eye, and the
+// pattern box is still there for it. A var so tests can reach the boundary
+// without writing three thousand files.
+var saveFileListCap = 3000
 
 // handleGameSaveFiles lists every file across a game's save locations, each
 // marked with whether the game's current exclusion rules let it sync.
@@ -78,17 +77,24 @@ func (s *Server) handleGameSaveFiles(w http.ResponseWriter, r *http.Request) {
 
 	out := []saveFile{}
 	truncated := false
-	for _, root := range roots {
-		files, cut := listSaveFiles(root.path, saveFileListCap-len(out))
+	for i, root := range roots {
+		remaining := saveFileListCap - len(out)
+		if remaining <= 0 {
+			// Out of room with locations still unvisited: there really is
+			// more than this.
+			truncated = truncated || i < len(roots)
+			break
+		}
+		files, cut := listSaveFiles(root.path, remaining)
+		// Only a walk that actually stopped early means anything was left
+		// out. Landing exactly on the cap with nothing further to visit is a
+		// complete listing, and calling it truncated sends someone hunting
+		// for files that are all already on screen.
 		truncated = truncated || cut
 		for _, f := range files {
 			f.Location = root.name
 			f.Excluded = rules.Match(f.Path)
 			out = append(out, f)
-		}
-		if len(out) >= saveFileListCap {
-			truncated = true
-			break
 		}
 	}
 
@@ -109,6 +115,18 @@ func (s *Server) handleGameSaveFiles(w http.ResponseWriter, r *http.Request) {
 		"files":     out,
 		"truncated": truncated,
 	})
+}
+
+// hasDotSegment mirrors delta.isDotEntry: the manifest leaves out anything
+// with a dot-prefixed path segment, so those files never sync and must not be
+// offered here as though they might.
+func hasDotSegment(rel string) bool {
+	for _, seg := range strings.Split(rel, "/") {
+		if strings.HasPrefix(seg, ".") {
+			return true
+		}
+	}
+	return false
 }
 
 // listSaveFiles walks one location, returning at most limit files and whether
@@ -141,23 +159,38 @@ func listSaveFiles(root string, limit int) ([]saveFile, bool) {
 			}
 			return nil
 		}
+		// Skip exactly what delta.BuildManifest skips, or this list describes
+		// a different set of files from the one that syncs — and a row saying
+		// "syncs" about a file that never syncs is the picker lying about the
+		// one thing it exists to answer.
+		//
+		// Reparse points first: a junction is not a directory as far as Go is
+		// concerned, so without this it is counted as a file, offered to be
+		// ticked, and given a rule that can never match anything.
+		if d.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return nil
+		}
 		if d.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if hasDotSegment(rel) {
 			return nil
 		}
 		if len(out) >= limit {
 			truncated = true
 			return filepath.SkipAll
 		}
-		rel, relErr := filepath.Rel(root, p)
-		if relErr != nil {
-			return nil
-		}
 		fi, infoErr := d.Info()
 		if infoErr != nil {
 			return nil
 		}
 		out = append(out, saveFile{
-			Path:      filepath.ToSlash(rel),
+			Path:      rel,
 			SizeBytes: fi.Size(),
 			MtimeMs:   fi.ModTime().UnixMilli(),
 		})
