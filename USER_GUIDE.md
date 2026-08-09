@@ -3,6 +3,10 @@
 OpenSave keeps your game saves in sync across your devices, peer-to-peer. No
 accounts, no subscriptions. This guide walks through everyday use.
 
+> **New to OpenSave?** Start with [Getting Started](GETTING_STARTED.md) — it
+> covers the same ground from a fresh install and explains the terms as it
+> goes. This page is the reference for when you know what you are looking for.
+
 ## 1. First run
 
 When you open OpenSave the first time your library is empty. Two ways to add
@@ -136,8 +140,8 @@ changed blocks are stored, so history is cheap). Open a game to:
 3. Click **Pair**; approve the request on the other device.
 4. Paired devices sync tracked games automatically.
 
-If discovery is blocked, use **Connect via IP** with the other device's LAN
-IP and port (default `8383`).
+If discovery is blocked, use **Devices -> Add by IP address** with the other
+device's LAN IP and port (default `8383`), then **Send pairing request**.
 
 ### Across the internet (relay)
 
@@ -161,8 +165,14 @@ new snapshot uploads in the background. Use **Browse cloud** to explore and
 restore snapshots per game.
 
 > Note: the built-in Google Drive credentials use a shared OAuth app that may
-> expire weekly. For always-on cloud sync, enter your own Client ID under the
-> "Custom OAuth Client ID" box, or use Dropbox / WebDAV / a local folder.
+> expire weekly, so Drive can ask you to reconnect. Dropbox, WebDAV and a
+> local/NAS folder do not have this problem. Your own Google Client ID avoids
+> the expiry, but there is no field for it in the app yet -- it has to be set
+> through the local API:
+>
+> ```
+> curl -X POST http://127.0.0.1:8383/api/settings >   -H 'Content-Type: application/json' >   -d '{"cloudSync":{"customClientIds":{"google_drive":"YOUR-ID"}}}'
+> ```
 
 ## 5. Settings
 
