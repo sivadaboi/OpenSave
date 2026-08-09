@@ -9,6 +9,7 @@ import (
 
 	"github.com/opensave/opensave/internal/daemon"
 	"github.com/opensave/opensave/internal/selfupdate"
+	"github.com/opensave/opensave/internal/store"
 	"github.com/opensave/opensave/internal/version"
 )
 
@@ -231,6 +232,15 @@ func cmdConfig(d *daemon.Daemon, args []string) int {
 		}
 		settings.DefaultMaxManualSnapshots = n
 	case "relay-url":
+		// Refused rather than silently ignored: the write would be accepted,
+		// the next read would return the environment's value anyway, and the
+		// setting would look broken instead of overridden.
+		if settings.RelayURLLocked {
+			return fail(asJSON, fmt.Errorf(
+				"relay-url is pinned to %q by the %s environment variable, so it cannot be changed here.\n"+
+					"Change the variable and restart OpenSave, or unset it to go back to the stored setting.",
+				settings.RelayURL, store.RelayURLEnv))
+		}
 		settings.RelayURL = value
 	case "update-channel":
 		switch strings.ToLower(value) {

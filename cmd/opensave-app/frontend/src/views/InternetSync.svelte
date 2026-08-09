@@ -141,8 +141,18 @@
   <div class="row">
     <div class="field grow">
       <label for="relay-url">Relay server (self-hostable)</label>
-      <input id="relay-url" bind:value={relayDraft} />
-      <span class="hint">Run your own with the opensave-relay binary and point this at it.</span>
+      <!-- Pinned by the environment: shown, because it is the relay actually
+           in use, but not editable, because typing here would be discarded. -->
+      <input id="relay-url" bind:value={relayDraft} readonly={$settings?.relayUrlLocked} />
+      {#if $settings?.relayUrlLocked}
+        <span class="hint">
+          Set by the <code>OPENSAVE_RELAY_URL</code> environment variable, so it can't be changed
+          here. Change the variable and restart OpenSave, or unset it to go back to the saved
+          setting.
+        </span>
+      {:else}
+        <span class="hint">Run your own with the opensave-relay binary and point this at it.</span>
+      {/if}
     </div>
   </div>
   <div class="actions">
