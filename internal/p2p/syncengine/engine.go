@@ -226,6 +226,16 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 		return Result{}, fmt.Errorf("build local manifest: %w", err)
 	}
 
+	// Apply this game's exclusion rules to BOTH sides, before anything is
+	// compared, hashed or decided. From here on an excluded path simply does
+	// not exist: it cannot be pulled, pushed, deleted, or counted into a merge
+	// base. See ignore.go for why filtering the manifest at build time instead
+	// would propagate a deletion of the very file being protected.
+	if rules := e.rulesFor(gameID); !rules.Empty() {
+		localManifest = filterManifest(localManifest, rules)
+		remoteData.Manifest = filterManifest(remoteData.Manifest, rules)
+	}
+
 	// 3. Existing unresolved conflict blocks further syncing.
 	e.mu.Lock()
 	if existing := e.activeConflicts[gameID]; existing != nil {
@@ -295,6 +305,15 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	lineageFiles, lineageDirs, err := e.lineageSets(gameID, peer.ID)
 	if err != nil {
 		return Result{}, err
+	}
+	// The lineage is filtered too, and this is the half that is easy to
+	// forget: on a game that synced BEFORE the rule was written, the excluded
+	// path is still recorded as shared. Leave it there and the decision reads
+	// "we both had this and now I do not" — and propagates a deletion of the
+	// file the rule exists to protect.
+	if rules := e.rulesFor(gameID); !rules.Empty() {
+		lineageFiles = filterLineage(lineageFiles, rules)
+		lineageDirs = filterLineage(lineageDirs, rules)
 	}
 	decision := Compute(localManifest, remoteData.Manifest, lineageFiles, lineageDirs)
 
@@ -439,6 +458,14 @@ func (e *Engine) lineageSets(gameID, peerID string) (files, dirs map[string]stru
 // on the first sync after the peer's manifest actually contains them.
 func (e *Engine) persistLineage(gameID, peerID string, local, remote delta.Manifest) {
 	files, dirs := IntersectLineage(local, remote)
+	// Excluded paths must never re-enter the record of what both sides hold.
+	// RefreshLineage rebuilds this from unfiltered manifests, so without a
+	// filter here an excluded file would be written back in — and the next
+	// sync would read it as shared, then as deleted, and propagate that.
+	if rules := e.rulesFor(gameID); !rules.Empty() {
+		files = filterPathList(files, rules)
+		dirs = filterPathList(dirs, rules)
+	}
 	if err := e.Store.SetSyncState(gameID, peerID, files, dirs); err != nil {
 		e.Log("warn", fmt.Sprintf("persist sync lineage failed: %v", err))
 	}

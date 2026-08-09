@@ -1,0 +1,18 @@
+-- Per-game exclusions: files inside a tracked folder that must not sync.
+--
+-- Some games keep their save and their device-specific configuration in the
+-- same directory. Neva is the reported case: Progress.gs and Persistent.gs
+-- are the save, Config.gs describes the machine, and syncing Config.gs to
+-- another device crashes the game there. The folder cannot be narrowed
+-- without losing the save, so the exclusion has to be per file.
+--
+-- Stored as the text of the list, one pattern per line, the way a .gitignore
+-- is written — that is the form the request asked for and the one people
+-- already know. Parsing lives in internal/ignore.
+--
+-- These rules decide what SYNCS and nothing else. Snapshots still capture
+-- every file, deliberately: restoring empties the save folder first, so a
+-- file kept out of snapshots would be destroyed by the first rollback. A
+-- feature whose job is to protect a config file must never be the thing that
+-- deletes it.
+ALTER TABLE games ADD COLUMN sync_ignore TEXT NOT NULL DEFAULT '';

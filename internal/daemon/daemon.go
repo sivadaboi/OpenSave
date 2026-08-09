@@ -149,6 +149,13 @@ func New(opts Options) (*Daemon, error) {
 	}
 
 	d.Watcher = watcher.New(watcher.Callbacks{
+		IgnoreRules: func(gameID string) string {
+			game, err := s.GetGame(gameID)
+			if err != nil {
+				return ""
+			}
+			return game.SyncIgnore
+		},
 		GetLastManifestHash: func(gameID string) (string, error) {
 			game, err := s.GetGame(gameID)
 			if err != nil {

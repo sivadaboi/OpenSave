@@ -302,6 +302,7 @@ func (s *Server) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 
 	oldSavePath := game.SavePath
 	oldAutoSync := game.AutoSync
+	oldIgnore := game.SyncIgnore
 	if err := readJSON(r, &game); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -312,6 +313,38 @@ func (s *Server) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 	// AppID — so changing the AppID refreshes the art.
 	if game.CoverURL == "" || isSteamCover(game.CoverURL) {
 		game.CoverURL = daemon.SteamCoverURL(game.AppID)
+	}
+
+	if game.SyncIgnore != oldIgnore {
+		// The merge bases were computed over a save that included files the
+		// new rules exclude, so neither device could ever match them again —
+		// which reads as permanent divergence and prompts a conflict on every
+		// sync, over files nobody is syncing. The next sync re-establishes
+		// agreement over the new view.
+		// Rebased, not cleared. The stored base was a hash of a save that
+		// included files the new rules exclude, so neither device can match it
+		// again — but the two DID agree a moment ago, and taking files out of
+		// consideration leaves them still agreeing on what remains. Writing
+		// today's filtered hash says exactly that.
+		//
+		// Clearing it instead would drop conflict detection onto its
+		// mtime-based fallback, where a device that merely RECEIVED files in
+		// the last sync looks freshly modified — and the first sync after
+		// adding an exclusion would prompt about a divergence that does not
+		// exist.
+		if err := s.Daemon.Store.RebaseAgreedHashesForGame(gameID,
+			s.Daemon.P2P.Sync.FilteredContentHash(gameID, game)); err != nil {
+			s.Daemon.Log.Log("warn", fmt.Sprintf(
+				"could not reset sync agreement for %q after its exclusions changed: %v", game.Name, err))
+		}
+		// The last-snapshot hash goes too, for exactly the same reason: it was
+		// recorded over the old view, and the sync engine compares against it
+		// to decide whether the save holds changes a pull would overwrite. A
+		// value that can never match again makes that check fire on every
+		// pull. Clearing it disables the check until the next snapshot
+		// re-records it, which is the safe direction — it can cost one
+		// unnecessary prompt, never a silent overwrite.
+		game.LastManifestHash = ""
 	}
 
 	if err := s.Daemon.Store.UpdateGame(game); err != nil {

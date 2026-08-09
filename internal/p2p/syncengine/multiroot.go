@@ -198,9 +198,14 @@ func (e *Engine) persistRootLineage(gameID, peerID, root string, local, remote d
 // For a game with one folder it is exactly ManifestHash, so nothing recorded
 // before locations existed is invalidated.
 func (e *Engine) contentHashOf(gameID string, primary delta.Manifest, savePath string) string {
+	rules := e.rulesFor(gameID)
 	extra, err := e.Store.GameRootPaths(gameID)
 	if err != nil || len(extra) == 0 {
-		return primary.ManifestHash()
+		// Filtered for the same reason the watcher filters: the two values are
+		// compared against each other, and a mismatch here reads as "the save
+		// holds changes a pull would overwrite" — which a file nobody syncs
+		// never does.
+		return filterManifest(primary, rules).ManifestHash()
 	}
 	full, _, err := delta.BuildMultiManifest(savePath, extra)
 	if err != nil {
@@ -209,5 +214,5 @@ func (e *Engine) contentHashOf(gameID string, primary delta.Manifest, savePath s
 		// hash silently overwrites.
 		return primary.ManifestHash()
 	}
-	return full.ContentHash()
+	return filterManifest(full, rules).ContentHash()
 }
