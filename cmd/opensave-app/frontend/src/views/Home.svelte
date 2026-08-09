@@ -657,19 +657,24 @@
             {#if selectedCount > 0}
               <button class="btn small" on:click={clearSelection}>Clear</button>
             {/if}
+          </div>
+          <!-- Both tracking actions sit together on the right: they are the
+               two answers to the same question — one game or several — and
+               splitting them across the bar made the merge read as a filter. -->
+          <div class="scan-track-actions">
             {#if selectedCount > 1}
               <button
-                class="btn small"
+                class="btn primary"
                 title="Track everything ticked as a single game, whatever it was grouped under. For a split save the scan did not spot."
                 on:click={mergeSelectedIntoOneGame}
               >
                 Track as one game
               </button>
             {/if}
+            <button class="btn primary" disabled={selectedCount === 0} on:click={trackSelected}>
+              Track selected ({selectedCount})
+            </button>
           </div>
-          <button class="btn primary" disabled={selectedCount === 0} on:click={trackSelected}>
-            Track selected ({selectedCount})
-          </button>
         </div>
       {/if}
     </div>
@@ -1223,6 +1228,11 @@
   .scan-select-actions {
     display: flex;
     gap: 8px;
+  }
+  .scan-track-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
 
   .stats {
