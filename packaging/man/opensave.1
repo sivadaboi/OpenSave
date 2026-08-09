@@ -47,6 +47,17 @@ install left behind. Every folder still gets its own number, so
 .B add
 takes the one you are looking at; joining several to one game is
 .BR "locations add" .
+.IP
+With
+.BR --json ,
+results come back in that same order \(em index
+.I n
+is what
+.BI "add " n
+tracks \(em each carrying its file count, size, last-written time, and the
+group id and role saying which rows are one game and what each folder is.
+.B measured
+false means the folder could not be read, which is not the same as empty.
 .TP
 .BI "add " "name path"
 Track a save folder or file.

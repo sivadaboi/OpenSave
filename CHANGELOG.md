@@ -7,6 +7,14 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- **`opensave scan --json` no longer ignores the flag.** It printed the
+  formatted listing and exited 0, which is the worst way to not support
+  something: a script piping it to `jq` got a parse error rather than an
+  unknown-flag message, and the manual said every command accepts `--json`.
+  It now emits the results in the same order the printed listing numbers them,
+  so index *n* is what `add n` tracks, with the file count, size, last-written
+  time and grouping each row carries.
+
 - **Exclusions now cover a game's extra save locations, not just its main
   folder.** A rule protected the save folder and was quietly ignored
   everywhere else — so a device-specific config kept in a game's settings
@@ -41,6 +49,11 @@ All notable changes to OpenSave are documented here. This project adheres to
   type — so a rule can be checked before it is trusted, rather than after.
   Patterns still matter for files that do not exist yet, like `*.log`; this
   is a way in, not a replacement.
+- **A Getting Started guide**, for people who have not used OpenSave before:
+  the whole thing from a fresh install, explaining each term as it arrives,
+  including how to read a scan result, what to do when two devices disagree,
+  and a glossary. [`GETTING_STARTED.md`](GETTING_STARTED.md). The User Guide
+  stays as the reference.
 
 - **Auto-scan says what is actually in each folder, and hides the ones holding
   nothing.** Every result now shows its file count, its size, and when it was

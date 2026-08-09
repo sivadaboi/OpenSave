@@ -276,6 +276,7 @@ func cmdScan(d *daemon.Daemon, args []string) int {
 	// are places nothing has ever been written is a listing nobody reads.
 	// --all brings them back, for the case of wanting to track a folder
 	// before the game has first saved.
+	asJSON, args := jsonFlag(args)
 	showEmpty := false
 	for _, a := range args {
 		if a == "--all" {
@@ -296,20 +297,6 @@ func cmdScan(d *daemon.Daemon, args []string) int {
 	if !showEmpty {
 		found = presets.WithoutEmpty(found)
 	}
-
-	if len(found) == 0 {
-		section("Auto-scan")
-		if emptyCount > 0 {
-			note(fmt.Sprintf("No saved games found. %d detected folder(s) hold no files yet.", emptyCount))
-			hint("opensave scan --all            show them anyway")
-		} else {
-			note("No game saves detected.")
-		}
-		hint("opensave add <name> <path>     track a folder yourself")
-		fmt.Println()
-		return 0
-	}
-
 	// One entry per game, its other folders underneath. A scan finds the same
 	// game several times over — different detection passes, so its rows are
 	// scattered rather than adjacent — and a flat list leaves working out
@@ -325,32 +312,17 @@ func cmdScan(d *daemon.Daemon, args []string) int {
 		{"game", "Games"}, {"emulator", "Emulators"}, {"repack", "Repacks"},
 	}
 
-	// Collected in display order so the numbers printed are the numbers
-	// `add <n>` resolves.
+	// The display order, settled once and used by both outputs. `add <n>`
+	// resolves against whichever ran last, so JSON and the printed listing
+	// have to agree about which result is number n — a script that reads the
+	// JSON and then calls `add` would otherwise track a different folder from
+	// the one it chose.
+	var ordered [][]presets.DiscoveredSave
 	var numbered []presets.DiscoveredSave
-
-	header := fmt.Sprintf("Auto-scan %s %d save location(s) in %d game(s)", symDot(), len(found), len(groups))
-	if hidden := total - len(found); hidden > 0 {
-		header += fmt.Sprintf(" %s %d empty hidden", symDot(), hidden)
-	}
-	section(header)
 	for _, l := range labels {
-		list := byType[l.kind]
-		if len(list) == 0 {
-			continue
-		}
-		fmt.Printf("\n  %s %s\n", faint(strings.ToUpper(l.title)), faint(fmt.Sprintf("(%d)", len(list))))
-		for _, g := range list {
-			numbered = append(numbered, g[0])
-			fmt.Printf("    %s %s\n", accent(fmt.Sprintf("[%d]", len(numbered))), bold(g[0].Name))
-			fmt.Printf("        %s\n", faint(g[0].SavePath))
-			fmt.Printf("        %s\n", faint(scanContents(g[0])))
-			for _, m := range g[1:] {
-				numbered = append(numbered, m)
-				fmt.Printf("      %s %s %s\n",
-					accent(fmt.Sprintf("[%d]", len(numbered))), faint(roleNote(m.Role)), faint(m.SavePath))
-				fmt.Printf("           %s\n", faint(scanContents(m)))
-			}
+		for _, g := range byType[l.kind] {
+			ordered = append(ordered, g)
+			numbered = append(numbered, g...)
 		}
 	}
 
@@ -360,6 +332,52 @@ func cmdScan(d *daemon.Daemon, args []string) int {
 	// between the two commands, and a path retyped by hand from a screen is
 	// the papercut this exists to remove.
 	saveScanResults(d.Paths.HomeDir, numbered)
+
+	if asJSON {
+		if numbered == nil {
+			numbered = []presets.DiscoveredSave{} // an empty scan is [], never null
+		}
+		return emitJSON(numbered)
+	}
+
+	if len(numbered) == 0 {
+		section("Auto-scan")
+		if emptyCount > 0 {
+			note(fmt.Sprintf("No saved games found. %d detected folder(s) hold no files yet.", emptyCount))
+			hint("opensave scan --all            show them anyway")
+		} else {
+			note("No game saves detected.")
+		}
+		hint("opensave add <name> <path>     track a folder yourself")
+		fmt.Println()
+		return 0
+	}
+
+	header := fmt.Sprintf("Auto-scan %s %d save location(s) in %d game(s)", symDot(), len(found), len(groups))
+	if hidden := total - len(found); hidden > 0 {
+		header += fmt.Sprintf(" %s %d empty hidden", symDot(), hidden)
+	}
+	section(header)
+	n := 0
+	for _, l := range labels {
+		list := byType[l.kind]
+		if len(list) == 0 {
+			continue
+		}
+		fmt.Printf("\n  %s %s\n", faint(strings.ToUpper(l.title)), faint(fmt.Sprintf("(%d)", len(list))))
+		for _, g := range list {
+			n++
+			fmt.Printf("    %s %s\n", accent(fmt.Sprintf("[%d]", n)), bold(g[0].Name))
+			fmt.Printf("        %s\n", faint(g[0].SavePath))
+			fmt.Printf("        %s\n", faint(scanContents(g[0])))
+			for _, m := range g[1:] {
+				n++
+				fmt.Printf("      %s %s %s\n",
+					accent(fmt.Sprintf("[%d]", n)), faint(roleNote(m.Role)), faint(m.SavePath))
+				fmt.Printf("           %s\n", faint(scanContents(m)))
+			}
+		}
+	}
 
 	hints := []string{
 		"opensave add <number>          track one of these",
