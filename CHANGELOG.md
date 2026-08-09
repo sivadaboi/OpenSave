@@ -7,6 +7,21 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Fixed
 
+- **OneDrive can be connected at all now.** It has never shipped with built-in
+  OAuth credentials — Microsoft does not allow a shared public app — and
+  nothing in the interface set a custom one, so the card could be selected and
+  never connect. The error even said to configure it under Settings → Cloud
+  Backup, which was not a screen that existed. Selecting OneDrive now shows
+  the Client ID field with a link to the Azure portal and the redirect URI it
+  needs.
+- **Your own OAuth app can be set from the app.** The daemon has always
+  supported a per-provider Client ID and secret; the only way to set one was a
+  hand-written API call. **Use your own OAuth app**, under any OAuth provider,
+  now does it — which is the real fix for Google Drive asking you to sign in
+  again every week, since the built-in credentials are a shared app still in
+  testing. Changing the id while connected signs you out, because the tokens
+  belonged to the previous app and no refresh of them would be accepted.
+
 - **`opensave scan --json` no longer ignores the flag.** It printed the
   formatted listing and exited 0, which is the worst way to not support
   something: a script piping it to `jq` got a parse error rather than an

@@ -46,7 +46,7 @@ OpenSave gives **every** game the Steam Cloud experience:
 - **P2P sync** — automatic over LAN (zero-config discovery) or across the internet through a relay **room code** — no port forwarding. A paired-device model means every connection is explicitly approved.
 - **Snapshot history** — every change creates a versioned snapshot. Roll back a whole save or a single file; branches keep parallel playthroughs (and conflict resolutions) safe.
 - **Smart conflict handling** — diverged saves are detected by **sync lineage**, not wall-clock timestamps. Keep yours, keep theirs, or keep both on a new branch.
-- **Cloud backup** — optional mirroring to Google Drive, Dropbox, OneDrive, WebDAV, a webhook, or a local/NAS folder.
+- **Cloud backup** — optional mirroring to Google Drive, Dropbox, OneDrive, WebDAV, a webhook, or a local/NAS folder. Any OAuth provider can use your own app credentials instead of the built-in ones — required for OneDrive, and the fix for Google Drive's weekly re-login.
 - **Cross-device game matching** — the same title tracked under different names on two machines (a Steam install here, a differently-named folder there) can be matched by Steam App ID or linked by hand. App-ID matching is opt-in, so two separate copies of a game are never merged without asking.
 - **A full command line** — `opensave` does everything the app does, for a Steam Deck in Game Mode or a headless server. See [Command line](#command-line).
 - **In-app updates** — one-click update from GitHub releases, pull a newer build straight from a paired device, or `opensave update` from the terminal.
@@ -407,7 +407,9 @@ PORT=10000 ./opensave-relay          # custom port
 docker build -f relay/Dockerfile .   # or as a container
 ```
 
-Point **Settings → Internet Sync → Relay server** at your instance. `opensave upnp 8386` forwards the port on UPnP-capable routers.
+Point **Internet Sync → Relay server (self-hostable)** at your instance, on each device, then join the same room code on all of them. `opensave upnp 8386` forwards the port on UPnP-capable routers.
+
+**The relay itself never joins a room** — it has no such command, and nothing to configure beyond the port. Rooms come into existence when your devices ask for them. Full walkthrough, including TLS and the reverse-proxy settings WebSockets need: **[docs/RELAY.md](docs/RELAY.md)**.
 
 ## Architecture
 

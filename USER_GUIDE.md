@@ -164,15 +164,17 @@ WebDAV, a webhook, or a local/NAS folder. Sign in, flip the toggle, and every
 new snapshot uploads in the background. Use **Browse cloud** to explore and
 restore snapshots per game.
 
-> Note: the built-in Google Drive credentials use a shared OAuth app that may
-> expire weekly, so Drive can ask you to reconnect. Dropbox, WebDAV and a
-> local/NAS folder do not have this problem. Your own Google Client ID avoids
-> the expiry, but there is no field for it in the app yet -- it has to be set
-> through the local API:
+> **Google Drive** uses shared built-in credentials from an app still in
+> testing, so it can ask you to sign in again weekly. Open **Use your own
+> OAuth app** under the provider and paste a Client ID from the
+> [Google Cloud console](https://console.cloud.google.com/apis/credentials)
+> (redirect URI `http://localhost/callback`) to stop that.
 >
-> ```
-> curl -X POST http://127.0.0.1:8383/api/settings >   -H 'Content-Type: application/json' >   -d '{"cloudSync":{"customClientIds":{"google_drive":"YOUR-ID"}}}'
-> ```
+> **OneDrive requires your own app registration** before it works at all --
+> Microsoft does not allow a shared one. Selecting OneDrive shows the fields
+> and links to the Azure portal.
+>
+> Dropbox, WebDAV and a local/NAS folder need none of this.
 
 ## 5. Settings
 

@@ -112,6 +112,69 @@
     }
   }
 
+  // ── Your own OAuth app ───────────────────────────────────────────
+  // The daemon has always supported a per-provider client id and secret;
+  // nothing in the app set them, so the only route was a hand-written API
+  // call. Two things needed it. Google's built-in credentials are a shared
+  // app that can expire weekly, and OneDrive has NO built-in id at all —
+  // Microsoft does not allow a shared public one — so the OneDrive card could
+  // be selected but never connect, and the error said to configure it on a
+  // screen that did not exist.
+  //
+  // OneDrive therefore shows these fields open, as its normal setup rather
+  // than as a workaround; the others keep them folded away.
+  const providerNeedsOwnApp = (id) => id === 'onedrive';
+  let showOwnApp = false;
+  let ownAppID = '';
+  let ownAppSecret = '';
+  let ownAppFor = null;
+
+  // Reload the fields when the selected provider changes, so switching cards
+  // never shows one provider's credentials under another's name.
+  $: if (config && config.provider !== ownAppFor) {
+    ownAppFor = config.provider;
+    ownAppID = config.customClientIds?.[config.provider] ?? '';
+    ownAppSecret = config.customClientSecrets?.[config.provider] ?? '';
+    showOwnApp = providerNeedsOwnApp(config.provider) && !ownAppID;
+  }
+
+  async function saveOwnApp() {
+    const provider = config.provider;
+    // Changing the id invalidates any tokens already held: they were issued to
+    // the old app and no refresh will be accepted. Disconnecting is the honest
+    // outcome — leaving them in place would show "Connected" over credentials
+    // that cannot work.
+    const changed = (config.customClientIds?.[provider] ?? '') !== ownAppID.trim();
+    const wasConnected = connectedProvider === provider;
+
+    busy = true;
+    try {
+      await api.post('/api/settings', {
+        cloudSync: {
+          customClientIds: { [provider]: ownAppID.trim() },
+          customClientSecrets: { [provider]: ownAppSecret.trim() }
+        }
+      });
+      if (changed && wasConnected) {
+        await api.post('/api/auth/disconnect');
+        toast('Saved. Sign in again — the old connection belonged to the previous app.', 'success');
+      } else {
+        toast(ownAppID.trim() ? 'Saved. Sign in to use your own app.' : 'Cleared — the built-in app will be used.', 'success');
+      }
+      // Reload for the fresh tokens/ids, then put the card back. load() takes
+      // the provider from the server, which is whatever was last saved with
+      // "Save settings" — so without this, saving credentials for a provider
+      // you had only selected drops you back onto the stored one, and the
+      // section you were filling in disappears as though nothing happened.
+      await load();
+      config.provider = provider;
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      busy = false;
+    }
+  }
+
   async function startAuth() {
     busy = true;
     try {
@@ -550,12 +613,81 @@
           {/if}
         {/if}
       {/if}
+
+      <!-- Your own OAuth app. Folded away for the providers that ship with
+           working credentials; opened by default for OneDrive, which has none. -->
+      <div class="own-app">
+        {#if providerNeedsOwnApp(config.provider) && !ownAppID}
+          <p class="quiet own-app-required">
+            <strong>OneDrive needs your own app registration.</strong> Microsoft doesn't allow a
+            shared one, so OpenSave can't ship credentials for it. Create a free app in the
+            <button class="linkish" on:click={() => native.openExternal('https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade')}>Azure portal</button>
+            with redirect URI <code>http://localhost/callback</code>, then paste its Application
+            (client) ID below.
+          </p>
+        {:else}
+          <button class="linkish" on:click={() => (showOwnApp = !showOwnApp)}>
+            {showOwnApp ? '▾' : '▸'} Use your own OAuth app{ownAppID ? ' (in use)' : ''}
+          </button>
+        {/if}
+
+        {#if showOwnApp || (providerNeedsOwnApp(config.provider) && !ownAppID)}
+          <div class="own-app-body">
+            {#if config.provider === 'google_drive'}
+              <p class="quiet">
+                OpenSave's built-in Google credentials are a shared app still in testing, so Drive
+                can ask you to sign in again every week. Your own Client ID stops that. Create one
+                in the
+                <button class="linkish" on:click={() => native.openExternal('https://console.cloud.google.com/apis/credentials')}>Google Cloud console</button>
+                as an OAuth client with redirect URI <code>http://localhost/callback</code>.
+              </p>
+            {:else if config.provider === 'dropbox'}
+              <p class="quiet">
+                Only needed if you'd rather use your own Dropbox app than the built-in one.
+              </p>
+            {/if}
+            <div class="field">
+              <label for="cb-clientid">Client ID</label>
+              <input
+                id="cb-clientid"
+                bind:value={ownAppID}
+                spellcheck="false"
+                placeholder={config.provider === 'google_drive'
+                  ? '…apps.googleusercontent.com'
+                  : 'Application (client) ID'}
+              />
+            </div>
+            <div class="field">
+              <label for="cb-clientsecret">Client secret <span class="quiet">— leave empty unless your app requires one</span></label>
+              <input id="cb-clientsecret" type="password" bind:value={ownAppSecret} spellcheck="false" />
+            </div>
+            <div class="path-row">
+              <button class="btn primary" disabled={busy} on:click={saveOwnApp}>Save credentials</button>
+              {#if ownAppID}
+                <button
+                  class="btn small"
+                  disabled={busy}
+                  title="Go back to OpenSave's built-in credentials"
+                  on:click={() => { ownAppID = ''; ownAppSecret = ''; saveOwnApp(); }}
+                >
+                  Use the built-in app
+                </button>
+              {/if}
+            </div>
+            {#if connectedProvider === config.provider}
+              <p class="quiet">
+                You're signed in already — changing this disconnects you, because the existing
+                sign-in belongs to the old app.
+              </p>
+            {/if}
+          </div>
+        {/if}
+      </div>
     {/if}
 
     <div class="actions">
       <span class="quiet" style="margin-right: auto;">
-        Automatic mirroring, Drive folder ID, and custom OAuth client IDs live in
-        <strong>Settings → Sync</strong>.
+        Automatic mirroring and the Drive folder ID live in <strong>Settings → Sync</strong>.
       </span>
       <button class="btn primary" disabled={busy} on:click={save}>Save settings</button>
     </div>
@@ -982,6 +1114,20 @@
     color: var(--text-dim);
     font-weight: 600;
     margin: 18px 0 10px;
+  }
+  .own-app {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .own-app-required {
+    margin: 0 0 10px;
+  }
+  .own-app-body {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
   .provider-grid {
     display: grid;

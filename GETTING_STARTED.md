@@ -165,6 +165,13 @@ address**, type the other machine's local address (something like
 The relay only passes along encrypted data between your devices. It cannot read
 your saves and does not store them.
 
+Treat the room code like a password — anyone who has it can send your devices a
+pairing request. They still cannot sync anything without you approving it on
+the device itself.
+
+Prefer to run your own relay instead of the hosted one? See
+[docs/RELAY.md](docs/RELAY.md).
+
 ### Then
 
 Once paired, tracked games sync automatically. You do not need to press
@@ -341,19 +348,20 @@ Google Drive, Dropbox, OneDrive, WebDAV, a webhook, or just a folder on a NAS.
 Every new snapshot then uploads in the background. **Browse cloud** lets you
 explore and restore from there.
 
-> The built-in Google Drive credentials are a shared app that can expire
-> weekly, so Drive may ask you to reconnect. **Dropbox, WebDAV and a local or
-> NAS folder do not have this problem**, and are the better choice if you want
-> to set it up once and forget it.
->
-> Your own Google Client ID avoids the expiry, but there is no box for it in
-> the app yet — it currently has to be set through the local API:
->
-> ```bash
-> curl -X POST http://127.0.0.1:8383/api/settings \
->   -H 'Content-Type: application/json' \
->   -d '{"cloudSync":{"customClientIds":{"google_drive":"YOUR-ID.apps.googleusercontent.com"}}}'
-> ```
+**Two provider quirks worth knowing before you pick one:**
+
+- **Google Drive** works out of the box, but OpenSave's built-in credentials
+  are a shared app still in testing, so Drive can ask you to sign in again
+  about once a week. To stop that, open **Use your own OAuth app** under the
+  provider and paste a Client ID you create in the
+  [Google Cloud console](https://console.cloud.google.com/apis/credentials)
+  (redirect URI `http://localhost/callback`).
+- **OneDrive needs your own app registration** before it will work at all —
+  Microsoft doesn't allow a shared one, so OpenSave can't ship credentials for
+  it. Selecting OneDrive shows the fields and a link to the Azure portal.
+
+**Dropbox, WebDAV, and a local or NAS folder have neither problem** and are the
+easiest choice if you just want it set up once.
 
 ## 13. When something looks wrong
 
