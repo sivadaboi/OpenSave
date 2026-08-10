@@ -1,6 +1,7 @@
 <script>
   import { games, navigate, toast, syncActivity, askConfirm } from '../lib/stores.js';
   import { api, native, coverURL, gameCover } from '../lib/api.js';
+  import { addExclusion, addNegation, removeDirectExclusion } from '../lib/ignorerules.js';
 
   export let params = {};
 
@@ -101,40 +102,24 @@
     previewTimer = setTimeout(() => refreshSaveFiles(text), 250);
   }
 
-  // A rule is matched against the path relative to each save location, so
-  // anchoring with a leading slash pins it to one file rather than every file
-  // of that name at any depth.
-  const anchoredPattern = (f) => '/' + f.path;
-
-  function ruleLines(text) {
-    return (text ?? '').split('\n');
-  }
-
   // Ticking a file adds its pattern. Unticking removes the lines that name it
   // outright — and if it is still caught after that, by a wildcard or a folder
   // rule, adds a "!" exception, which is the only thing that can rescue one
   // file from a broader rule without abandoning the rule.
+  //
+  // Whether it is still caught is a question only the daemon can answer: it
+  // holds the matcher the sync engine itself uses. The text editing around
+  // that answer lives in ../lib/ignorerules.js, where it is tested.
   async function toggleFileExcluded(f) {
     if (!cfg) return;
-    const anchored = anchoredPattern(f);
     let text;
     if (!f.excluded) {
-      const lines = ruleLines(cfg.syncIgnore).filter((l) => l.trim() !== '');
-      if (!lines.some((l) => l.trim() === anchored || l.trim() === f.path)) lines.push(anchored);
-      text = lines.join('\n');
+      text = addExclusion(cfg.syncIgnore, f.path);
     } else {
-      // Drop any line naming it directly, plus a stale exception for it.
-      const lines = ruleLines(cfg.syncIgnore).filter((l) => {
-        const t = l.trim();
-        return t !== anchored && t !== f.path && t !== '!' + anchored && t !== '!' + f.path;
-      });
-      text = lines.join('\n').replace(/\n{3,}/g, '\n\n');
-      // Ask the real matcher whether that was enough before guessing.
+      text = removeDirectExclusion(cfg.syncIgnore, f.path);
       await refreshSaveFiles(text);
       const still = (saveFiles ?? []).find((x) => x.path === f.path && x.location === f.location);
-      if (still?.excluded) {
-        text = (text.trimEnd() + '\n!' + anchored).replace(/^\n+/, '');
-      }
+      if (still?.excluded) text = addNegation(text, f.path);
     }
     cfg.syncIgnore = text;
     lastPreviewed = text;

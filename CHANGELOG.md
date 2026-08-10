@@ -77,6 +77,24 @@ All notable changes to OpenSave are documented here. This project adheres to
 
 ### Added
 
+- **The frontend has tests now.** It had none — not a thin suite, none — while
+  the Go side had forty passing packages. That gap was not academic: of the
+  frontend bugs found in this cycle, three were pure decisions sitting inside
+  `.svelte` files, where the only way to exercise them was to open the app and
+  look. Which folder of a game counts as the save. Whether a folder already
+  tracked as its own game may be adopted as a location of another. Whether a
+  truncated count reads as a floor.
+
+  Those decisions now live in `src/lib/scan.js` and `src/lib/ignorerules.js`,
+  with 31 Vitest cases against them, each one a mistake that actually reached a
+  build rather than a hypothetical. They run in 8ms and are wired into CI as
+  their own job, so they do not queue behind a thirty-minute race run.
+
+  Deliberately NOT moved: anything that needs the daemon. Whether a file is
+  excluded is answered by the daemon, which holds the matcher the sync engine
+  itself uses — a second, nearly-right copy in the client would be wrong in the
+  worst direction, telling someone a file is protected when it is not.
+
 - **A one-command relay installer.** Self-hosting meant fetching a binary,
   writing a systemd unit, opening a port, and — for the encryption clients
   default to — a reverse proxy with the two WebSocket settings everyone

@@ -2,6 +2,17 @@
   import { gameList, peers, navigate, toast, syncActivity, askConfirm } from '../lib/stores.js';
   import { api, native, coverURL, gameCover } from '../lib/api.js';
   import { backdropClose } from '../lib/backdrop.js';
+  // The scan screen's decisions live in a plain module so they can be tested
+  // without opening the app — see scan.test.js, where each case is a mistake
+  // that actually reached a build.
+  import {
+    buildGroups,
+    contentsLabel,
+    isEmptyResult,
+    normPath,
+    plannedGames,
+    rootNameFor
+  } from '../lib/scan.js';
 
   export let params = {};
 
@@ -133,18 +144,10 @@
     if (e.key === 'Escape' && scanOpen) closeScan();
   }
 
-  // Compare save paths case-insensitively and ignoring a trailing separator,
-  // so a tracked game still matches its scan entry when one of them carries a
-  // trailing slash.
-  const normPath = (p) => (p ?? '').replace(/[\\/]+$/, '').toLowerCase();
   $: trackedPaths = new Set($gameList.map((g) => normPath(g.savePath)));
   const isTracked = (r) => trackedPaths.has(normPath(r.savePath));
   // Note: reference trackedPaths directly (not via isTracked) so Svelte sees
   // it as a dependency and refreshes the list when tracked-state changes.
-  // A folder holding no files. Mirrors DiscoveredSave.IsEmpty in Go, and the
-  // `measured` half matters: a location the daemon could not read reports
-  // zero files, and hiding one of those would take a real save off the list.
-  const isEmptyResult = (r) => r.measured && r.fileCount === 0;
 
   // Everything the type tabs and the counts describe. Empty folders are out
   // of the pool entirely unless asked for, so the tab counts match what the
@@ -158,53 +161,6 @@
     if (scanFilter && !`${r.name} ${r.savePath}`.toLowerCase().includes(scanFilter.toLowerCase())) return false;
     return true;
   });
-  // ── One row per game ─────────────────────────────────────────────
-  // A scan finds the same game in several places as a matter of course, and
-  // the duplicates are not adjacent — they come from different detection
-  // passes, so a game's four rows land scattered through hundreds. The daemon
-  // works out which rows are one game and what each folder is (see
-  // internal/presets/group.go); this turns that into one tile per game with
-  // the rest folded underneath.
-  function buildGroups(rows, tracked) {
-    const byID = new Map();
-    for (const r of rows) {
-      const id = r.groupId || `id:${r.id}`;
-      if (!byID.has(id)) byID.set(id, []);
-      byID.get(id).push(r);
-    }
-    // Within a game, the folder to track comes first, then the ones offered
-    // with it, then the ones merely offered. The API returns rows in scanner
-    // order, which is the order the detection passes ran in — so without this
-    // the save folder can sit below a folder that is only part of the save,
-    // and everything downstream that says "the first one" means the wrong one.
-    const rank = { primary: 0, only: 0, location: 1, alternative: 2, inside: 3 };
-    for (const members of byID.values()) {
-      members.sort((a, b) => (rank[a.role] ?? 9) - (rank[b.role] ?? 9));
-    }
-    return [...byID.entries()].map(([id, members]) => {
-      const primary = members.find((m) => m.role === 'primary' || m.role === 'only') ?? members[0];
-      return {
-        id,
-        primary,
-        members,
-        // Everything the tile does not itself represent.
-        extras: members.filter((m) => m !== primary),
-        // Folders offered alongside the primary as one game. The daemon marks
-        // these; the ones it marked "inside" or "alternative" are deliberately
-        // not here.
-        //
-        // A folder already tracked as its own game is left out too. Adding it
-        // as a location of another game would leave one folder owned twice —
-        // watched twice, synced by two entries — and the two would then fight
-        // over it. It still appears in the list below the tile, labelled and
-        // not tickable, so it is visible rather than silently dropped.
-        suggested: members.filter(
-          (m) => m === primary || (m.role === 'location' && !tracked.has(normPath(m.savePath)))
-        )
-      };
-    });
-  }
-
   // Keep the saves you can actually add at the top and push already-tracked
   // ones below a divider — with "Show tracked" on, interleaving them buries
   // the actionable entries in a wall of tiles.
@@ -219,41 +175,6 @@
     repack: scanPool.filter((r) => r.type === 'repack').length,
     game: scanPool.filter((r) => r.type === 'game').length
   };
-
-  // ── What's actually in a detected folder ─────────────────────────
-  // Size and age are how you tell a save still in use from one an install
-  // left behind — the same game is often detected in three places, and only
-  // one of them is live.
-  function fmtBytes(n) {
-    if (!n) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let i = 0;
-    while (n >= 1024 && i < units.length - 1) {
-      n /= 1024;
-      i++;
-    }
-    return `${i === 0 ? n : n.toFixed(1)} ${units[i]}`;
-  }
-
-  // Deliberately rough. The question is "is this folder still in use", and a
-  // date is something you have to do arithmetic on to answer it.
-  function fmtAge(unix) {
-    if (!unix) return 'never';
-    const secs = Date.now() / 1000 - unix;
-    if (secs < 60) return 'just now';
-    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
-    if (secs < 86400 * 365) return `${Math.floor(secs / 86400)}d ago`;
-    const years = secs / 86400 / 365;
-    return years < 2 ? 'over a year ago' : `${Math.round(years)} years ago`;
-  }
-
-  function contentsLabel(r) {
-    if (!r.measured) return 'size unknown';
-    if (r.fileCount === 0) return 'empty — nothing saved here yet';
-    const files = `${r.fileCount}${r.truncated ? '+' : ''} file${r.fileCount === 1 ? '' : 's'}`;
-    return `${files} · ${fmtBytes(r.totalBytes)} · ${fmtAge(r.latestMtime)}`;
-  }
 
   function toggleSelect(id) {
     if (selected.has(id)) selected.delete(id);
@@ -283,17 +204,6 @@
   function clearSelection() {
     selected = new Set();
     selectedCount = 0;
-  }
-
-  // A location's name is what the two devices match on, so it has to be
-  // something the other machine will arrive at too — the folder's own name,
-  // not a number. Duplicates within one game get a suffix.
-  function rootNameFor(path, taken) {
-    const base = (path ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'location';
-    let name = base;
-    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base} ${n}`;
-    taken.add(name.toLowerCase());
-    return name;
   }
 
   // Track one game from a set of folders: the first is the save folder and the
@@ -360,19 +270,10 @@
     // games that happen to share a name. That is the whole point of grouping:
     // tracking Scores, Tracks and Profiles separately gives you three library
     // entries that each sync a third of a save.
-    const byGroup = new Map();
-    for (const it of items) {
-      const gid = it.groupId || `id:${it.id}`;
-      if (!byGroup.has(gid)) byGroup.set(gid, []);
-      byGroup.get(gid).push(it);
-    }
-
     let games = 0;
     let locations = 0;
     const problems = [];
-    for (const members of byGroup.values()) {
-      const primary = members.find((m) => m.role === 'primary' || m.role === 'only') ?? members[0];
-      const extras = members.filter((m) => m !== primary);
+    for (const { primary, extras } of plannedGames(items)) {
       try {
         const { failed } = await trackAsOneGame(primary, extras);
         games++;
