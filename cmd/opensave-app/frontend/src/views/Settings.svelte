@@ -344,31 +344,19 @@
           the folder's URL) instead of the auto-managed one.
         </span>
       </div>
+      <!-- The client-ID inputs that used to sit here have moved to Cloud
+           Backup, beside the provider they belong to. Two screens writing one
+           setting is a way to be told two different things; and the version
+           there can also take the client SECRET, warns that changing an id
+           signs you out, and gives OneDrive the portal link it needs — none of
+           which fitted a row of three bare boxes. -->
       <div class="field" style="margin-bottom: 0;">
-        <label for="s-oauth-gd">Custom OAuth client IDs (optional, advanced)</label>
-        <span class="hint" style="margin-bottom: 8px; display: block;">
-          Google Drive and Dropbox ship with built-in credentials — leave these blank unless you want
-          sign-ins to go through your own registered app. OneDrive has no built-in credentials, so it
-          requires one. Takes effect on the next sign-in.
+        <label for="s-oauth-moved">Your own OAuth app</label>
+        <span class="hint" id="s-oauth-moved">
+          Client IDs and secrets are set per provider under <strong>Cloud Backup → Use your own
+          OAuth app</strong>. Optional for Google Drive and Dropbox, which ship with credentials;
+          required for OneDrive, which has none.
         </span>
-        <div class="oauth-ids">
-          <input
-            id="s-oauth-gd"
-            placeholder="Google Drive client ID"
-            value={draft.cloudSync.customClientIds?.google_drive ?? ''}
-            on:input={(e) => (draft.cloudSync.customClientIds = { ...(draft.cloudSync.customClientIds ?? {}), google_drive: e.currentTarget.value })}
-          />
-          <input
-            placeholder="Dropbox client ID"
-            value={draft.cloudSync.customClientIds?.dropbox ?? ''}
-            on:input={(e) => (draft.cloudSync.customClientIds = { ...(draft.cloudSync.customClientIds ?? {}), dropbox: e.currentTarget.value })}
-          />
-          <input
-            placeholder="OneDrive client ID"
-            value={draft.cloudSync.customClientIds?.onedrive ?? ''}
-            on:input={(e) => (draft.cloudSync.customClientIds = { ...(draft.cloudSync.customClientIds ?? {}), onedrive: e.currentTarget.value })}
-          />
-        </div>
       </div>
     </div>
   {:else if tab === 'storage'}

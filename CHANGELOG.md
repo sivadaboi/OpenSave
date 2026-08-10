@@ -30,20 +30,26 @@ All notable changes to OpenSave are documented here. This project adheres to
   that shape, says `relay-url` is a client setting and where it belongs, and
   exits non-zero. `--help` and `--version` work too, and a port clash on
   startup now says what a port clash usually means.
-- **OneDrive can be connected at all now.** It has never shipped with built-in
-  OAuth credentials — Microsoft does not allow a shared public app — and
-  nothing in the interface set a custom one, so the card could be selected and
-  never connect. The error even said to configure it under Settings → Cloud
-  Backup, which was not a screen that existed. Selecting OneDrive now shows
-  the Client ID field with a link to the Azure portal and the redirect URI it
-  needs.
-- **Your own OAuth app can be set from the app.** The daemon has always
-  supported a per-provider Client ID and secret; the only way to set one was a
-  hand-written API call. **Use your own OAuth app**, under any OAuth provider,
-  now does it — which is the real fix for Google Drive asking you to sign in
-  again every week, since the built-in credentials are a shared app still in
-  testing. Changing the id while connected signs you out, because the tokens
-  belonged to the previous app and no refresh of them would be accepted.
+- **OneDrive's setup is where you hit the problem, not three screens away.**
+  It ships with no OAuth credentials — Microsoft does not allow a shared
+  public app — so it needs your own before it will connect at all. A client-ID
+  box did exist, under Settings → Sync, in a row of three unlabelled inputs;
+  but the failure told you to look under Settings → Cloud Backup, which is a
+  different tab, and nothing said what to create or where. Selecting OneDrive
+  now opens the field in place, with a link to the Azure portal and the
+  redirect URI to register.
+- **Your own OAuth app, set beside the provider it belongs to.** The client-ID
+  inputs have moved out of Settings → Sync and into Cloud Backup, under **Use
+  your own OAuth app**, next to the provider you are connecting. They also now
+  take the client SECRET, which the daemon has always read and nothing could
+  set; and changing an id while you are signed in now signs you out, because
+  the tokens were issued to the previous app and no refresh of them would be
+  accepted — leaving them in place showed "Connected" over credentials that
+  could not work.
+
+  For Google Drive this is the real fix for the weekly re-login: the built-in
+  credentials belong to a shared app still in testing, and consent expires on
+  a timer. Your own client id does not.
 - **`opensave scan --json` no longer ignores the flag.** It printed the
   formatted listing and exited 0, which is the worst way to not support
   something: a script piping it to `jq` got a parse error rather than an
