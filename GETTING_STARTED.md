@@ -19,8 +19,13 @@ the [User Guide](USER_GUIDE.md) covers every setting.
 10. [Games with awkward saves](#10-games-with-awkward-saves)
 11. [Steam Deck](#11-steam-deck)
 12. [Cloud backup (optional)](#12-cloud-backup-optional)
-13. [When something looks wrong](#13-when-something-looks-wrong)
-14. [Glossary](#14-glossary)
+13. [Moving to a new PC](#13-moving-to-a-new-pc)
+14. [Running your own relay](#14-running-your-own-relay)
+15. [Every setting, and what it does](#15-every-setting-and-what-it-does)
+16. [Odds and ends](#16-odds-and-ends)
+17. [Doing all this from a terminal](#17-doing-all-this-from-a-terminal)
+18. [When something looks wrong](#18-when-something-looks-wrong)
+19. [Glossary](#19-glossary)
 
 ---
 
@@ -363,7 +368,158 @@ explore and restore from there.
 **Dropbox, WebDAV, and a local or NAS folder have neither problem** and are the
 easiest choice if you just want it set up once.
 
-## 13. When something looks wrong
+## 13. Moving to a new PC
+
+Two ways, depending on whether the old machine still works.
+
+**It still works.** Install OpenSave on the new one, pair the two
+([section 5](#5-adding-your-second-device)), track the same games, and let them
+sync. Nothing else to do.
+
+**It does not, or you want one file to carry.** OpenSave can write your whole
+library — games, settings, snapshot history — to a single portable archive:
+
+- **Cloud Backup → Export** picks which games to include and writes an `.sscb`
+  file. Put it on a USB stick or in cloud storage.
+- On the new machine, **Cloud Backup → Import** reads it back.
+
+On import you choose what happens to anything already there: **merge**, which
+keeps both, or **overwrite**, which replaces. Overwrite is the destructive one
+and is labelled as such.
+
+The same thing from a terminal:
+
+```bash
+opensave backup export my-library.sscb
+opensave backup import my-library.sscb
+```
+
+An `.sscb` is just a container — your saves are inside it as ordinary files.
+
+## 14. Running your own relay
+
+Only relevant for syncing across the internet, and only if you would rather not
+use the free hosted relay. Two options, in increasing order of effort.
+
+**Host it on a PC you already own.** Settings → **Internet relay** → tick
+**Host a WAN relay server on this device**, and pick a port. The button below
+shows the addresses to hand to whoever is connecting. You will need to forward
+that port on your router, and this machine has to be switched on for the others
+to find each other through it.
+
+**Put it on a server.** A one-command installer handles the whole thing —
+binary, service, firewall, and a certificate if you have a domain:
+
+```bash
+sudo bash install-relay.sh --domain relay.example.com
+```
+
+Then on each of your gaming devices, point at it and join a room. The full
+walkthrough, including what to do when a reverse proxy is in the way, is in
+[docs/RELAY.md](docs/RELAY.md).
+
+One thing worth repeating, because it catches everyone: **the relay itself
+never joins a room.** It has nothing to configure beyond a port. Rooms exist
+because your devices ask for them.
+
+## 15. Every setting, and what it does
+
+Settings has five tabs. Most of it you will never need.
+
+### General
+
+| Setting | What it does |
+| --- | --- |
+| **Device name** | How this machine appears to your other devices |
+| **Device type** | Desktop / laptop / Deck. Cosmetic — it picks the icon others see |
+| **Device ID** | This machine's network identity. Read-only; other devices remember you by it |
+| **Start OpenSave when the computer starts** | Launches minimised to the tray, so syncing runs without you opening anything |
+
+### Sync
+
+| Setting | What it does |
+| --- | --- |
+| **Internet bandwidth limit** | Caps relay transfers only. **LAN syncing is never throttled** |
+| **WebSocket relay URL** | Which relay carries internet syncs. Only change it if you self-host |
+| **Host a WAN relay server on this device** | Turns this machine into the relay — see [section 14](#14-running-your-own-relay) |
+| **Google Drive folder ID** | Store snapshots in a specific existing Drive folder instead of the one OpenSave manages |
+
+### Storage
+
+| Setting | What it does |
+| --- | --- |
+| **Snapshots folder** | Where snapshot archives live. Move it to a bigger drive if history grows |
+| **Pre-sync safety backups folder** | A copy of your save taken **before every incoming sync**, so a bad sync is always reversible. Separate from snapshots, and the reason an unwanted sync is recoverable |
+| **Retention period** | How long those safety copies are kept (7–90 days) |
+| **Automatic snapshots to keep per game** | Default cap for newly tracked games, per branch. 0 keeps everything. Per-game override in that game's Configuration tab |
+| **Manual snapshots to keep per game** | The ones you took yourself. **0 = forever, and that is the default** |
+| **Extra folders to auto-scan** | Additional places to look. Point it at a second games library |
+| **Folders to exclude** | Places auto-scan should skip for good — a stale save directory you are tired of being offered |
+
+### Advanced
+
+| Setting | What it does |
+| --- | --- |
+| **Daemon port** | The local API and LAN peer port, 8383 by default. Change it if something else has that port. **Needs a restart**, and it is also the port other devices use to reach you |
+| **Cross-platform path translation** | Rewrite rules for paths that differ between machines, so a Windows save folder can map to its Steam Deck equivalent. Only needed when the same game is tracked on both |
+
+### Updates
+
+**Offer me beta versions** — get pre-releases as well as stable ones. If you are
+*already* running a beta you will be offered newer betas whether or not this is
+ticked; otherwise there would be no way forward from a beta. You are still
+offered the stable release the moment it is newer, so it is not a one-way door.
+
+## 16. Odds and ends
+
+Small things that are easy to miss.
+
+**The same game named differently on two machines.** If a title is tracked as
+"Elden Ring" here and "ELDEN RING" there, they will not sync — they are two
+games as far as OpenSave is concerned. Either rename one, or link them with
+`opensave link <gameId> <otherGameId>`. Games that share a Steam App ID can be
+matched automatically with **Settings → Sync → match by App ID**, which is off
+by default so two genuinely separate copies are never merged behind your back.
+
+**Launching games.** Set a game's executable in its Configuration tab and
+OpenSave gets a **Play** button, so it can be the thing you open first. Purely
+optional.
+
+**Activity.** The **Activity** tab is the log of everything OpenSave has done —
+syncs, snapshots, errors. It is the first place to look when something did not
+happen and you want to know why.
+
+**Multi-select in your library.** The **☑ Select** button on Home lets you act
+on several games at once, such as untracking a batch you added by mistake.
+
+**Untracking is safe.** Removing a game from your library never deletes a save
+file or a snapshot. Nothing in OpenSave deletes a save except restoring over
+one, which snapshots first anyway.
+
+**Where your data lives.** Everything is under a `.opensave` folder in your home
+directory: `opensave.db` holds your library and settings, `backups/` holds the
+snapshot archives, and `daemon.addr` records where the background service is
+listening. Deleting that folder resets OpenSave completely and touches none of
+your actual game saves.
+
+## 17. Doing all this from a terminal
+
+Everything the window does, the `opensave` command does too — which is what you
+want on a headless server, or a Steam Deck that lives in Game Mode.
+
+```bash
+opensave scan                     # find saves
+opensave add 3                    # track the third result
+opensave status                   # what is tracked, and who is paired
+opensave sync --all               # sync now
+opensave snapshots elden-ring     # history for one game
+```
+
+Add `--json` to any command to script against it. The full guide, including
+which commands need the background service running and worked sequences for
+pairing and internet sync, is [docs/CLI.md](docs/CLI.md).
+
+## 18. When something looks wrong
 
 **"404 Not Found" when the app opens.** Something else is on port `8383` —
 often a second copy of OpenSave still running. Check the system tray and Task
@@ -396,7 +552,7 @@ files and still shows as empty, OpenSave could not read it — check permissions
 leaves every save file and snapshot on disk. Nothing you do in OpenSave deletes
 a save file except explicitly restoring over one.
 
-## 14. Glossary
+## 19. Glossary
 
 | Term | What it means |
 | --- | --- |
