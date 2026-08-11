@@ -169,7 +169,18 @@ tar -xzf "$TMP/$ASSET" -C "$TMP" "$INNER" 2>/dev/null ||
 
 run install -m 0755 "$TMP/$INNER" "$BIN_PATH"
 if [ "$DRY" -eq 0 ]; then
-	say "Installed $BIN_PATH ($("$BIN_PATH" --version 2>/dev/null || echo 'version unknown'))"
+	# Reports the tag we asked for rather than running the binary to ask it.
+	#
+	# Running it hung the installer outright. Every relay before the fix that
+	# taught it about arguments ignored them and started a server instead —
+	# so `opensave-relay --version` never returned, and the command
+	# substitution here waited on it forever, with the unit file unwritten and
+	# a stray relay left listening. Found by installing v2.2.1 on a real
+	# machine, which is the version anyone running this today would get.
+	#
+	# It is also simply better: this executes a binary downloaded seconds ago,
+	# as root, to learn something already known.
+	say "Installed $BIN_PATH ($VERSION)"
 fi
 
 # ── Service ──────────────────────────────────────────────────────────
