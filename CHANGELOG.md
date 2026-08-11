@@ -110,6 +110,22 @@ All notable changes to OpenSave are documented here. This project adheres to
   your server; that is the one step only your registrar can do, and without it
   the relay serves plain `ws://` and says so.
 
+  Now tested on real Linux rather than only in dry run, which immediately
+  found that it hung forever. It ran the freshly installed binary to report
+  its version — and every relay before this release ignores its arguments and
+  starts a server instead, so that call never returned. The unit file went
+  unwritten and a stray relay was left listening. Installing v2.2.1, the
+  version anyone running the script today would get, reproduced it exactly.
+  It now reports the tag it installed, which it already knows, and does not
+  execute a binary downloaded seconds earlier just to ask it a question.
+
+  Verified end to end afterwards on Ubuntu with systemd: install completes in
+  about a minute, the service is active and enabled and runs as its own
+  unprivileged user, it survives a restart, two clients on that machine find
+  each other through it and a save edited on one arrived on the other in about
+  three seconds, and `--uninstall` leaves no service, unit, binary or user
+  behind.
+
 - **`OPENSAVE_RELAY_URL` pins the relay from the environment.** Settings live
   in SQLite, which is awkward for a machine that is provisioned rather than
   configured — a container, or an image rebuilt onto a fresh volume, where
