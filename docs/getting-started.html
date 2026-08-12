@@ -298,9 +298,14 @@
         <p>
           Open <strong>Internet Sync</strong> on the first device and generate a
           <strong>room code</strong>. Enter the same code on the second device. They find each
-          other through a relay — no port forwarding, no router settings. The relay only passes
-          along encrypted data between your devices; it cannot read your saves and does not store
-          them.
+          other through a relay — no port forwarding, no router settings. The relay forwards
+          traffic and stores nothing; no copy of your saves is written to it.
+        </p>
+        <p>
+          The connection to the relay is encrypted, but that encryption ends <em>at</em> the relay
+          rather than at your other device — so whoever runs the relay is someone you are trusting
+          with the save data passing through it. For the public relay, that is us. If you would
+          rather it were nobody, <a href="#relay">run your own</a>.
         </p>
         <div class="guide-note">
           <p>
@@ -617,7 +622,7 @@ logs/          <span class="c">a whole folder</span>
               <tr><td><strong>Branch</strong></td><td>A separate line of saves for the same game — a second playthrough</td></tr>
               <tr><td><strong>Peer</strong></td><td>Another machine running OpenSave that you have paired with</td></tr>
               <tr><td><strong>Pairing</strong></td><td>Mutually approving two devices so they may sync. Both sides must agree</td></tr>
-              <tr><td><strong>Relay</strong></td><td>A server that passes encrypted data between devices on different networks. It cannot read your saves</td></tr>
+              <tr><td><strong>Relay</strong></td><td>A server that forwards sync traffic between devices on different networks. It stores nothing, but it can see what passes through, so run your own if that matters</td></tr>
               <tr><td><strong>Room code</strong></td><td>The shared word that lets two devices find each other through a relay</td></tr>
               <tr><td><strong>Conflict</strong></td><td>Both devices changed a save independently. OpenSave asks rather than guessing</td></tr>
               <tr><td><strong>Save location</strong></td><td>An extra folder belonging to the same game, for saves split across places</td></tr>
