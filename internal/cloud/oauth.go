@@ -286,7 +286,7 @@ func (s *Service) tokenURL(provider string) string {
 func (s *Service) relayProxyURL() string {
 	settings, err := s.Store.GetSettings()
 	if err != nil || settings.RelayURL == "" {
-		return "https://opensave-relay.onrender.com/api/oauth/token"
+		return "https://open-save-backup-relay.onrender.com/api/oauth/token"
 	}
 	httpURL := strings.Replace(strings.Replace(settings.RelayURL, "wss://", "https://", 1), "ws://", "http://", 1)
 	return httpURL + "/api/oauth/token"
