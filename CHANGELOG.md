@@ -3,7 +3,19 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.3.0] — 2026-08-15
+
+Mostly about saves that were never in one folder to begin with. A game whose
+save is split across several places — a save folder here, settings under
+Documents, a profile in AppData — is one game again, and every location travels
+with it through sync, snapshots, restore, backups and conflicts. Alongside it,
+files that should never sync can be excluded per game, written like a
+`.gitignore`.
+
+The auto-scan was rebuilt around the same problem: it now says what is in each
+folder before you commit to it, hides the empty ones, and shows one tile per
+game instead of one per folder. Self-hosting a relay is a single command. And
+there is a guide for somebody who has never opened the app.
 
 ### Fixed
 
