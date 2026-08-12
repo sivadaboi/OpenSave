@@ -21,6 +21,16 @@
   <link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
+  <!-- ===== STATUS BANNER: internet sync outage. REMOVE when the relay is restored. ===== -->
+  <style>body{padding-bottom:72px}@media(max-width:700px){body{padding-bottom:172px}}</style>
+  <div id="os-status" role="status" aria-live="polite" style="position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#2a1f07;border-top:1px solid #7a5c12;color:#f2e4c4;font:500 14px/1.55 Inter,system-ui,sans-serif;padding:12px 18px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;justify-content:center;text-align:center;box-shadow:0 -8px 28px rgba(0,0,0,.5)">
+    <strong style="color:#ffcf5c">Internet sync is temporarily down.</strong>
+    <span>Your saves are safe. To get it working now, set the relay on <em>both</em> devices to</span>
+    <code style="background:#0f0c04;border:1px solid #7a5c12;border-radius:5px;padding:3px 8px;font:500 13px/1.4 'JetBrains Mono',ui-monospace,monospace;color:#ffcf5c;word-break:break-all">wss://open-save-backup-relay.onrender.com</code>
+    <a href="https://github.com/Liquid-co/OpenSave/issues/10" style="color:#ffcf5c;text-decoration:underline;white-space:nowrap">How &amp; why &rarr;</a>
+  </div>
+  <script>(function(){var b=document.getElementById("os-status");function fit(){document.body.style.paddingBottom=(b.offsetHeight+16)+"px";}addEventListener("resize",fit);addEventListener("load",fit);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);fit();})();</script>
+
 
   <!-- ambient background -->
   <div class="ambient-layer" aria-hidden="true">

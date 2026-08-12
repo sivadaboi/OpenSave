@@ -21,6 +21,16 @@
   <link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
+  <!-- ===== STATUS BANNER: internet sync outage. REMOVE when the relay is restored. ===== -->
+  <style>body{padding-bottom:72px}@media(max-width:700px){body{padding-bottom:172px}}</style>
+  <div id="os-status" role="status" aria-live="polite" style="position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#2a1f07;border-top:1px solid #7a5c12;color:#f2e4c4;font:500 14px/1.55 Inter,system-ui,sans-serif;padding:12px 18px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;justify-content:center;text-align:center;box-shadow:0 -8px 28px rgba(0,0,0,.5)">
+    <strong style="color:#ffcf5c">Internet sync is temporarily down.</strong>
+    <span>Your saves are safe. To get it working now, set the relay on <em>both</em> devices to</span>
+    <code style="background:#0f0c04;border:1px solid #7a5c12;border-radius:5px;padding:3px 8px;font:500 13px/1.4 'JetBrains Mono',ui-monospace,monospace;color:#ffcf5c;word-break:break-all">wss://open-save-backup-relay.onrender.com</code>
+    <a href="https://github.com/Liquid-co/OpenSave/issues/10" style="color:#ffcf5c;text-decoration:underline;white-space:nowrap">How &amp; why &rarr;</a>
+  </div>
+  <script>(function(){var b=document.getElementById("os-status");function fit(){document.body.style.paddingBottom=(b.offsetHeight+16)+"px";}addEventListener("resize",fit);addEventListener("load",fit);if(document.fonts&&document.fonts.ready)document.fonts.ready.then(fit);fit();})();</script>
+
 
   <div class="ambient-layer" aria-hidden="true">
     <div class="ambient-glow glow-1"></div>
@@ -337,8 +347,9 @@
             <p class="cli-inline-note">
               On different networks instead? Run <code>opensave relay join &lt;code&gt;</code>
               with the same made-up code on both devices and they'll find each other through the
-              relay — no port forwarding, and the relay only passes encrypted data through, it
-              never stores your saves.
+              relay — no port forwarding, and the relay stores nothing. The connection to it is
+              encrypted, but that encryption ends at the relay rather than at your other device,
+              so run your own if you would rather not trust somebody else's.
             </p>
           </div>
         </div>
@@ -626,7 +637,7 @@
         </details>
         <details class="faq-item">
           <summary>Does it phone home?</summary>
-          <p>No accounts, no telemetry, no analytics. It talks to your own devices, to GitHub when you ask it to check for updates, and to the relay only if you've turned on internet sync — and the relay just passes encrypted data between your devices without storing any of it.</p>
+          <p>No accounts, no telemetry, no analytics. It talks to your own devices, to GitHub when you ask it to check for updates, and to the relay only if you've turned on internet sync — and the relay stores none of what passes through it. The connection to the relay is encrypted, though that encryption ends at the relay rather than at your other device — so if you would rather not trust ours, you can run your own.</p>
         </details>
         <details class="faq-item">
           <summary>Does it work on macOS?</summary>
