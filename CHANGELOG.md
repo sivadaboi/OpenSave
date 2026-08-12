@@ -255,6 +255,28 @@ there is a guide for somebody who has never opened the app.
   before and simply does not see the extra folders. Requested by tfe on
   Discord.
 
+## [2.2.2] — 2026-08-12
+
+An emergency release with one purpose: the public relay was suspended for
+exceeding its hosting quota, and internet sync stopped for everybody using it.
+This points the app at a working relay.
+
+### Fixed
+
+- **Internet sync works again.** The relay the app ships with,
+  `opensave-relay.onrender.com`, was suspended by its host for running out of
+  free quota — a relay holds connections open and so never idles, which
+  consumes a month of free allowance by itself. Room-code pairing stopped
+  finding devices, and Google Drive sign-in stopped too, because the same
+  server proxies that step. The default is now a relay that is up.
+
+  **If you set your own relay address, it has been left exactly as it was.**
+  The change only moves installs still pointing at the suspended default, so a
+  self-hosted relay is not overwritten.
+
+  No save was ever at risk: the relay stores nothing and writes nothing to
+  disk, so anything on your machines was untouched throughout.
+
 ## [2.2.1] — 2026-08-05
 
 Mostly conflicts and backups. Three separate faults could raise a conflict on
@@ -863,6 +885,7 @@ and relay envelope).
   to paired peers.
 
 [2.3.0]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.3.0
+[2.2.2]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.2
 [2.2.1]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.1
 [2.2.0]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.0
 [2.1.1]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.1.1
