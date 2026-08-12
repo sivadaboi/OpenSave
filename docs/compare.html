@@ -21,6 +21,14 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- ===== STATUS BANNER: internet sync outage. REMOVE when the relay is restored. ===== -->
+  <style>body{padding-bottom:64px}@media(max-width:700px){body{padding-bottom:136px}}</style>
+  <div role="status" aria-live="polite" style="position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#2a1f07;border-top:1px solid #7a5c12;color:#f2e4c4;font:500 14px/1.55 Inter,system-ui,sans-serif;padding:12px 18px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;justify-content:center;text-align:center;box-shadow:0 -8px 28px rgba(0,0,0,.5)">
+    <strong style="color:#ffcf5c">Internet sync is temporarily down.</strong>
+    <span>Your saves are safe, and sync between devices on the same network still works.</span>
+    <a href="https://github.com/Liquid-co/OpenSave/issues/10" style="color:#ffcf5c;text-decoration:underline;white-space:nowrap">What happened &amp; workaround &rarr;</a>
+  </div>
+
 
   <div class="ambient-layer" aria-hidden="true">
     <div class="ambient-glow glow-1"></div>
