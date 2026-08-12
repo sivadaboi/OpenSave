@@ -54,15 +54,35 @@
   align-items: start;
 }
 
-/* The prose measure, applied to the things you actually read a line of. */
+/* The prose measure. One rule decides it for everything prose-shaped, so a
+   block cannot drift wider than the words inside it.
+
+   Applied to the BOX for anything with a visible edge — a callout tinted to
+   1024px around 588px of text overhangs its own content by 436px and reads
+   as a mistake, because it is one. Applied to the text itself where there is
+   no box to see.
+
+   Tables are the deliberate exception: they have columns to fit, and width
+   is the thing that makes them legible rather than the thing that hurts. */
 .guide-section > p,
 .guide-section > ul,
 .guide-section > ol,
 .guide-steps p,
-.guide-note p,
-.guide-warn p,
-.guide-lede {
+.guide-lede,
+.guide-note,
+.guide-warn,
+.guide-trouble,
+.guide-end {
   max-width: var(--measure);
+}
+
+/* Code gets a little more room than prose. The measure is tuned for Inter,
+   and monospace is wider per character — at the prose width the longest line
+   shipped here (58 characters of exclusion patterns) overflowed by 25px and
+   started scrolling sideways, which for five short lines is worse than the
+   width it saved. */
+.guide-code {
+  max-width: calc(var(--measure) + 90px);
 }
 
 .guide-header {
