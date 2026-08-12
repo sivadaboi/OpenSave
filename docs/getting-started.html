@@ -69,6 +69,8 @@
         </p>
       </div>
 
+      <div class="guide-layout">
+
       <nav class="guide-toc" aria-label="Contents">
         <h2>Contents</h2>
         <ol>
@@ -89,6 +91,8 @@
           <li><a href="#glossary">Glossary</a></li>
         </ol>
       </nav>
+
+      <div class="guide-main">
 
       <!-- 1 -->
       <section class="guide-section" id="what">
@@ -630,6 +634,9 @@ logs/          <span class="c">a whole folder</span>
         </div>
       </div>
 
+      </div><!-- /guide-main -->
+      </div><!-- /guide-layout -->
+
     </div>
   </main>
 
@@ -658,5 +665,47 @@ logs/          <span class="c">a whole folder</span>
   </footer>
 
   <script src="app.js"></script>
+  <script>
+    // Highlight the section being read in the contents sidebar. A list of
+    // fifteen links is only useful if it tells you where you are in them.
+    (function () {
+      var links = Array.prototype.slice.call(
+        document.querySelectorAll('.guide-toc a[href^="#"]')
+      );
+      if (!links.length || !('IntersectionObserver' in window)) return;
+
+      var byId = {};
+      links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
+      var sections = links
+        .map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); })
+        .filter(Boolean);
+
+      var visible = {};
+      function mark() {
+        // The topmost section currently on screen wins; falling back to the
+        // last one passed means the highlight never blanks out between them.
+        var current = null;
+        for (var i = 0; i < sections.length; i++) {
+          if (visible[sections[i].id]) { current = sections[i].id; break; }
+        }
+        if (!current) {
+          for (var j = sections.length - 1; j >= 0; j--) {
+            if (sections[j].getBoundingClientRect().top < 120) { current = sections[j].id; break; }
+          }
+        }
+        links.forEach(function (a) { a.classList.remove('is-current'); });
+        if (current && byId[current]) byId[current].classList.add('is-current');
+      }
+
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
+        mark();
+      }, { rootMargin: '-100px 0px -65% 0px' });
+
+      sections.forEach(function (s) { io.observe(s); });
+      window.addEventListener('scroll', mark, { passive: true });
+      mark();
+    })();
+  </script>
 </body>
 </html>
