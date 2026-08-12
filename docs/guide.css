@@ -31,14 +31,18 @@
      layout and 80 in the next — the number moved without anyone touching it.
      em is stable here and still scales if the reader enlarges text. */
   --measure: 36em;
-  --content: 780px;
-  --side: 240px;
+  --content: 940px;
+  --side: 268px;
   --guide-pad: 28px;
 }
 
 /* ---- Shell ---- */
 .guide-wrap {
-  max-width: calc(var(--side) + var(--content) + 72px);
+  /* Wide enough that the page reads as a page rather than a strip down the
+     middle of a dark screen. The prose keeps its own measure regardless —
+     the extra width goes to the sidebar, the tables and the code, which all
+     have something to do with it. */
+  max-width: calc(var(--side) + var(--content) + 80px);
   margin: 0 auto;
   padding: 0 var(--guide-pad);
 }
@@ -46,7 +50,7 @@
 .guide-layout {
   display: grid;
   grid-template-columns: var(--side) minmax(0, 1fr);
-  gap: 72px;
+  gap: 80px;
   align-items: start;
 }
 

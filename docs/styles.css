@@ -47,6 +47,23 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* The page scrollbar was the browser default — a bright white strip down the
+   right of a near-black site, on every page. color-scheme tells the browser
+   the whole document is dark, which fixes the scrollbar and any native
+   control along with it; the explicit rules below then match it to the
+   surfaces rather than leaving it grey. */
+:root { color-scheme: dark; }
+html { scrollbar-width: thin; scrollbar-color: var(--bg-active) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--bg-active);
+  border-radius: 8px;
+  border: 3px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+::-webkit-scrollbar-corner { background: transparent; }
+
 html { scroll-behavior: smooth; scroll-padding-top: 88px; }
 
 body {
