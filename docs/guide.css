@@ -31,8 +31,8 @@
      layout and 80 in the next — the number moved without anyone touching it.
      em is stable here and still scales if the reader enlarges text. */
   --measure: 36em;
-  --content: 940px;
-  --side: 268px;
+  --content: 1080px;
+  --side: 304px;
   --guide-pad: 28px;
 }
 
