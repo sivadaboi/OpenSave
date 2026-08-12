@@ -167,8 +167,12 @@ address**, type the other machine's local address (something like
 3. They find each other through a relay. No port forwarding, no router
    settings.
 
-The relay only passes along encrypted data between your devices. It cannot read
-your saves and does not store them.
+The relay forwards traffic and stores nothing — no copy of your saves is written
+to it. The connection to it is encrypted, but that encryption ends *at* the
+relay rather than at your other device, so whoever runs the relay is someone you
+are trusting with the save data passing through. For the public relay that is
+us. If you would rather it were nobody, run your own — see
+[Running your own relay](#14-running-your-own-relay).
 
 Treat the room code like a password — anyone who has it can send your devices a
 pairing request. They still cannot sync anything without you approving it on
@@ -562,7 +566,7 @@ a save file except explicitly restoring over one.
 | **Branch** | A separate line of saves for the same game — a second playthrough |
 | **Peer / device** | Another machine running OpenSave that you have paired with |
 | **Pairing** | Mutually approving two devices so they may sync. Both sides must agree |
-| **Relay** | A server that passes encrypted data between devices on different networks. It cannot read your saves |
+| **Relay** | A server that forwards sync traffic between devices on different networks. It stores nothing, but it can see what passes through, so run your own if that matters |
 | **Room code** | The shared word that lets two devices find each other through a relay |
 | **Conflict** | Both devices changed a save independently. OpenSave asks rather than guessing |
 | **Save location** | An extra folder belonging to the same game, for saves split across places |
