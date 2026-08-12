@@ -1,0 +1,364 @@
+/* Document typography for the getting-started guide.
+   ---------------------------------------------------------------
+   The rest of the site is a landing page, and its components are the
+   right shape for that: short card copy in a grid, scanned rather than
+   read. A guide is the opposite job. Built out of those components it
+   came out cramped — 14px type on a 33-character measure — and grids
+   left orphans, a lone card sitting under a full row and reading as
+   badly centred.
+
+   So this page gets a document layout instead: one column, a measure
+   you can actually read a paragraph in, and space between things.
+   Same tokens, same palette, no new colours — it should look like the
+   same site, just laid out for reading. */
+
+.guide-page {
+  /* Tuned by measuring real prose in the browser, not by picking a number
+     that sounds right: 72ch of Inter came out at ~85 characters a line,
+     past the point where the eye starts losing its place returning to the
+     left margin. 62ch lands around 73. */
+  --measure: 62ch;
+  --guide-pad: 28px;
+}
+
+/* ---- Shell ---- */
+.guide-wrap {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 0 var(--guide-pad);
+}
+
+.guide-header {
+  padding: 132px 0 44px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.guide-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 14px;
+}
+.guide-header h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 5vw, 3rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0 0 18px;
+}
+.guide-lede {
+  font-size: 1.15rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* ---- Contents ---- */
+.guide-toc {
+  margin: 40px 0 8px;
+  padding: 22px 26px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.guide-toc h2 {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0 0 14px;
+}
+.guide-toc ol {
+  margin: 0;
+  padding-left: 1.35em;
+  columns: 2;
+  column-gap: 32px;
+}
+.guide-toc li {
+  margin-bottom: 8px;
+  break-inside: avoid;
+  color: var(--text-secondary);
+}
+.guide-toc a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.guide-toc a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* ---- Sections ---- */
+.guide-section {
+  padding: 52px 0 8px;
+  scroll-margin-top: 90px;
+}
+.guide-section + .guide-section {
+  border-top: 1px solid var(--border);
+}
+.guide-section > h2 {
+  font-family: var(--font-display);
+  font-size: 1.72rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  margin: 0 0 6px;
+}
+.guide-section > h2 .guide-num {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  margin-right: 12px;
+  font-weight: 600;
+}
+.guide-section h3 {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  margin: 34px 0 10px;
+  color: var(--text);
+}
+
+/* ---- Prose ---- */
+.guide-page p,
+.guide-page li {
+  font-size: 1.02rem;
+  line-height: 1.78;
+  color: var(--text-secondary);
+}
+.guide-page p {
+  margin: 0 0 18px;
+}
+.guide-page strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.guide-page ul,
+.guide-page ol {
+  margin: 0 0 20px;
+  padding-left: 1.4em;
+}
+.guide-page li {
+  margin-bottom: 10px;
+}
+.guide-page li::marker {
+  color: var(--text-dim);
+}
+.guide-page a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-line);
+}
+.guide-page a:hover {
+  border-bottom-color: var(--accent);
+}
+.guide-page code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  color: var(--text);
+}
+
+/* ---- Numbered walkthrough ---- */
+.guide-steps {
+  counter-reset: gstep;
+  list-style: none;
+  padding: 0;
+  margin: 26px 0 8px;
+}
+.guide-steps > li {
+  counter-increment: gstep;
+  position: relative;
+  padding-left: 52px;
+  margin-bottom: 30px;
+}
+.guide-steps > li::before {
+  content: counter(gstep);
+  position: absolute;
+  left: 0;
+  top: -2px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.92rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.guide-steps h3 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+.guide-steps > li > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Asides ---- */
+.guide-note,
+.guide-warn {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.guide-warn {
+  border-left-color: var(--warn);
+  background: rgba(251, 191, 36, 0.08);
+}
+.guide-note > :last-child,
+.guide-warn > :last-child {
+  margin-bottom: 0;
+}
+.guide-note p,
+.guide-warn p {
+  color: var(--text);
+}
+
+/* ---- Tables ---- */
+.guide-table-wrap {
+  margin: 24px 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.guide-table th,
+.guide-table td {
+  text-align: left;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  line-height: 1.6;
+}
+.guide-table thead th {
+  background: var(--bg-raised);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.guide-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.guide-table td:first-child {
+  color: var(--text);
+  white-space: nowrap;
+}
+.guide-table td strong {
+  font-weight: 600;
+}
+
+/* ---- Code block ---- */
+.guide-code {
+  margin: 20px 0;
+  padding: 16px 20px;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  line-height: 1.85;
+  color: var(--text-secondary);
+  white-space: pre;
+}
+.guide-code .c {
+  color: var(--text-dim);
+}
+
+/* ---- Troubleshooting ---- */
+.guide-trouble {
+  margin: 26px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.guide-trouble details {
+  border-bottom: 1px solid var(--border);
+}
+.guide-trouble details:last-child {
+  border-bottom: 0;
+}
+.guide-trouble summary {
+  padding: 15px 20px;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 500;
+  list-style: none;
+  position: relative;
+  padding-right: 46px;
+}
+.guide-trouble summary::-webkit-details-marker {
+  display: none;
+}
+.guide-trouble summary::after {
+  content: '+';
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.guide-trouble details[open] summary::after {
+  content: '\2212';
+}
+.guide-trouble summary:hover {
+  background: var(--bg-hover);
+}
+.guide-trouble details > p {
+  padding: 0 20px 16px;
+  margin: 0;
+}
+
+/* ---- Foot of the guide ---- */
+.guide-end {
+  margin: 56px 0 96px;
+  padding: 28px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+.guide-end h2 {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  margin: 0 0 10px;
+}
+.guide-end .guide-end-ctas {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+@media (max-width: 720px) {
+  .guide-page {
+    --guide-pad: 20px;
+  }
+  .guide-header {
+    padding-top: 108px;
+  }
+  .guide-toc ol {
+    columns: 1;
+  }
+  .guide-steps > li {
+    padding-left: 44px;
+  }
+}
