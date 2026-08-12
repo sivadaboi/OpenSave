@@ -180,40 +180,52 @@
   color: var(--text);
 }
 
-/* ---- Prose ---- */
-.guide-page p,
-.guide-page li {
+/* ---- Prose ----
+   Scoped to the guide's own content, NOT to .guide-page.
+
+   .guide-page is on <body>, so styling `a` under it repainted the shared
+   header and footer as well: the navbar links came out violet and underlined
+   on this page and grey on every other, from one selector that was never
+   meant to reach them. Anything here that could match shared furniture is
+   scoped to .guide-header and .guide-main instead. */
+.guide-main p,
+.guide-main li {
   font-size: 1.02rem;
   line-height: 1.78;
   color: var(--text-secondary);
 }
-.guide-page p {
+.guide-main p {
   margin: 0 0 18px;
 }
-.guide-page strong {
+.guide-main strong,
+.guide-header strong {
   color: var(--text);
   font-weight: 600;
 }
-.guide-page ul,
-.guide-page ol {
+.guide-main ul,
+.guide-main ol {
   margin: 0 0 20px;
   padding-left: 1.4em;
 }
-.guide-page li {
+.guide-main li {
   margin-bottom: 10px;
 }
-.guide-page li::marker {
+.guide-main li::marker {
   color: var(--text-dim);
 }
-.guide-page a {
+/* Buttons keep their own styling; only body links get the prose treatment. */
+.guide-main a:not(.btn-primary):not(.btn-secondary),
+.guide-header a {
   color: var(--accent);
   text-decoration: none;
   border-bottom: 1px solid var(--accent-line);
 }
-.guide-page a:hover {
+.guide-main a:not(.btn-primary):not(.btn-secondary):hover,
+.guide-header a:hover {
   border-bottom-color: var(--accent);
 }
-.guide-page code {
+.guide-main code,
+.guide-header code {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: var(--bg-raised);
