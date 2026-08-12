@@ -340,8 +340,9 @@
             <p class="cli-inline-note">
               On different networks instead? Run <code>opensave relay join &lt;code&gt;</code>
               with the same made-up code on both devices and they'll find each other through the
-              relay — no port forwarding, and the relay only passes encrypted data through, it
-              never stores your saves.
+              relay — no port forwarding, and the relay stores nothing. The connection to it is
+              encrypted, but that encryption ends at the relay rather than at your other device,
+              so run your own if you would rather not trust somebody else's.
             </p>
           </div>
         </div>
@@ -629,7 +630,7 @@
         </details>
         <details class="faq-item">
           <summary>Does it phone home?</summary>
-          <p>No accounts, no telemetry, no analytics. It talks to your own devices, to GitHub when you ask it to check for updates, and to the relay only if you've turned on internet sync — and the relay just passes encrypted data between your devices without storing any of it.</p>
+          <p>No accounts, no telemetry, no analytics. It talks to your own devices, to GitHub when you ask it to check for updates, and to the relay only if you've turned on internet sync — and the relay stores none of what passes through it. The connection to the relay is encrypted, though that encryption ends at the relay rather than at your other device — so if you would rather not trust ours, you can run your own.</p>
         </details>
         <details class="faq-item">
           <summary>Does it work on macOS?</summary>
