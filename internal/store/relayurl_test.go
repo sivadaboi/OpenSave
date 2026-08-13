@@ -103,6 +103,37 @@ func TestValidateRelayURL_EmptyIsNotAnError(t *testing.T) {
 	}
 }
 
+// The relay installer prints an address and tells the operator to paste it
+// into `opensave config set relay-url`. If this validator refuses what that
+// script hands out, the relay is working, the instructions are followed, and
+// the app rejects the result — which is exactly what happened when the script
+// advertised the machine's PUBLIC address over ws://.
+//
+// So these are the shapes install-relay.sh can emit, and they must all be
+// accepted here. The script decides which one to print using the same
+// public/private split this file enforces; keeping them in step is the point.
+func TestValidateRelayURL_AcceptsWhatTheRelayInstallerPrints(t *testing.T) {
+	for _, raw := range []string{
+		// With --domain: a name and a certificate.
+		"wss://relay.example.com",
+		// Without --domain, on a machine that has a private address. The
+		// script only offers ws:// in this case.
+		"ws://192.168.1.50:8386",
+		"ws://10.0.0.5:8386",
+		"ws://172.29.1.122:8386",
+	} {
+		if err := ValidateRelayURL(raw); err != nil {
+			t.Errorf("the installer prints %s and this refuses it: %v", raw, err)
+		}
+	}
+
+	// And the one it used to print on a hosted server, which is why the script
+	// now declines to print an address at all in that case.
+	if err := ValidateRelayURL("ws://153.75.249.131:8386"); err == nil {
+		t.Error("a public ws:// address was accepted; the installer must not offer one")
+	}
+}
+
 // The refusal has to say what to do about it, or it is just a wall.
 func TestValidateRelayURL_MessageSaysHowToFixIt(t *testing.T) {
 	err := ValidateRelayURL("ws://relay.example.com")

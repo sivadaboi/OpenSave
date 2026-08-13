@@ -44,9 +44,14 @@ curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/packaging/r
 sudo bash install-relay.sh --domain relay.example.com
 ```
 
-Leave `--domain` off and it still works, over unencrypted `ws://`. It prints
-the relay URL and the two commands to run on your gaming devices when it
-finishes, and `sudo bash install-relay.sh --uninstall` removes everything.
+Leave `--domain` off and the relay speaks unencrypted `ws://`, which OpenSave
+accepts only at a private address — a LAN or a VPN. On a hosted server, whose
+only address is public, the installer will say so and print no address to copy,
+because anything it printed would be refused. See [Why `ws://` is not enough](#3-put-tls-in-front-of-it).
+
+With a name and a certificate it prints the relay URL and the two commands to
+run on your gaming devices; `sudo bash install-relay.sh --uninstall` removes
+everything.
 
 **Read it before you run it as root.** It has a `--dry-run` that needs no
 privileges and prints every change it would make, including the systemd unit
@@ -112,8 +117,12 @@ when devices connect.
 
 ## 3. Put TLS in front of it
 
-Worth doing properly. Clients default to `wss://` (encrypted). A bare relay
-speaks plain `ws://`, which works but sends your sync traffic in the clear.
+Not optional across the internet, and the app enforces it. Nothing in OpenSave
+encrypts the sync payload — the save file travels gzipped inside JSON — so the
+relay connection is the only thing between a save and the network it crosses.
+A bare relay speaks plain `ws://`, and the app refuses that to any public
+address, accepting it only where the network is itself the trust boundary
+(loopback, a home LAN, or a private overlay such as Tailscale).
 
 The usual arrangement is a reverse proxy — Caddy, nginx, Traefik — terminating
 TLS on 443 and forwarding to the relay. Caddy needs two lines:
@@ -143,8 +152,11 @@ location / {
 That last line matters: nginx closes idle connections after 60 seconds by
 default, which shows up as a relay that keeps reconnecting.
 
-Without a proxy, use `ws://your-server:8386` and open the port on your
-firewall. Fine on a network you trust; not what you want across the internet.
+Without a proxy you are limited to `ws://`, which the app accepts only at a
+private address: `ws://192.168.1.50:8386` for a machine on your own network is
+fine, and opening that port on the firewall is all it needs. A public address
+over `ws://` is refused by the client, so a hosted server needs the proxy and
+a certificate rather than an open port.
 
 ## 4. Point your devices at it
 
