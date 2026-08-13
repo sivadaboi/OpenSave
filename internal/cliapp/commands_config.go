@@ -250,6 +250,13 @@ func cmdConfig(d *daemon.Daemon, args []string) int {
 					"Change the variable and restart OpenSave, or unset it to go back to the stored setting.",
 				settings.RelayURL, store.RelayURLEnv))
 		}
+		// A relay carries the save file itself, and nothing in OpenSave
+		// encrypts it — so ws:// to a public host is the save on the wire in
+		// the clear. Caught here rather than at the dial, where it would look
+		// like a connection problem.
+		if err := store.ValidateRelayURL(value); err != nil {
+			return fail(asJSON, err)
+		}
 		settings.RelayURL = value
 	case "update-channel":
 		switch strings.ToLower(value) {

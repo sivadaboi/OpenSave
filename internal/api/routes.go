@@ -146,6 +146,23 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		prevHostRelay, prevRelayPort = prev.HostRelay, prev.RelayPort
 	}
 
+	// Refuse a cleartext relay before it is stored, not at the dial: saves
+	// carry no encryption of their own, so ws:// to somewhere public puts the
+	// file itself on the wire in the clear.
+	//
+	// Only when the address actually changes. This screen saves every field at
+	// once, so validating unconditionally would mean somebody who already has
+	// a ws:// relay stored — from a build that let them — could no longer edit
+	// their device name, or anything else, until they noticed the relay was
+	// the real complaint. Grandfathering the stored value keeps the rule on
+	// new input, which is where it belongs.
+	if current.RelayURL != prevRelayURL {
+		if err := store.ValidateRelayURL(current.RelayURL); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
 	if err := s.Daemon.Store.UpdateSettings(current); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
