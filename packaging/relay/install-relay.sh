@@ -290,8 +290,18 @@ HEALTH="$(printf '%s' "$PUBLIC_URL" | sed 's|^wss://|https://|; s|^ws://|http://
 # early kills tr with SIGPIPE, the || fallback fires on top of the value that
 # was already produced, and you get "f64rw3pick-your-own" printed as the code
 # to type. Take a fixed number of bytes and filter what comes out.
-ROOM="$(head -c 64 /dev/urandom 2>/dev/null | tr -dc 'a-z0-9' | cut -c1-6)"
-[ -n "$ROOM" ] || ROOM="pick-your-own"
+#
+# 512 bytes for 12 characters, because the filter throws most of them away:
+# only 32 of 256 byte values survive, so a draw yields about an eighth of what
+# it reads. The old 64-byte read produced roughly nine usable characters, which
+# was enough for the six it took but would have come up short here — silently,
+# as a weaker code that still looked right.
+#
+# Twelve characters of 32 symbols is ~60 bits, matching what the app generates.
+# Anyone holding a room code can see your devices and ask them to pair, so it
+# wants to be the length of a password rather than of a word.
+ROOM="$(head -c 512 /dev/urandom 2>/dev/null | tr -dc '0123456789abcdefghjkmnpqrstvwxyz' | cut -c1-12)"
+if [ "${#ROOM}" -lt 12 ]; then ROOM="pick-your-own"; fi
 
 cat <<EOF
 
