@@ -164,7 +164,7 @@ func (m *Manager) createOnBranch(gameID, branch, comment string, isSystemAuto bo
 	if rootsErr != nil {
 		extraRoots = nil
 	}
-	skipped, err := ZipRoots(game.SavePath, extraRoots, stagingPath)
+	skipped, captured, err := ZipRootsCapturing(game.SavePath, extraRoots, stagingPath)
 	if err != nil {
 		os.Remove(stagingPath)
 		return store.Snapshot{}, fmt.Errorf("zip save data: %w", err)
@@ -188,6 +188,22 @@ func (m *Manager) createOnBranch(gameID, branch, comment string, isSystemAuto bo
 		return store.Snapshot{}, err
 	}
 	snapshotID := snap.ID
+
+	// What this snapshot holds, file by file, recorded once and never
+	// revisited. It is what lets a later caller ask whether some exact content
+	// is recoverable, rather than infer it from a whole-save value that
+	// several subsystems had to keep current and none of them did.
+	//
+	// A failure here is logged rather than returned: the archive is on disk and
+	// the row is in the database, so the snapshot is real and refusing to
+	// return it would throw away a good backup over bookkeeping. The cost of
+	// the missing rows is that this snapshot cannot prove what it holds, and
+	// callers already treat that as "assume not captured".
+	if err := m.Store.RecordSnapshotFiles(snapshotID, captured); err != nil && m.Log != nil {
+		m.Log("warn", fmt.Sprintf(
+			"snapshot %s of %q was written but its file list was not recorded, so it cannot show what it captured: %v",
+			snapshotID, game.Name, err))
+	}
 
 	m.pruneRetention(game)
 

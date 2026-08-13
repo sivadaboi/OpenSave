@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/opensave/opensave/internal/store"
 )
 
 // RootPrefix is the directory inside a snapshot archive under which a game's
@@ -30,8 +32,19 @@ const RootPrefix = ".opensave-locations/"
 // one snapshot is a smaller harm than having no snapshot of the save at all,
 // which is what returning an error here would mean.
 func ZipRoots(primary string, extra map[string]string, outPath string) (skipped []string, err error) {
+	skipped, _, err = ZipRootsCapturing(primary, extra, outPath)
+	return skipped, err
+}
+
+// ZipRootsCapturing is ZipRoots, also reporting what it archived: for every
+// file, which save location it came from, its path within that location, and
+// the hash of its contents. Recording that lets a later question — "is this
+// exact content recoverable from some snapshot?" — be answered exactly,
+// instead of inferred from a single whole-save hash that nothing reliably
+// kept current.
+func ZipRootsCapturing(primary string, extra map[string]string, outPath string) (skipped []string, captured []store.CapturedFile, err error) {
 	if len(extra) == 0 {
-		return ZipPath(primary, outPath)
+		return ZipPathCapturing(primary, outPath)
 	}
 
 	// One archive, written in a single pass.
@@ -50,16 +63,17 @@ func ZipRoots(primary string, extra map[string]string, outPath string) (skipped 
 
 	f, err := os.Create(outPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
 	w := zip.NewWriter(f)
 
-	primarySkipped, err := archiveInto(w, primary, "")
+	primarySkipped, primaryFiles, err := archiveInto(w, primary, "", "")
 	skipped = append(skipped, primarySkipped...)
+	captured = append(captured, primaryFiles...)
 	if err != nil {
 		w.Close()
-		return skipped, fmt.Errorf("archive save folder: %w", err)
+		return skipped, captured, fmt.Errorf("archive save folder: %w", err)
 	}
 
 	for _, name := range names {
@@ -67,24 +81,30 @@ func ZipRoots(primary string, extra map[string]string, outPath string) (skipped 
 		if strings.TrimSpace(path) == "" {
 			continue
 		}
-		sub, subErr := archiveInto(w, path, RootPrefix+name+"/")
+		sub, subFiles, subErr := archiveInto(w, path, RootPrefix+name+"/", name)
 		skipped = append(skipped, sub...)
+		captured = append(captured, subFiles...)
 		if subErr != nil {
 			// One unreadable location must not cost the snapshot of the save.
 			skipped = append(skipped, path)
 		}
 	}
-	return skipped, w.Close()
+	return skipped, captured, w.Close()
 }
 
 // archiveInto writes one directory tree into an open zip under prefix.
-func archiveInto(w *zip.Writer, sourcePath, prefix string) (skipped []string, err error) {
+func archiveInto(w *zip.Writer, sourcePath, prefix, root string) (skipped []string, captured []store.CapturedFile, err error) {
 	info, err := os.Stat(sourcePath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !info.IsDir() {
-		return nil, addFileEntry(w, sourcePath, prefix+filepath.Base(sourcePath))
+		name := filepath.Base(sourcePath)
+		hash, addErr := addFileEntry(w, sourcePath, prefix+name)
+		if addErr != nil {
+			return nil, nil, addErr
+		}
+		return nil, []store.CapturedFile{{Root: root, Path: name, Hash: hash}}, nil
 	}
 	// An empty location still needs its folder recorded, or restoring would
 	// not know the location was captured at all. The primary location writes
@@ -92,7 +112,7 @@ func archiveInto(w *zip.Writer, sourcePath, prefix string) (skipped []string, er
 	// name would be meaningless.
 	if prefix != "" {
 		if _, err := w.CreateHeader(&zip.FileHeader{Name: prefix, Method: zip.Store}); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -116,12 +136,15 @@ func archiveInto(w *zip.Writer, sourcePath, prefix string) (skipped []string, er
 			_, err := w.CreateHeader(&zip.FileHeader{Name: prefix + rel + "/", Method: zip.Store})
 			return err
 		}
-		if err := addFileEntry(w, path, prefix+rel); err != nil {
+		hash, addErr := addFileEntry(w, path, prefix+rel)
+		if addErr != nil {
 			skipped = append(skipped, path)
+			return nil
 		}
+		captured = append(captured, store.CapturedFile{Root: root, Path: rel, Hash: hash})
 		return nil
 	})
-	return skipped, walkErr
+	return skipped, captured, walkErr
 }
 
 // ArchivedRoots lists the extra location names stored in an archive.
