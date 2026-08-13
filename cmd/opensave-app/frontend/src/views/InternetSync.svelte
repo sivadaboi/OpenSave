@@ -1,6 +1,7 @@
 <script>
   import { settings, wanRoom, peers, toast } from '../lib/stores.js';
   import { api } from '../lib/api.js';
+  import { generateRoomCode } from '../lib/roomcode.js';
 
   let codeDraft = '';
   let relayDraft = '';
@@ -15,9 +16,7 @@
   $: roomPeers = $wanRoom?.peers ?? [];
 
   function randomCode() {
-    const words = ['swift', 'cozy', 'pixel', 'nova', 'ember', 'lunar', 'frost', 'zen'];
-    const w = () => words[Math.floor(Math.random() * words.length)];
-    codeDraft = `${w()}-${w()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    codeDraft = generateRoomCode();
   }
 
   async function run(fn, okMsg) {
@@ -130,7 +129,7 @@
     <div class="field grow">
       <label for="room-code">Room code — share this with your other device</label>
       <div class="code-row">
-        <input id="room-code" placeholder="e.g. cozy-nova-4821" bind:value={codeDraft} />
+        <input id="room-code" placeholder="e.g. k7m2-9xqp-4wnt" bind:value={codeDraft} />
         <button class="btn" on:click={randomCode}>🎲</button>
         {#if $wanRoom?.enabled}
           <button class="btn" on:click={copyCode}>Copy</button>
