@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The whole point of the guard: a cleartext relay on the public internet
 // carries save files readable by anything on the path, because nothing else
@@ -107,19 +110,8 @@ func TestValidateRelayURL_MessageSaysHowToFixIt(t *testing.T) {
 		t.Fatal("expected a refusal")
 	}
 	for _, want := range []string{"wss://", "--domain"} {
-		if !contains(err.Error(), want) {
+		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal never mentions %q; it reads:\n%s", want, err)
 		}
 	}
-}
-
-func contains(haystack, needle string) bool {
-	return len(haystack) >= len(needle) && (func() bool {
-		for i := 0; i+len(needle) <= len(haystack); i++ {
-			if haystack[i:i+len(needle)] == needle {
-				return true
-			}
-		}
-		return false
-	})()
 }
