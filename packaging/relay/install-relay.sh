@@ -14,7 +14,11 @@
 #
 # What it will not do, because it cannot: point a DNS record at this machine.
 # TLS needs a name that resolves here, and only your registrar can do that.
-# Without --domain the relay still works, over unencrypted ws://.
+# Without --domain the relay speaks ws:// instead of wss://, which the app
+# accepts only at a private address — a LAN, or a VPN. Saves carry no
+# encryption of their own, so cleartext to a public host would put the save
+# file on the wire readable, and the client refuses it. A relay meant to be
+# reached over the internet needs --domain.
 
 set -euo pipefail
 
@@ -227,7 +231,49 @@ if [ "$DRY" -eq 0 ]; then
 fi
 
 # ── TLS, if a name was given ─────────────────────────────────────────
-PUBLIC_URL="ws://$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || echo 'YOUR-SERVER-IP'):$PORT"
+# Which address to tell people to point their devices at.
+#
+# This used to be the machine's PUBLIC address with a ws:// scheme, which the
+# app now refuses: sync payloads carry the save file with no encryption of
+# their own, so cleartext to a public host puts the save on the wire readable.
+# Handing out an address the client rejects is worse than handing out none —
+# the relay looks broken when it is working exactly as asked.
+#
+# So the rule here is the client's rule. An unencrypted relay is offered only
+# at an address where the network is the trust boundary; anywhere else needs a
+# name and a certificate, which is what --domain does.
+is_private_addr() {
+	case "$1" in
+		127.*|::1|localhost) return 0 ;;
+		10.*|192.168.*|169.254.*) return 0 ;;
+	esac
+	# 172.16-172.31 and the carrier-grade NAT range 100.64-100.127, both of
+	# which need the second octet compared as a number rather than matched.
+	o1="${1%%.*}"; rest="${1#*.}"; o2="${rest%%.*}"
+	case "$o1" in
+		172) [ "$o2" -ge 16 ] 2>/dev/null && [ "$o2" -le 31 ] 2>/dev/null && return 0 ;;
+		100) [ "$o2" -ge 64 ] 2>/dev/null && [ "$o2" -le 127 ] 2>/dev/null && return 0 ;;
+	esac
+	return 1
+}
+
+# An address on this machine that the client would accept unencrypted, if it
+# has one. A home server or a NAS does; a VPS usually does not.
+LAN_ADDR=""
+for candidate in $(hostname -I 2>/dev/null); do
+	if is_private_addr "$candidate"; then
+		LAN_ADDR="$candidate"
+		break
+	fi
+done
+
+PUBLIC_ONLY=0
+if [ -n "$LAN_ADDR" ]; then
+	PUBLIC_URL="ws://$LAN_ADDR:$PORT"
+else
+	PUBLIC_ONLY=1
+	PUBLIC_URL=""  # nothing the client would accept; see the report below
+fi
 
 if [ -n "$DOMAIN" ]; then
 	if [ "$DRY" -eq 1 ] && ! command -v caddy >/dev/null 2>&1; then
@@ -303,7 +349,22 @@ HEALTH="$(printf '%s' "$PUBLIC_URL" | sed 's|^wss://|https://|; s|^ws://|http://
 ROOM="$(head -c 512 /dev/urandom 2>/dev/null | tr -dc '0123456789abcdefghjkmnpqrstvwxyz' | cut -c1-12)"
 if [ "${#ROOM}" -lt 12 ]; then ROOM="pick-your-own"; fi
 
-cat <<EOF
+if [ "$PUBLIC_ONLY" -eq 1 ] && [ -z "$DOMAIN" ]; then
+	cat <<EOF
+
+$(say "Installed, but not usable yet.")
+
+  Service     running on port $PORT
+  Logs        journalctl -u opensave-relay -f
+
+There is deliberately no address to copy here. The relay speaks ws:// until it
+is given a name, this machine has only a public address, and the app refuses an
+unencrypted relay at a public address — so anything printed here would be
+rejected the moment it was pasted in.
+
+EOF
+else
+	cat <<EOF
 
 $(say "Done.")
 
@@ -323,8 +384,26 @@ send your devices a pairing request, though they still cannot sync anything
 without you approving it on the device.
 
 EOF
+fi
 
-if [ -z "$DOMAIN" ]; then
-	warn "This relay is unencrypted (ws://). Fine on a network you trust; across the
-    internet, re-run with --domain relay.example.com once a DNS record points here."
+if [ -z "$DOMAIN" ] && [ "$PUBLIC_ONLY" -eq 1 ]; then
+	warn "This relay has no address the app will accept.
+
+    It is running, but it was installed without --domain, so it speaks ws://
+    rather than wss:// — and OpenSave refuses an unencrypted relay at a public
+    address. Saves carry no encryption of their own, so that would put the save
+    file itself on the wire in the clear.
+
+    This machine has no private address to fall back on, which is normal for a
+    hosted server. Point a name at it and re-run:
+
+      sudo $0 --domain relay.example.com
+
+    The certificate is obtained automatically once the name resolves here."
+elif [ -z "$DOMAIN" ]; then
+	warn "This relay is unencrypted (ws://), so it is reachable only from the network
+    it is on — $LAN_ADDR is a private address, and the app refuses cleartext to
+    a public one. That is fine for devices in the same house. To sync across
+    the internet, re-run with --domain relay.example.com once a DNS record
+    points here."
 fi
