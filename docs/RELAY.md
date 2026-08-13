@@ -158,6 +158,38 @@ fine, and opening that port on the firewall is all it needs. A public address
 over `ws://` is refused by the client, so a hosted server needs the proxy and
 a certificate rather than an open port.
 
+## 3b. Google Drive sign-in (optional)
+
+Only relevant if the people using this relay sign in to Google Drive with
+OpenSave's built-in credentials. Sync itself needs none of this, and neither
+does anyone who enters their own OAuth client ID and secret in the app — that
+path talks to Google directly and never touches the relay.
+
+The relay completes the token exchange on behalf of those clients, which needs
+the client secret for the OAuth app whose ID they are using. Put it in a file
+and point the installer at it:
+
+```bash
+sudo bash install-relay.sh --domain relay.example.com --google-secret-file /root/gd-secret.txt
+```
+
+It is copied to `/etc/opensave-relay/env`, mode `0600`, root-owned, and the
+service unit loads it with `EnvironmentFile=`. Two things that are deliberate:
+
+- **A file, not an argument.** `--google-client-secret <value>` would be
+  visible in `ps` to every user on the machine for as long as the command runs,
+  and would stay in your shell history afterwards.
+- **Not in the unit file.** Unit files under `/etc/systemd/system/` are
+  world-readable, so a secret on an `Environment=` line can be read by any
+  account on the box.
+
+Delete your copy of the secret file afterwards; the installed one is enough.
+`--uninstall` removes it along with everything else.
+
+Without it the relay starts normally and simply does not offer the sign-in
+proxy — Drive sign-in through this relay returns an error, and everything else
+works.
+
 ## 4. Point your devices at it
 
 **On each device**, not on the server.

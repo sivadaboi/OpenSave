@@ -26,6 +26,9 @@ REPO="Liquid-co/OpenSave"
 BIN_PATH="/usr/local/bin/opensave-relay"
 UNIT_PATH="/etc/systemd/system/opensave-relay.service"
 SERVICE_USER="opensave-relay"
+ENV_DIR="/etc/opensave-relay"
+ENV_PATH="$ENV_DIR/env"
+GOOGLE_SECRET_FILE=""
 PORT="8386"
 DOMAIN=""
 VERSION=""
@@ -69,6 +72,19 @@ opensave-relay installer
                     this machine.
   --port <n>        Port the relay listens on (default 8386). With --domain
                     this stays internal and only 443 is public.
+  --google-secret-file <path>
+                    File holding your Google OAuth client secret, so this
+                    relay can complete Google Drive sign-in for clients using
+                    the built-in credentials. Read once and copied to
+                    /etc/opensave-relay/env, root-only. A path rather than the
+                    value itself: an argument is visible in `ps` to every user
+                    on the machine while the command runs, and stays in shell
+                    history afterwards.
+
+                    Not needed for sync, and not needed at all if the people
+                    using this relay supply their own OAuth credentials in the
+                    app — that path talks to Google directly and never reaches
+                    the relay.
   --version <tag>   Install a specific release (default: the latest).
   --skip-verify     Do not check the download against SHA256SUMS. Only if the
                     release genuinely has no checksums file.
@@ -83,6 +99,7 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 		--domain) DOMAIN="${2:-}"; shift 2 ;;
 		--port) PORT="${2:-}"; shift 2 ;;
+		--google-secret-file) GOOGLE_SECRET_FILE="${2:-}"; shift 2 ;;
 		--version) VERSION="${2:-}"; shift 2 ;;
 		--skip-verify) SKIP_VERIFY=1; shift ;;
 		--uninstall) UNINSTALL=1; shift ;;
@@ -111,11 +128,26 @@ Or as a container:
 	fi
 fi
 
+# Checked before any work is done: finding out the secret file is unreadable
+# after the binary is installed and the service is running leaves a
+# half-configured relay that answers sync but fails sign-in.
+if [ -n "$GOOGLE_SECRET_FILE" ]; then
+	[ -r "$GOOGLE_SECRET_FILE" ] || die "cannot read $GOOGLE_SECRET_FILE"
+	# Read once, here, and never printed. Whitespace and the trailing newline
+	# a text editor adds are stripped, because they would be sent to Google as
+	# part of the secret and the failure that causes says only "invalid_client".
+	GOOGLE_SECRET="$(tr -d '[:space:]' < "$GOOGLE_SECRET_FILE")"
+	[ -n "$GOOGLE_SECRET" ] || die "$GOOGLE_SECRET_FILE is empty"
+fi
+
 # ── Uninstall ────────────────────────────────────────────────────────
 if [ "$UNINSTALL" -eq 1 ]; then
 	say "Stopping and removing the relay"
 	run systemctl disable --now opensave-relay 2>/dev/null || true
-	run rm -f "$UNIT_PATH" "$BIN_PATH"
+	# The credential goes too. Leaving it behind means "uninstalled" left a
+	# live secret on a machine somebody believes they have cleaned.
+	run rm -f "$UNIT_PATH" "$BIN_PATH" "$ENV_PATH"
+	run rmdir "$ENV_DIR" 2>/dev/null || true
 	run systemctl daemon-reload
 	run userdel "$SERVICE_USER" 2>/dev/null || true
 	say "Gone. Any Caddy config was left alone — remove the OpenSave block by hand if you added one."
@@ -204,6 +236,11 @@ Wants=network-online.target
 Type=simple
 User=$SERVICE_USER
 Environment=PORT=$PORT
+# Optional, hence the leading dash: a relay without a Google secret starts
+# normally and simply does not offer the sign-in proxy. The secret lives here
+# rather than on an Environment= line because this unit file is world-readable
+# and that file is not.
+EnvironmentFile=-$ENV_PATH
 ExecStart=$BIN_PATH
 Restart=always
 RestartSec=3
@@ -220,6 +257,28 @@ MemoryMax=512M
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# The credential, if one was given. Deliberately not through write_file():
+# that helper echoes content on a dry run, which is right for a unit file and
+# wrong for this. Nothing below prints the value on any path.
+if [ -n "$GOOGLE_SECRET_FILE" ]; then
+	if [ "$DRY" -eq 1 ]; then
+		printf '   [2mwould write %s (0600, root):[0m
+' "$ENV_PATH"
+		printf '     | GOOGLE_DRIVE_CLIENT_SECRET=<%s bytes, not shown>
+' "${#GOOGLE_SECRET}"
+	else
+		install -d -m 0700 "$ENV_DIR"
+		# Created empty at 0600 before the secret goes in, so it is never
+		# briefly readable by anyone else — a umask that allowed 0644 would
+		# otherwise leave a window between creation and chmod.
+		: >"$ENV_PATH"
+		chmod 0600 "$ENV_PATH"
+		printf 'GOOGLE_DRIVE_CLIENT_SECRET=%s
+' "$GOOGLE_SECRET" >"$ENV_PATH"
+		say "Google client secret installed to $ENV_PATH (root only)"
+	fi
+fi
 
 run systemctl daemon-reload
 run systemctl enable --now opensave-relay
