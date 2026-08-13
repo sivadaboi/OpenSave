@@ -360,12 +360,38 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 		return Result{Status: "in_sync", Direction: "none"}, nil
 	}
 
-	// Race-free safety net: the mtime-based conflict check above can miss a
-	// divergence under clock skew / sync races. If we're about to overwrite
-	// local files while the local save has changes that aren't captured in
-	// any snapshot yet, those unsaved changes would be lost. Surface it as a
-	// conflict for the user to resolve instead of silently overwriting.
-	if len(decision.FilesToPull) > 0 && game.LastManifestHash != "" &&
+	// Nothing below is about files arriving, only about local files leaving.
+	// A pull that brings files this device never held destroys nothing.
+	atRisk := filesAtRisk(localManifest, decision)
+
+	// Take the copy before doing the damage, rather than reasoning about
+	// whether the damage is survivable.
+	//
+	// The check underneath used to stand alone: it asked whether the save held
+	// anything no snapshot captured and, if so, refused to sync and raised a
+	// conflict. That protects the files but it answers a whole-save question
+	// about a per-file danger — one edit anywhere blocked every sync for the
+	// game — and it leans on a record that only the watcher's automatic
+	// snapshot ever wrote, so it was as likely to be stale as accurate.
+	//
+	// A snapshot here removes the question. Whatever these files hold now is
+	// recoverable from this moment on, so the sync can proceed on its merits.
+	protected := false
+	if len(atRisk) > 0 {
+		if _, err := e.Snapshots.Create(gameID, "before sync replaced local files", true); err != nil {
+			e.Log("warn", fmt.Sprintf(
+				"could not snapshot %q before syncing with %q, so the files it would replace are unprotected: %v",
+				game.Name, peer.Name, err))
+		} else {
+			protected = true
+		}
+	}
+
+	// Only when the copy could not be taken. The mtime comparison further up
+	// can miss a divergence under clock skew or a sync race, and without a
+	// snapshot behind us an overwrite is final — so refuse and let the user
+	// decide, which is the behaviour this had before there was a snapshot.
+	if !protected && len(atRisk) > 0 && game.LastManifestHash != "" &&
 		e.contentHashOf(gameID, localManifest, game.SavePath) != game.LastManifestHash {
 		e.Log("warn", fmt.Sprintf("uncaptured local changes on %q would be overwritten by %q — raising conflict", game.Name, peer.Name))
 		e.registerConflict(gameID, peer, localManifest, remoteData)
