@@ -376,26 +376,24 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	//
 	// A snapshot here removes the question. Whatever these files hold now is
 	// recoverable from this moment on, so the sync can proceed on its merits.
-	protected := false
+	//
+	// And if it cannot be taken, the sync stops. There used to be a fallback
+	// that consulted Game.LastManifestHash to guess whether overwriting
+	// unprotected files was survivable, which is the wrong shape of answer
+	// twice over: that value is maintained by other subsystems and goes stale
+	// without anyone noticing, and guessing is not what to do when the honest
+	// statement is "your save could not be backed up". Refusing is visible and
+	// fixable — a full disk, a missing backups folder — where overwriting a
+	// save with no copy behind it is neither.
 	if len(atRisk) > 0 {
 		if _, err := e.Snapshots.Create(gameID, "before sync replaced local files", true); err != nil {
-			e.Log("warn", fmt.Sprintf(
-				"could not snapshot %q before syncing with %q, so the files it would replace are unprotected: %v",
-				game.Name, peer.Name, err))
-		} else {
-			protected = true
+			e.Log("error", fmt.Sprintf(
+				"not syncing %q with %q: %d local file(s) would be replaced and they could not be snapshotted first: %v",
+				game.Name, peer.Name, len(atRisk), err))
+			return Result{}, fmt.Errorf(
+				"refusing to replace %d local file(s) for %q: they could not be snapshotted first: %w",
+				len(atRisk), game.Name, err)
 		}
-	}
-
-	// Only when the copy could not be taken. The mtime comparison further up
-	// can miss a divergence under clock skew or a sync race, and without a
-	// snapshot behind us an overwrite is final — so refuse and let the user
-	// decide, which is the behaviour this had before there was a snapshot.
-	if !protected && len(atRisk) > 0 && game.LastManifestHash != "" &&
-		e.contentHashOf(gameID, localManifest, game.SavePath) != game.LastManifestHash {
-		e.Log("warn", fmt.Sprintf("uncaptured local changes on %q would be overwritten by %q — raising conflict", game.Name, peer.Name))
-		e.registerConflict(gameID, peer, localManifest, remoteData)
-		return Result{Status: "conflict", PeerID: peer.ID, PeerName: peer.Name}, nil
 	}
 
 	// 6. Apply deletions (locally + propagate to peer).
