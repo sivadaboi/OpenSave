@@ -2,7 +2,7 @@ package store
 
 import (
 	"fmt"
-	"os"
+	slashpath "path"
 	"path/filepath"
 	"strings"
 )
@@ -62,21 +62,82 @@ func (s *Store) ListGameRoots(gameID string) ([]GameRoot, error) {
 // as a file the peer is missing and pushed straight back. Refusing the
 // overlap is the only way to keep each file answerable to exactly one
 // location.
+//
+// The comparison is deliberately not the host's. It used os.PathSeparator and
+// filepath, which means a Windows path is only understood when Windows is
+// running: on Linux, filepath.Abs turns `C:\Saves\ER` into a single filename
+// under the working directory, `C:\Saves\ER\config` into a different one, and
+// neither is a prefix of the other — so every overlap is missed and the guard
+// silently passes everything. That is how it reads on a Linux CI runner today.
+//
+// A check that exists to prevent two locations owning the same file should not
+// depend on which machine it runs on, so both sides are reduced to one
+// convention first and compared as text.
 func overlaps(a, b string) bool {
-	pa, err1 := filepath.Abs(strings.TrimSpace(a))
-	pb, err2 := filepath.Abs(strings.TrimSpace(b))
-	if err1 != nil || err2 != nil {
+	pa, pb := normalizeLocationPath(a), normalizeLocationPath(b)
+	if pa == "" || pb == "" {
 		return false
 	}
-	pa, pb = filepath.Clean(pa), filepath.Clean(pb)
-	if strings.EqualFold(pa, pb) {
+	if pa == pb {
 		return true
 	}
-	sep := string(os.PathSeparator)
-	// Case-insensitive: on Windows C:\Saves and c:\saves\config are the same
-	// tree, and a comparison that missed that would let the overlap through.
-	la, lb := strings.ToLower(pa)+sep, strings.ToLower(pb)+sep
-	return strings.HasPrefix(lb, la) || strings.HasPrefix(la, lb)
+	return pathContains(pa, pb) || pathContains(pb, pa)
+}
+
+// pathContains reports whether child sits underneath parent. The separator is part
+// of the test on purpose: without it "/games/ab" reads as being inside
+// "/games/a", and two unrelated folders would refuse each other.
+func pathContains(parent, child string) bool {
+	if parent == "/" {
+		return strings.HasPrefix(child, "/")
+	}
+	return strings.HasPrefix(child, parent+"/")
+}
+
+// normalizeLocationPath reduces a path to lowercase, forward-slashed, cleaned
+// form so two of them can be compared as strings on any operating system.
+//
+// Lowercasing is not right on Linux, where paths are case-sensitive, and it is
+// kept anyway: the cost of being wrong is refusing a location that did not
+// really overlap, which the user sees and can rename around. The cost the
+// other way is two locations owning one file, each sync patching it twice and
+// deletions bouncing back and forth. Between an annoyance and corruption, the
+// guard leans on the annoyance.
+func normalizeLocationPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	p = strings.ReplaceAll(p, `\`, "/")
+
+	// Only resolve against the working directory when the path is not already
+	// absolute in either convention. Calling filepath.Abs on `C:/Saves` from
+	// Linux is precisely the bug above: it produces a path under the cwd and
+	// destroys the relationship being tested.
+	if !isAbsoluteAnyOS(p) {
+		if abs, err := filepath.Abs(p); err == nil {
+			p = strings.ReplaceAll(abs, `\`, "/")
+		}
+	}
+
+	// path.Clean, not filepath.Clean: the slash-based one behaves the same
+	// everywhere, which is the entire point here.
+	return strings.ToLower(slashpath.Clean(p))
+}
+
+// isAbsoluteAnyOS reports whether a slash-normalised path is already anchored,
+// under either Unix or Windows rules — a leading slash, a UNC share, or a
+// drive letter.
+func isAbsoluteAnyOS(p string) bool {
+	if strings.HasPrefix(p, "/") {
+		return true // includes //server/share
+	}
+	if len(p) >= 2 && p[1] == ':' {
+		if c := p[0] | 0x20; c >= 'a' && c <= 'z' {
+			return true
+		}
+	}
+	return false
 }
 
 // AddGameRoot records an extra location, or updates the path of one already
