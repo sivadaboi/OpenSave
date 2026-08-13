@@ -132,6 +132,42 @@ func TestSync_SnapshotsBeforeOverwritingALocalFile(t *testing.T) {
 	}
 }
 
+// When the copy cannot be taken, the sync stops rather than proceeding on a
+// guess. The old code consulted Game.LastManifestHash here to decide whether
+// overwriting unprotected files was survivable — a value maintained by other
+// subsystems, which went stale without anyone noticing. "Your save could not
+// be backed up" has one honest response, and it is not to overwrite it anyway.
+func TestSync_RefusesToOverwriteWhenItCannotSnapshotFirst(t *testing.T) {
+	env := setupEngine(t)
+
+	write(t, env.localDir, "save.dat", "agreed contents")
+	write(t, env.remoteDir, "save.dat", "agreed contents")
+	if _, err := env.engine.SyncWithPeer(context.Background(), "game1", env.peer); err != nil {
+		t.Fatalf("establishing agreement: %v", err)
+	}
+	write(t, env.remoteDir, "save.dat", "the peer's newer copy")
+
+	// Break snapshotting the way a full disk or a vanished backups folder
+	// would: point it somewhere that cannot be created.
+	settings, err := env.store.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.BackupsDir = filepath.Join(env.localDir, "save.dat", "not-a-directory")
+	if err := env.store.UpdateSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := env.engine.SyncWithPeer(context.Background(), "game1", env.peer); err == nil {
+		t.Error("sync succeeded despite being unable to snapshot the files it was about to replace")
+	}
+
+	got, _ := os.ReadFile(filepath.Join(env.localDir, "save.dat"))
+	if string(got) != "agreed contents" {
+		t.Errorf("the local file was replaced with no copy behind it: %q", got)
+	}
+}
+
 // And it must not fire when nothing is being replaced, or every ordinary sync
 // that brings a new file would leave a snapshot behind and churn the history
 // the user actually wants to look at.
