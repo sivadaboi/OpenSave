@@ -46,6 +46,26 @@ type Game struct {
 	// LastManifestHash is the manifest hash at the moment of the last
 	// auto-snapshot; the watcher compares against it before snapshotting
 	// again, preventing feedback loops (snapshot -> event -> snapshot).
+	//
+	// It is written by the watcher after an automatic snapshot, and by
+	// conflict resolution. Deliberately NOT by a snapshot taken any other way,
+	// and NOT after a sync applies files — which looks like an oversight and
+	// is not. Both were tried, measured, and reverted:
+	//
+	//   - Recording it on every snapshot fixed one failing test and broke
+	//     another outright (6 runs, 6 failures). Nothing records after a pull,
+	//     so the value goes stale the moment synced files land, and every
+	//     later pull reads that staleness as uncaptured local work.
+	//   - Recording it after a pull as well is worse than leaving it alone. A
+	//     pull takes no safety snapshot of its own, so a file the user edited
+	//     that was not part of that pull would be marked captured when it is
+	//     not — and the next pull would overwrite it without asking. That
+	//     trades a spurious conflict prompt for silent data loss.
+	//
+	// The sync engine no longer depends on it being fresh: it snapshots before
+	// overwriting anything and reads this only as a fallback for when that
+	// snapshot could not be taken (see filesAtRisk in the sync engine). Widen
+	// who writes it and that fallback is what starts misfiring.
 	LastManifestHash string `db:"last_manifest_hash" json:"-"`
 	// SyncIgnore is the game's exclusion list, written like a .gitignore: one
 	// pattern per line, "#" for comments. It decides what SYNCS and nothing
