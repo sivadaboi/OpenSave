@@ -4,7 +4,8 @@
   import { native } from '../lib/api.js';
   import AboutModal from './AboutModal.svelte';
 
-  let version = '2.0.0';
+  // Replaced by AppInfo() as soon as it answers; see FALLBACK_INFO.
+  let version = 'dev';
   onMount(async () => {
     try {
       const info = await native.appInfo();
