@@ -81,8 +81,24 @@
 </script>
 
 <p class="lead">
-  Sync across the internet with no port forwarding: both devices join the same room code on a relay, and
-  saves travel through an encrypted tunnel. The relay never stores your files.
+  Sync across the internet with no port forwarding: both devices join the same room code on a relay,
+  and the connection to it is encrypted. The relay stores nothing — no copy of a save is written to it.
+</p>
+
+<!-- Said here, at the point where somebody decides whether to use the public
+     relay, rather than only in the documentation.
+
+     The encryption is transport-level and ends AT the relay: there is no
+     end-to-end layer, so the relay process handles save data in the clear.
+     Calling that "an encrypted tunnel" and stopping was true enough to be
+     misleading — it invites the reading that nobody in the middle can see the
+     save, which is the opposite of the case. Whoever runs the relay is being
+     trusted, and the person choosing is the one who should get to weigh it. -->
+<p class="lead subtle">
+  That encryption ends at the relay rather than at your other device, so whoever runs the relay could
+  read the saves passing through it. For the public relay, that is us. Running
+  <a href="https://github.com/Liquid-co/OpenSave/blob/main/docs/RELAY.md" target="_blank" rel="noreferrer">your own relay</a>
+  makes it you instead.
 </p>
 
 <!-- Always-visible connection status: exactly one of four states. Keyed
@@ -208,6 +224,18 @@
     font-size: 0.9rem;
     max-width: 640px;
     margin-bottom: 20px;
+  }
+  /* The trust note under the lead. Quieter than the sentence above it, and
+     deliberately not styled as a warning: nothing is wrong, it is a fact about
+     the arrangement that the person choosing a relay should have. */
+  .lead.subtle {
+    color: var(--text-faint);
+    font-size: 0.85rem;
+    margin-top: -12px;
+  }
+  .lead.subtle a {
+    color: var(--text-dim);
+    text-decoration: underline;
   }
   .status {
     display: flex;
