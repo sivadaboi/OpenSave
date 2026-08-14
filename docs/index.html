@@ -297,7 +297,7 @@
         <div class="how-step">
           <div class="how-num">4</div>
           <h3>Sync</h3>
-          <p>Only changed blocks travel to paired peers — direct over LAN, or through a stateless relay that routes encrypted frames and stores nothing.</p>
+          <p>Only changed blocks travel to paired peers — direct over LAN, or through a stateless relay that forwards them over an encrypted connection and stores nothing.</p>
         </div>
       </div>
 
@@ -342,7 +342,7 @@
         </div>
         <div class="arch-notes">
           <h3>Local-first by design</h3>
-          <p>The relay is a stateless room broker — it forwards encrypted WebSocket frames and <strong>never sees or stores a save</strong>. Don't want to trust ours? <a href="https://github.com/Liquid-co/OpenSave#self-hosting-the-relay" target="_blank" rel="noopener">Self-host it</a> with one binary or a Dockerfile.</p>
+          <p>The relay is a stateless room broker — it forwards WebSocket frames and <strong>writes no save to disk</strong>. The connection to it is encrypted, but that encryption ends at the relay rather than at your other device, so whoever runs one is in a position to read what passes through. Ours is <code>wss://relay.opensave.org</code>. Don't want to take our word for it? <a href="https://github.com/Liquid-co/OpenSave#self-hosting-the-relay" target="_blank" rel="noopener">Self-host it</a> with one binary or a Dockerfile.</p>
           <p>Prefer a terminal? The headless daemon + <code>opensave-cli</code> runs on servers and Steam Deck alike, and everything the app does is scriptable over a local REST/WebSocket API.</p>
         </div>
       </div>
@@ -480,7 +480,7 @@
         </details>
         <details class="faq-item">
           <summary>Is my data safe in transit?</summary>
-          <p>WAN sync travels as encrypted WebSocket frames through a stateless relay that routes and stores nothing. On LAN, devices talk directly. Saves are only ever persisted on <em>your</em> devices (and, if you enable it, your own cloud storage).</p>
+          <p>WAN sync travels over an encrypted connection to a stateless relay that stores nothing. That encryption ends at the relay rather than at your other device, so the relay could read what it forwards — saves are not sealed end-to-end yet. Ours runs on our own hardware at <code>wss://relay.opensave.org</code>, and you can replace it with your own in one command. On LAN, devices talk directly and no relay is involved. Saves are only ever persisted on <em>your</em> devices (and, if you enable it, your own cloud storage).</p>
         </details>
         <details class="faq-item">
           <summary>Can I use it without a GUI?</summary>

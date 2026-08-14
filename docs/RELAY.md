@@ -26,8 +26,10 @@ What actually happens:
 1. Your PC connects to the relay and says "put me in room `purple-otter-42`".
 2. The relay makes that room exist, because someone asked for it.
 3. Your laptop connects and asks for the same room.
-4. The relay now forwards encrypted frames between the two. It cannot read
-   them, and stores nothing.
+4. The relay now forwards frames between the two, and stores nothing. The
+   connection to it is encrypted, but that encryption ends at the relay rather
+   than at the far device — so a relay could read what it forwards. That is
+   the reason to run your own.
 
 So: **run the container, then point your devices at it.** That is the whole job.
 If your VPS is not itself a machine you play games on, it never joins a room.
@@ -256,10 +258,17 @@ sides show as paired under **Devices**, and that both are tracking the game.
 
 ## What the relay can and cannot see
 
-It forwards encrypted frames between devices in the same room. It does not hold
-your saves, cannot read them, and keeps nothing after a device disconnects —
-the room disappears when the last member leaves. Restarting it drops live
-connections; clients reconnect on their own.
+It forwards frames between devices in the same room, writes no saves to disk,
+and keeps nothing after a device disconnects — the room disappears when the
+last member leaves. Restarting it drops live connections; clients reconnect on
+their own.
+
+What it *can* see is the traffic itself. The connection is encrypted in
+transit, but that encryption terminates at the relay rather than at the far
+device, so whoever runs the relay is in a position to read what passes through
+it. Saves are not sealed end-to-end yet. This is the honest reason to run your
+own rather than use ours: not that ours is hostile, but that "you do not have
+to take our word for it" is a better property than a promise.
 
 The health endpoint is public and reports counts only — how many rooms and
 clients, never codes or contents.
