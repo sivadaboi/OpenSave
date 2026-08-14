@@ -94,6 +94,31 @@ documentation said a relay could see was not what a relay can see.
   locations fight: the same file lands in two manifests, each sync patches it
   twice, and a deletion propagated for one is pushed back by the other.
 
+### Changed
+
+- **The public relay is `relay.opensave.org`, on hardware the project rents.**
+  Internet sync went down twice in a fortnight. Both relays were free tiers,
+  and both were switched off for exhausting an allowance: a relay holds
+  connections open and never idles, so it spends a month's quota simply by
+  existing. That was never a hosting accident to be waited out — it is what
+  that arrangement does to this kind of service, and a third free tier would
+  have ended the same way.
+
+  The address now belongs to the project rather than to a host. Moving
+  machines from here is a DNS change nobody has to notice, which is the point:
+  each of the last two moves cost an emergency release and a banner asking
+  every user to retype a setting by hand.
+
+  **A relay address you set yourself is left exactly as it was.** Only installs
+  still holding one of the three abandoned addresses are moved — including the
+  one that was never a shipped default, but went out in a website banner during
+  the second outage. Anyone who followed that banner is carried over too, since
+  otherwise the people who did what we asked would have been the only ones left
+  behind.
+
+  Google Drive sign-in moves with it: the relay proxies that step, which is why
+  sign-in failed during both outages alongside pairing.
+
 ### Fixed
 
 - **The relay installer no longer hands out an address the app refuses.** It

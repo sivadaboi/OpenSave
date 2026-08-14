@@ -4,9 +4,13 @@ import (
 	"testing"
 )
 
+// The two relays 0015 moved between. Both are switched off now, and 0018 moves
+// installs off them onto relay.opensave.org, so these name points in the
+// history rather than anything in service — which is why neither is called
+// "new" any more.
 const (
-	oldPublicRelay = "wss://opensave-relay.onrender.com"
-	newPublicRelay = "wss://open-save-backup-relay.onrender.com"
+	relayBefore0015 = "wss://opensave-relay.onrender.com"
+	relayAfter0015  = "wss://open-save-backup-relay.onrender.com"
 )
 
 // readMigration returns the shipped migration text, so these tests exercise
@@ -21,26 +25,11 @@ func readMigration(t *testing.T, name string) string {
 	return string(b)
 }
 
-// A fresh install must land on the working relay.
-//
-// This is not as obvious as changing the default in 0001 makes it look:
-// migrations all run inside Open, and the settings row is only created
-// afterwards by EnsureDefaultSettings — which omits relay_url and so takes the
-// column default. An UPDATE migration alone would therefore run against an
-// empty table and do nothing at all here.
-func TestFreshInstallUsesWorkingRelay(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.EnsureDefaultSettings("/data", "/backups"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.GetSettings()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.RelayURL != newPublicRelay {
-		t.Errorf("fresh install relay = %q, want %q", got.RelayURL, newPublicRelay)
-	}
-}
+// What a fresh install lands on is asserted in relay_domain_test.go, against
+// the address that ships today. It was checked here as well until 0018 moved
+// the default off both of this file's relays, at which point the two tests
+// contradicted each other by construction and only one of them could be
+// describing the current build.
 
 // An install that predates the change is carrying the suspended address as a
 // stored value, and the migration is the only thing that reaches it.
@@ -50,7 +39,7 @@ func TestFailoverMigrationMovesInstallsOffTheDeadRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Put the database back into the state a 2.2.1 install is in.
-	if _, err := s.db.Exec(`UPDATE settings SET relay_url = ?`, oldPublicRelay); err != nil {
+	if _, err := s.db.Exec(`UPDATE settings SET relay_url = ?`, relayBefore0015); err != nil {
 		t.Fatal(err)
 	}
 
@@ -62,8 +51,8 @@ func TestFailoverMigrationMovesInstallsOffTheDeadRelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.RelayURL != newPublicRelay {
-		t.Errorf("after migration relay = %q, want %q", got.RelayURL, newPublicRelay)
+	if got.RelayURL != relayAfter0015 {
+		t.Errorf("after migration relay = %q, want %q", got.RelayURL, relayAfter0015)
 	}
 }
 
