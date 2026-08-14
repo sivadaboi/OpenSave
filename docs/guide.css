@@ -1,0 +1,495 @@
+/* Document typography for the getting-started guide.
+   ---------------------------------------------------------------
+   The rest of the site is a landing page, and its components are the
+   right shape for that: short card copy in a grid, scanned rather than
+   read. A guide is the opposite job. Built out of those components it
+   came out cramped — 14px type on a 33-character measure — and grids
+   left orphans, a lone card sitting under a full row and reading as
+   badly centred.
+
+   So this page gets a document layout instead: one column, a measure
+   you can actually read a paragraph in, and space between things.
+   Same tokens, same palette, no new colours — it should look like the
+   same site, just laid out for reading. */
+
+.guide-page {
+  /* Two numbers doing different jobs.
+
+     --measure is the line length, tuned by measuring real prose in the
+     browser rather than picking something that sounds right: 72ch of Inter
+     came out at ~85 characters a line, past the point where the eye starts
+     losing its place on the return sweep. 62ch lands around 73.
+
+     But constraining the whole PAGE to that left a 570px ribbon adrift in a
+     1900px window, with the tables squeezed into it for no reason. So the
+     measure is applied to the prose elements only. Tables, code and asides
+     use the full content column, and the leftover width goes to a contents
+     sidebar — which is what that space is for in any guide thick enough to
+     need one. */
+  /* In em, not ch. A custom property holding `ch` resolves against whichever
+     element substitutes it, so the same 62ch measured 72 characters in one
+     layout and 80 in the next — the number moved without anyone touching it.
+     em is stable here and still scales if the reader enlarges text. */
+  --measure: 36em;
+  --content: 1080px;
+  --side: 304px;
+  --guide-pad: 28px;
+}
+
+/* ---- Shell ---- */
+.guide-wrap {
+  /* Wide enough that the page reads as a page rather than a strip down the
+     middle of a dark screen. The prose keeps its own measure regardless —
+     the extra width goes to the sidebar, the tables and the code, which all
+     have something to do with it. */
+  max-width: calc(var(--side) + var(--content) + 80px);
+  margin: 0 auto;
+  padding: 0 var(--guide-pad);
+}
+
+.guide-layout {
+  display: grid;
+  grid-template-columns: var(--side) minmax(0, 1fr);
+  gap: 80px;
+  align-items: start;
+}
+
+/* The prose measure. One rule decides it for everything prose-shaped, so a
+   block cannot drift wider than the words inside it.
+
+   Applied to the BOX for anything with a visible edge — a callout tinted to
+   1024px around 588px of text overhangs its own content by 436px and reads
+   as a mistake, because it is one. Applied to the text itself where there is
+   no box to see.
+
+   Tables are the deliberate exception: they have columns to fit, and width
+   is the thing that makes them legible rather than the thing that hurts. */
+.guide-section > p,
+.guide-section > ul,
+.guide-section > ol,
+.guide-steps p,
+.guide-lede,
+.guide-note,
+.guide-warn,
+.guide-trouble,
+.guide-end {
+  max-width: var(--measure);
+}
+
+/* Code gets a little more room than prose. The measure is tuned for Inter,
+   and monospace is wider per character — at the prose width the longest line
+   shipped here (58 characters of exclusion patterns) overflowed by 25px and
+   started scrolling sideways, which for five short lines is worse than the
+   width it saved. */
+.guide-code {
+  max-width: calc(var(--measure) + 90px);
+}
+
+.guide-header {
+  padding: 132px 0 44px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.guide-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 14px;
+}
+.guide-header h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 5vw, 3rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0 0 18px;
+}
+.guide-lede {
+  font-size: 1.15rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* ---- Contents sidebar ---- */
+.guide-toc {
+  position: sticky;
+  top: 96px;
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+  padding-right: 8px;
+}
+.guide-toc h2 {
+  font-family: var(--font-sans);
+  font-size: 0.74rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0 0 14px;
+}
+.guide-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: toc;
+}
+.guide-toc li {
+  counter-increment: toc;
+  margin: 0;
+}
+.guide-toc a {
+  display: block;
+  padding: 6px 12px 6px 30px;
+  position: relative;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-left: 2px solid var(--border);
+  border-radius: 0 6px 6px 0;
+}
+.guide-toc a::before {
+  content: counter(toc) '.';
+  position: absolute;
+  left: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+}
+.guide-toc a:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-left-color: var(--border-strong);
+}
+/* Marks the section you are currently reading. */
+.guide-toc a.is-current {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.guide-toc a.is-current::before {
+  color: var(--accent);
+}
+
+/* ---- Sections ---- */
+.guide-section {
+  padding: 52px 0 8px;
+  scroll-margin-top: 90px;
+}
+.guide-section + .guide-section {
+  border-top: 1px solid var(--border);
+}
+.guide-section > h2 {
+  font-family: var(--font-display);
+  font-size: 1.72rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  margin: 0 0 6px;
+}
+.guide-section > h2 .guide-num {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  margin-right: 12px;
+  font-weight: 600;
+}
+.guide-section h3 {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  margin: 34px 0 10px;
+  color: var(--text);
+}
+
+/* ---- Prose ----
+   Scoped to the guide's own content, NOT to .guide-page.
+
+   .guide-page is on <body>, so styling `a` under it repainted the shared
+   header and footer as well: the navbar links came out violet and underlined
+   on this page and grey on every other, from one selector that was never
+   meant to reach them. Anything here that could match shared furniture is
+   scoped to .guide-header and .guide-main instead. */
+.guide-main p,
+.guide-main li {
+  font-size: 1.02rem;
+  line-height: 1.78;
+  color: var(--text-secondary);
+}
+.guide-main p {
+  margin: 0 0 18px;
+}
+.guide-main strong,
+.guide-header strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.guide-main ul,
+.guide-main ol {
+  margin: 0 0 20px;
+  padding-left: 1.4em;
+}
+.guide-main li {
+  margin-bottom: 10px;
+}
+.guide-main li::marker {
+  color: var(--text-dim);
+}
+/* Buttons keep their own styling; only body links get the prose treatment. */
+.guide-main a:not(.btn-primary):not(.btn-secondary),
+.guide-header a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-line);
+}
+.guide-main a:not(.btn-primary):not(.btn-secondary):hover,
+.guide-header a:hover {
+  border-bottom-color: var(--accent);
+}
+.guide-main code,
+.guide-header code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  color: var(--text);
+}
+
+/* ---- Numbered walkthrough ---- */
+.guide-steps {
+  counter-reset: gstep;
+  list-style: none;
+  padding: 0;
+  margin: 26px 0 8px;
+}
+.guide-steps > li {
+  counter-increment: gstep;
+  position: relative;
+  padding-left: 52px;
+  margin-bottom: 30px;
+}
+.guide-steps > li::before {
+  content: counter(gstep);
+  position: absolute;
+  left: 0;
+  top: -2px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.92rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.guide-steps h3 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+.guide-steps > li > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Asides ---- */
+.guide-note,
+.guide-warn {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.guide-warn {
+  border-left-color: var(--warn);
+  background: rgba(251, 191, 36, 0.08);
+}
+.guide-note > :last-child,
+.guide-warn > :last-child {
+  margin-bottom: 0;
+}
+.guide-note p,
+.guide-warn p {
+  color: var(--text);
+}
+
+/* ---- Tables ---- */
+.guide-table-wrap {
+  margin: 24px 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.guide-table th,
+.guide-table td {
+  text-align: left;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  line-height: 1.6;
+}
+.guide-table thead th {
+  background: var(--bg-raised);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.guide-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.guide-table td:first-child {
+  color: var(--text);
+  white-space: nowrap;
+}
+.guide-table td strong {
+  font-weight: 600;
+}
+
+/* ---- Code block ---- */
+.guide-code {
+  margin: 20px 0;
+  padding: 16px 20px;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  line-height: 1.85;
+  color: var(--text-secondary);
+  white-space: pre;
+}
+.guide-code .c {
+  color: var(--text-dim);
+}
+
+/* ---- Troubleshooting ---- */
+.guide-trouble {
+  margin: 26px 0 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.guide-trouble details {
+  border-bottom: 1px solid var(--border);
+}
+.guide-trouble details:last-child {
+  border-bottom: 0;
+}
+.guide-trouble summary {
+  padding: 15px 20px;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 500;
+  list-style: none;
+  position: relative;
+  padding-right: 46px;
+}
+.guide-trouble summary::-webkit-details-marker {
+  display: none;
+}
+.guide-trouble summary::after {
+  content: '+';
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.guide-trouble details[open] summary::after {
+  content: '\2212';
+}
+.guide-trouble summary:hover {
+  background: var(--bg-hover);
+}
+.guide-trouble details > p {
+  padding: 0 20px 16px;
+  margin: 0;
+}
+
+/* ---- Foot of the guide ---- */
+.guide-end {
+  margin: 56px 0 96px;
+  padding: 28px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+.guide-end h2 {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  margin: 0 0 10px;
+}
+.guide-end .guide-end-ctas {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+/* Below the point where a sidebar plus a readable column both fit, the
+   contents goes back to a block at the top of the page. */
+@media (max-width: 1080px) {
+  .guide-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .guide-toc {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    margin-bottom: 34px;
+    padding: 20px 22px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .guide-toc ol {
+    columns: 2;
+    column-gap: 28px;
+  }
+  .guide-toc li {
+    break-inside: avoid;
+  }
+  .guide-toc a {
+    border-left: 0;
+    padding: 5px 0 5px 26px;
+    border-radius: 6px;
+  }
+  .guide-toc a::before {
+    left: 0;
+  }
+  .guide-toc a:hover,
+  .guide-toc a.is-current {
+    background: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .guide-page {
+    --guide-pad: 20px;
+  }
+  .guide-header {
+    padding-top: 108px;
+  }
+  .guide-toc ol {
+    columns: 1;
+  }
+  .guide-steps > li {
+    padding-left: 44px;
+  }
+}
