@@ -52,10 +52,25 @@ jobs:
         run: |
           V="${GITHUB_REF_NAME#v}"
           wails build -nsis -ldflags "-X github.com/opensave/opensave/internal/version.Version=$V -X github.com/opensave/opensave/internal/version.BuildTime=$(date +%s)"
+      # Stamped with the same version and build time as the app.
+      #
+      # These were built with "-s -w" alone, so they carried whatever was
+      # hardcoded in internal/version and no build time at all. On a final
+      # release that value matches the tag, which is why it went unnoticed;
+      # on v2.3.0-beta.1 the published CLI reported itself as 2.3.0. A CLI
+      # that does not know it is a pre-release is not offered later betas,
+      # and is never offered the final either, since the version it claims
+      # is the one being released.
+      #
+      # The missing BuildTime matters separately: two peers on the SAME
+      # version decide whose binary is newer by comparing it.
       - name: Build CLI + relay
+        shell: bash
         run: |
-          go build -ldflags="-s -w" -o dist/opensave-cli.exe ./cmd/opensave-cli
-          go build -ldflags="-s -w" -o dist/opensave-relay.exe ./cmd/opensave-relay
+          V="${GITHUB_REF_NAME#v}"
+          LD="-s -w -X github.com/opensave/opensave/internal/version.Version=$V -X github.com/opensave/opensave/internal/version.BuildTime=$(date +%s)"
+          go build -ldflags="$LD" -o dist/opensave-cli.exe ./cmd/opensave-cli
+          go build -ldflags="$LD" -o dist/opensave-relay.exe ./cmd/opensave-relay
 
       # Fail loudly if the NSIS installer was skipped, and give it a stable
       # download name (the website's download buttons look for "Setup").
@@ -148,8 +163,11 @@ jobs:
           wails build -tags webkit2_41 -ldflags "-X github.com/opensave/opensave/internal/version.Version=$V -X github.com/opensave/opensave/internal/version.BuildTime=$(date +%s)"
       - name: Build CLI + relay, assemble tar.gz
         run: |
-          go build -ldflags="-s -w" -o dist/opensave-cli ./cmd/opensave-cli
-          go build -ldflags="-s -w" -o dist/opensave-relay ./cmd/opensave-relay
+          # Same stamping as the app; see the Windows job for why.
+          V="${GITHUB_REF_NAME#v}"
+          LD="-s -w -X github.com/opensave/opensave/internal/version.Version=$V -X github.com/opensave/opensave/internal/version.BuildTime=$(date +%s)"
+          go build -ldflags="$LD" -o dist/opensave-cli ./cmd/opensave-cli
+          go build -ldflags="$LD" -o dist/opensave-relay ./cmd/opensave-relay
           mkdir -p opensave-linux
           cp cmd/opensave-app/build/bin/OpenSave opensave-linux/opensave
           cp dist/opensave-cli dist/opensave-relay opensave-linux/
@@ -171,9 +189,9 @@ jobs:
           # WebKit, so this is the headless pair only (pure Go, cross-compiles
           # cleanly with CGO off).
           mkdir -p opensave-linux-arm64
-          CGO_ENABLED=0 GOARCH=arm64 go build -ldflags="-s -w" \
+          CGO_ENABLED=0 GOARCH=arm64 go build -ldflags="$LD" \
             -o opensave-linux-arm64/opensave-cli ./cmd/opensave-cli
-          CGO_ENABLED=0 GOARCH=arm64 go build -ldflags="-s -w" \
+          CGO_ENABLED=0 GOARCH=arm64 go build -ldflags="$LD" \
             -o opensave-linux-arm64/opensave-relay ./cmd/opensave-relay
           cp packaging/man/opensave.1 opensave-linux-arm64/ 2>/dev/null || true
           tar -czf opensave-linux-arm64.tar.gz opensave-linux-arm64
