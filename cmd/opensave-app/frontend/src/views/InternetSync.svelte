@@ -8,9 +8,27 @@
   let busy = false;
   let health = null;
 
+  // Seeded once, when the fields are still blank — which includes every time
+  // this view is rebuilt after a tab switch, because the drafts are component
+  // state and do not survive that.
+  //
+  // The room code comes from the live room in preference to the saved setting.
+  // They normally agree, but the room is the thing actually joined, and it can
+  // be changed from the CLI or another window; showing the stored code instead
+  // would tell you that you are in a room you have already left.
   $: if ($settings && codeDraft === '' && relayDraft === '') {
-    codeDraft = $settings.syncCode ?? '';
+    codeDraft = $wanRoom?.roomCode || ($settings.syncCode ?? '');
     relayDraft = $settings.relayUrl ?? '';
+  }
+
+  // Every save here has to put the server's answer back into the store.
+  // Nothing else does: the store is filled by the `init` message at launch and
+  // by the Settings view saving its own form, so a relay or room code changed
+  // from this view stayed invisible to the rest of the app — and to this view
+  // itself once a tab switch destroyed it and the fields above re-seeded from
+  // the settings as they were before the change.
+  async function saveSettings(patch) {
+    settings.set(await api.post('/api/settings', patch));
   }
   $: pairedIds = new Set(Object.keys($peers));
   $: roomPeers = $wanRoom?.peers ?? [];
@@ -39,7 +57,7 @@
       const code = codeDraft.trim();
       if (!code) {
         if ($wanRoom?.enabled) {
-          await api.post('/api/settings', { syncCode: '', relayUrl: relayDraft.trim() });
+          await saveSettings({ syncCode: '', relayUrl: relayDraft.trim() });
           toast('Left the relay room', 'success');
         } else {
           toast('Enter a room code first', 'error');
@@ -47,7 +65,7 @@
         return;
       }
       const rejoining = code === ($wanRoom?.roomCode ?? '') && relayDraft.trim() === ($settings?.relayUrl ?? '');
-      await api.post('/api/settings', { syncCode: code, relayUrl: relayDraft.trim() });
+      await saveSettings({ syncCode: code, relayUrl: relayDraft.trim() });
       // Saving identical settings doesn't re-dial, so force a fresh attempt.
       if (rejoining) await api.post('/api/relay/reconnect');
       toast(rejoining ? `Reconnecting to room “${code}”…` : `Joining room “${code}”…`);
@@ -60,7 +78,7 @@
     });
   const leaveRoom = () => {
     codeDraft = '';
-    return run(() => api.post('/api/settings', { syncCode: '' }), 'Left the relay room');
+    return run(() => saveSettings({ syncCode: '' }), 'Left the relay room');
   };
   const pairWan = (p) =>
     run(() => api.post('/api/peers/pair', { peerId: p.id, address: 'relay' }), `Pairing request sent to ${p.deviceName}`);
