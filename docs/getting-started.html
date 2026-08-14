@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started with OpenSave — from a fresh install to syncing saves</title>
+  <meta name="description" content="A complete walkthrough for anyone new to OpenSave: find your game saves, read the scan results, pair a second device, get an old save back, handle conflicts, and every setting explained. Assumes nothing.">
+  <meta property="og:title" content="Getting Started with OpenSave">
+  <meta property="og:description" content="From a fresh install to syncing saves across your devices. Explains every term as it comes up, including what to do when something looks wrong.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://open-save.vercel.app/getting-started.html">
+  <meta property="og:image" content="https://open-save.vercel.app/screenshots/home-library.png">
+  <meta name="theme-color" content="#0c0c0d">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="icon.png?v=2">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="guide.css?v=5">
+</head>
+<body class="guide-page">
+
+  <div class="ambient-layer" aria-hidden="true">
+    <div class="ambient-glow glow-1"></div>
+  </div>
+
+  <!-- ===================== NAV ===================== -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a class="logo" href="index.html" aria-label="OpenSave home">
+        <img src="icon.png?v=2" alt="" class="logo-img">
+        <span class="logo-text">Open<span>Save</span></span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="index.html#showcase">Screenshots</a>
+        <a href="index.html#features">Features</a>
+        <a href="index.html#how">How it works</a>
+        <a href="getting-started.html" class="is-active">Guide</a>
+        <a href="cli.html">CLI</a>
+        <a href="index.html#faq">FAQ</a>
+        <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="discord-link">
+          <svg viewBox="0 0 24 18" width="16" height="12" aria-hidden="true"><path fill="currentColor" d="M20.32 1.53A19.8 19.8 0 0 0 15.43 0c-.21.38-.46.9-.63 1.31a18.3 18.3 0 0 0-5.6 0C9.03.9 8.77.38 8.56 0A19.74 19.74 0 0 0 3.67 1.53C.57 6.19-.27 10.73.15 15.21A19.9 19.9 0 0 0 6.18 18c.49-.66.92-1.37 1.29-2.11-.71-.27-1.39-.6-2.03-.98.17-.13.34-.26.5-.4a14.2 14.2 0 0 0 12.12 0c.16.14.33.27.5.4-.64.38-1.32.71-2.03.98.37.74.8 1.45 1.29 2.11a19.87 19.87 0 0 0 6.03-2.79c.5-5.19-.84-9.69-3.53-13.68ZM8.02 12.46c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Zm7.96 0c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Z"/></svg>
+          Discord
+        </a>
+        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="donate-link">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-10.2-9.6C.4 8.5 1.7 5 5.1 4.2c2-.5 4 .3 5.1 2 .9-1.7 3-2.5 5-2 3.4.8 4.7 4.3 3.3 7.2C19.5 16.4 12 21 12 21z"/></svg>
+          Donate
+        </a>
+        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener" class="github-link">
+          <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+          GitHub
+        </a>
+        <a href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener" class="nav-cta">Download</a>
+      </nav>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <div class="guide-wrap">
+
+      <div class="guide-header">
+        <div class="guide-eyebrow">Getting started</div>
+        <h1>From a fresh install to syncing saves.</h1>
+        <p class="guide-lede">
+          This assumes you have never used OpenSave and starts from nothing, explaining each
+          thing as it comes up. Read it start to finish the first time, or jump to the part
+          you need.
+        </p>
+      </div>
+
+      <div class="guide-layout">
+
+      <nav class="guide-toc" aria-label="Contents">
+        <h2>Contents</h2>
+        <ol>
+          <li><a href="#what">What OpenSave actually does</a></li>
+          <li><a href="#install">Installing it</a></li>
+          <li><a href="#first-run">First run: finding your saves</a></li>
+          <li><a href="#scan-results">Reading the scan results</a></li>
+          <li><a href="#second-device">Adding your second device</a></li>
+          <li><a href="#playing">What happens while you play</a></li>
+          <li><a href="#restore">Getting an old save back</a></li>
+          <li><a href="#branches">Branches</a></li>
+          <li><a href="#conflicts">When two devices disagree</a></li>
+          <li><a href="#awkward">Games with awkward saves</a></li>
+          <li><a href="#relay">Running your own relay</a></li>
+          <li><a href="#settings">Every setting explained</a></li>
+          <li><a href="#odds">Things easy to miss</a></li>
+          <li><a href="#trouble">When something looks wrong</a></li>
+          <li><a href="#glossary">Glossary</a></li>
+        </ol>
+      </nav>
+
+      <div class="guide-main">
+
+      <!-- 1 -->
+      <section class="guide-section" id="what">
+        <h2><span class="guide-num">1.</span>What OpenSave actually does</h2>
+        <p>
+          You play a game on your desktop. Later you want to carry on from your laptop, or your
+          Steam Deck. Unless the game supports Steam Cloud, your progress does not follow you —
+          the save is a folder of files sitting on one machine.
+        </p>
+        <p>
+          OpenSave watches those folders. When a save changes, it does two things: it
+          <strong>keeps a copy</strong> of how the folder looked, so you can go back to it, and it
+          <strong>sends the change to your other devices</strong>, so they have the same save.
+          Only the parts of the file that changed are sent, so it stays quick even on a large save.
+        </p>
+        <p>Two things it deliberately does <em>not</em> do:</p>
+        <ul>
+          <li>
+            <strong>There is no account and no server.</strong> Your devices talk to each other
+            directly. Nothing is uploaded anywhere unless you switch on cloud backup yourself.
+          </li>
+          <li>
+            <strong>It never overwrites without being sure.</strong> If two devices changed the
+            same save independently, it stops and asks you rather than picking one.
+          </li>
+        </ul>
+        <p>
+          It works for any game whose save is a folder or a file on disk — bought anywhere, or
+          installed from outside a store entirely. It handles emulators too.
+        </p>
+      </section>
+
+      <!-- 2 -->
+      <section class="guide-section" id="install">
+        <h2><span class="guide-num">2.</span>Installing it</h2>
+        <p>
+          Download the latest build from the
+          <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">releases page</a>.
+        </p>
+        <p>
+          <strong>Windows</strong> — download <code>OpenSave.exe</code> and run it. There is no
+          installer and nothing goes in the registry.
+        </p>
+        <p>
+          <strong>Linux</strong> — download the tarball, extract it, and run <code>./OpenSave</code>.
+          There is also a <code>.deb</code>, an <code>.rpm</code> and a Flatpak.
+        </p>
+        <div class="guide-warn">
+          <p>
+            Windows SmartScreen may warn you, because the build is not code-signed — signing
+            certificates cost money this project does not have. Click
+            <strong>More info → Run anyway</strong> if you are comfortable with that.
+          </p>
+        </div>
+        <p>
+          Do this on <strong>each device</strong> you want to sync. They all need the app.
+        </p>
+      </section>
+
+      <!-- 3 -->
+      <section class="guide-section" id="first-run">
+        <h2><span class="guide-num">3.</span>First run: finding your saves</h2>
+        <p>Open OpenSave. Your library is empty. There are two ways to fill it.</p>
+
+        <ol class="guide-steps">
+          <li>
+            <h3>Auto-scan — start here</h3>
+            <p>
+              Click <strong>🔍 Auto-scan</strong>. OpenSave looks in all the usual places — Steam
+              libraries, Proton and Wine prefixes, emulator folders, the Windows locations games
+              conventionally use — and checks them against a community-maintained list of save
+              paths covering tens of thousands of titles. It takes a few seconds.
+            </p>
+          </li>
+          <li>
+            <h3>Or track a folder yourself</h3>
+            <p>
+              If a game is not found, click <strong>+ Track folder</strong> and point OpenSave at
+              the folder (or single file) the game saves into. This always works; auto-scan is
+              only a convenience.
+            </p>
+            <p>
+              Not sure where a game saves?
+              <a href="https://www.pcgamingwiki.com" target="_blank" rel="noopener">PCGamingWiki</a>
+              lists save paths for most games — search the title and look for "Save game data
+              location".
+            </p>
+          </li>
+        </ol>
+      </section>
+
+      <!-- 4 -->
+      <section class="guide-section" id="scan-results">
+        <h2><span class="guide-num">4.</span>Reading the scan results</h2>
+        <p>
+          This is the screen where most of the confusion happens, so it is worth understanding.
+          Every tile is <strong>one game</strong>, and underneath it says what the folder holds:
+        </p>
+        <div class="guide-code">Balatro
+7 files · 20.4 KB · 19d ago</div>
+        <p>
+          That last part is the useful bit. A game is often found in three or four different
+          places — the Steam folder, wherever your launcher put it, and one left behind by an
+          install you have moved on from. They all look equally plausible. The date tells you
+          which one you are actually playing.
+        </p>
+
+        <h3>"found in 3 folders"</h3>
+        <p>
+          When a game turns up in more than one place, its tile says <strong>found in 3
+          folders</strong>. Click that and you get the list, each folder labelled:
+        </p>
+        <div class="guide-table-wrap">
+          <table class="guide-table">
+            <thead>
+              <tr><th>Label</th><th>What it means</th><th>Ticked?</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>the save folder</strong></td>
+                <td>The one to track. OpenSave picked the folder with the most recent files</td>
+                <td>Yes</td>
+              </tr>
+              <tr>
+                <td><strong>part of the same save</strong></td>
+                <td>Sits right beside the save folder and holds another piece of it — settings, mods, profiles. These get tracked <em>together</em> as one game</td>
+                <td>Yes</td>
+              </tr>
+              <tr>
+                <td><strong>another copy</strong></td>
+                <td>The same game somewhere unrelated. Usually a leftover from an old install</td>
+                <td>No</td>
+              </tr>
+              <tr>
+                <td><strong>already inside</strong></td>
+                <td>Covered already. Cannot be ticked, because two entries covering the same files would fight over them</td>
+                <td>No</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The <strong>Track</strong> button does whatever is ticked. If two folders are one save,
+          it says <strong>Track all 2</strong> and creates one game with both. If OpenSave gets it
+          wrong — you know the old-looking folder is the one you play — open the list and tick the
+          one you want instead.
+        </p>
+
+        <h3>Empty folders are hidden</h3>
+        <p>
+          Steam creates a save folder for every game you own whether or not saves go there, so a
+          real scan is full of folders with nothing in them. Those are hidden; on a typical
+          library that is about a fifth of the results. The toolbar says
+          <strong>Show 48 empty</strong> if you want them — useful if you want to track a game
+          <em>before</em> playing it for the first time.
+        </p>
+
+        <h3>Tracking several games at once</h3>
+        <p>
+          Click tiles to select them, then <strong>Track selected</strong>. If OpenSave listed two
+          folders separately that you know are one game, tick both and use
+          <strong>Track as one game</strong> instead.
+        </p>
+      </section>
+
+      <!-- 5 -->
+      <section class="guide-section" id="second-device">
+        <h2><span class="guide-num">5.</span>Adding your second device</h2>
+        <p>
+          Install and open OpenSave on the other machine too, then pick whichever situation
+          matches.
+        </p>
+
+        <h3>Both on the same network</h3>
+        <ol class="guide-steps">
+          <li>
+            <h3>Open Devices on both</h3>
+            <p>They find each other automatically and appear in the list.</p>
+          </li>
+          <li>
+            <h3>Click Pair on one</h3>
+            <p>
+              Then <strong>approve the request on the other</strong>. Pairing is mutual on
+              purpose — nobody can connect to your machine without you saying yes on that machine.
+            </p>
+          </li>
+        </ol>
+        <p>
+          If they do not see each other, your network is probably set to <em>Public</em>, which
+          blocks local discovery. Set it to <em>Private</em> on Windows, allow OpenSave through
+          the firewall, or skip discovery entirely: under <strong>Devices → Add by IP
+          address</strong>, type the other machine's local address (something like
+          <code>192.168.1.42</code>) and port <code>8383</code>, then
+          <strong>Send pairing request</strong>.
+        </p>
+
+        <h3>Different networks</h3>
+        <p>
+          Open <strong>Internet Sync</strong> on the first device and generate a
+          <strong>room code</strong>. Enter the same code on the second device. They find each
+          other through a relay — no port forwarding, no router settings. The relay forwards
+          traffic and stores nothing; no copy of your saves is written to it.
+        </p>
+        <p>
+          The connection to the relay is encrypted, but that encryption ends <em>at</em> the relay
+          rather than at your other device — so whoever runs the relay is someone you are trusting
+          with the save data passing through it. For the public relay, that is us. If you would
+          rather it were nobody, <a href="#relay">run your own</a>.
+        </p>
+        <div class="guide-note">
+          <p>
+            Treat the room code like a password. Anyone who has it can send your devices a
+            pairing request — though they still cannot sync anything without you approving it on
+            the device itself.
+          </p>
+        </div>
+        <p>
+          Once paired, tracked games sync automatically. Both devices need to be
+          <strong>tracking the same game</strong> for it to sync. If a game is named differently
+          on each machine, OpenSave can usually match them by Steam App ID, or you can link them
+          by hand.
+        </p>
+      </section>
+
+      <!-- 6 -->
+      <section class="guide-section" id="playing">
+        <h2><span class="guide-num">6.</span>What happens while you play</h2>
+        <p>Nothing you have to think about. Concretely:</p>
+        <ul>
+          <li>The moment the game writes a save, OpenSave notices.</li>
+          <li>It takes a <strong>snapshot</strong> — a copy of that moment you can return to.</li>
+          <li>It sends the change to every paired device that is online and tracking that game.</li>
+          <li>Only the parts of the file that changed are sent, not the whole save.</li>
+        </ul>
+        <p>If the other device is off, the change waits and syncs when it comes back.</p>
+        <div class="guide-note">
+          <p>
+            <strong>Closing the window does not quit.</strong> It hides OpenSave to the system
+            tray so syncing keeps running. Right-click the tray icon to reopen it, sync
+            everything, or actually quit.
+          </p>
+        </div>
+      </section>
+
+      <!-- 7 -->
+      <section class="guide-section" id="restore">
+        <h2><span class="guide-num">7.</span>Getting an old save back</h2>
+        <p>
+          Open a game from the sidebar. The <strong>Snapshots</strong> tab lists every version,
+          newest first.
+        </p>
+        <ul>
+          <li><strong>Restore</strong> — put the whole save back to how it was at that point.</li>
+          <li><strong>Browse files</strong> — look inside a snapshot and restore one file out of it, leaving everything else alone.</li>
+          <li><strong>Snapshot now</strong> — take one deliberately, with a comment, before you try something risky.</li>
+        </ul>
+        <div class="guide-note">
+          <p>
+            <strong>Restoring is safe.</strong> OpenSave snapshots your current save
+            <em>before</em> replacing it, so if you restore the wrong thing you can restore your
+            way back.
+          </p>
+        </div>
+
+        <h3>How many are kept</h3>
+        <p>
+          Two separate allowances, so a game that autosaves constantly cannot push out a snapshot
+          you took on purpose.
+        </p>
+        <ul>
+          <li><strong>Automatic snapshots</strong> — taken as the game saves. The newest 20 per branch are kept by default.</li>
+          <li><strong>Manual snapshots</strong> — the ones you took yourself. <strong>Kept forever by default.</strong></li>
+        </ul>
+      </section>
+
+      <!-- 8 -->
+      <section class="guide-section" id="branches">
+        <h2><span class="guide-num">8.</span>Branches: two playthroughs at once</h2>
+        <p>
+          A <strong>branch</strong> is a separate line of saves for the same game. Use one to
+          start New Game+ without losing your finished playthrough, or to try a decision and back
+          out of it.
+        </p>
+        <p>When you create a branch you choose what it starts from:</p>
+        <ul>
+          <li><strong>Your current save</strong> (the default) — switching to it changes nothing until you play. Safe.</li>
+          <li><strong>Empty</strong> — for a genuinely fresh run. Switching to it <em>clears the save folder</em>, and your old save is safe on the branch you left.</li>
+        </ul>
+        <p>
+          Switching branches always snapshots the current save onto the branch you are leaving
+          first, so a switch can be undone by switching back. If that snapshot cannot be taken,
+          nothing is changed at all.
+        </p>
+      </section>
+
+      <!-- 9 -->
+      <section class="guide-section" id="conflicts">
+        <h2><span class="guide-num">9.</span>When two devices disagree</h2>
+        <p>
+          If you play on your desktop and then on your laptop <em>before the first sync
+          finished</em>, both have changes the other does not. OpenSave notices and stops.
+        </p>
+        <p>
+          It does not use timestamps to decide — clocks disagree between machines, and "newer" is
+          not the same as "the one you want". It tracks what the two devices last agreed on, and
+          if both have moved since, that is a conflict. You get a screen showing what differs and
+          three choices:
+        </p>
+        <ul>
+          <li><strong>Keep mine</strong> — this device's version wins.</li>
+          <li><strong>Keep theirs</strong> — the other device's version wins.</li>
+          <li><strong>Keep both</strong> — the other version is put on a new branch so nothing is lost. Pick this if you are not sure.</li>
+        </ul>
+        <p>
+          Nothing is overwritten until you choose. If a game has several save folders, they are
+          judged separately: a disagreement in your settings folder does not hold up your actual
+          progress.
+        </p>
+      </section>
+
+      <!-- 10 -->
+      <section class="guide-section" id="awkward">
+        <h2><span class="guide-num">10.</span>Games with awkward saves</h2>
+
+        <h3>A save split across several folders</h3>
+        <p>
+          Some games keep progress in one place and settings or mods in another — TrackMania keeps
+          Scores, Tracks and Profiles as three sibling folders. Auto-scan usually spots this and
+          offers them together. To do it by hand, open the game →
+          <strong>Configuration → Save locations</strong>, name the extra folder and pick it. All
+          of them then sync, snapshot and restore as one.
+        </p>
+        <div class="guide-note">
+          <p>
+            <strong>Use the same name on your other devices.</strong> The name is what the two
+            machines match on, because the folder itself lives somewhere different on each. A
+            location a device knows the name of but has no folder for is shown as needing one,
+            and is skipped until you choose it.
+          </p>
+        </div>
+        <p>Removing a location never deletes anything — it only stops OpenSave covering it.</p>
+
+        <h3>Files that shouldn't travel between machines</h3>
+        <p>
+          Some games store device-specific settings — resolution, controller bindings — in the
+          same folder as the save. Copying those to another machine can break the game there, and
+          you cannot narrow the folder without losing the save.
+        </p>
+        <p>
+          Open the game → <strong>Configuration → Files that shouldn't sync</strong>. Either click
+          <strong>Pick from your save folder</strong> and tick the file — it lists what is
+          actually there, marks each file <em>syncs</em> or <em>won't sync</em>, and writes the
+          rule for you — or type patterns, one per line, like a <code>.gitignore</code>:
+        </p>
+        <div class="guide-code">Config.gs      <span class="c">a file of that name, anywhere in the folder</span>
+/Config.gs     <span class="c">only at the top level</span>
+*.log          <span class="c">anything ending .log</span>
+logs/          <span class="c">a whole folder</span>
+!keep.log      <span class="c">an exception to a line above</span></div>
+        <p>
+          Upper and lower case do not matter. Set the same list on your other devices — each
+          machine applies its own.
+        </p>
+        <div class="guide-note">
+          <p>
+            <strong>Excluding a file never stops it being backed up.</strong> Snapshots still
+            capture it, and a restore brings it back. Excluding only stops it travelling between
+            machines.
+          </p>
+        </div>
+        <p>
+          One thing to know: a pattern applies to <em>every</em> folder of that game, so if the
+          same filename exists in two of its save locations it is excluded in both.
+        </p>
+      </section>
+
+      <!-- 11 -->
+      <section class="guide-section" id="relay">
+        <h2><span class="guide-num">11.</span>Running your own relay</h2>
+        <p>
+          Only relevant for syncing across the internet, and only if you would rather not use the
+          free hosted relay. Two options, in increasing order of effort.
+        </p>
+        <p>
+          <strong>Host it on a PC you already own.</strong> Settings →
+          <strong>Internet relay</strong> → tick <strong>Host a WAN relay server on this
+          device</strong>, and pick a port. The button below shows the addresses to hand to
+          whoever is connecting. You will need to forward that port on your router, and this
+          machine has to be switched on for the others to find each other through it.
+        </p>
+        <p>
+          <strong>Put it on a server.</strong> A one-command installer handles the binary, the
+          service, the firewall, and a certificate if you have a domain:
+        </p>
+        <div class="guide-code">sudo bash install-relay.sh --domain relay.example.com</div>
+        <p>
+          Then point each of your gaming devices at it and join a room. The full walkthrough is in
+          <a href="https://github.com/Liquid-co/OpenSave/blob/main/docs/RELAY.md" target="_blank" rel="noopener">docs/RELAY.md</a>.
+        </p>
+        <div class="guide-note">
+          <p>
+            <strong>The relay itself never joins a room.</strong> It has nothing to configure
+            beyond a port. Rooms exist because your devices ask for them — which catches nearly
+            everyone the first time.
+          </p>
+        </div>
+      </section>
+
+      <!-- 12 -->
+      <section class="guide-section" id="settings">
+        <h2><span class="guide-num">12.</span>Every setting explained</h2>
+        <p>Settings has five tabs. Most of it you will never need.</p>
+        <div class="guide-table-wrap">
+          <table class="guide-table">
+            <thead>
+              <tr><th>Setting</th><th>What it does</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Device name</strong></td><td>How this machine appears to your other devices</td></tr>
+              <tr><td><strong>Device type</strong></td><td>Desktop, laptop or Deck. Cosmetic — it picks the icon others see</td></tr>
+              <tr><td><strong>Start on boot</strong></td><td>Launches minimised to the tray, so syncing runs without you opening anything</td></tr>
+              <tr><td><strong>Bandwidth limit</strong></td><td>Caps relay transfers only. <strong>LAN syncing is never throttled</strong></td></tr>
+              <tr><td><strong>Relay server</strong></td><td>Which relay carries internet syncs. Only change it if you self-host</td></tr>
+              <tr><td><strong>Host a relay here</strong></td><td>Turns this machine into the relay — see section 11</td></tr>
+              <tr><td><strong>Snapshots folder</strong></td><td>Where snapshot archives live. Move it to a bigger drive if history grows</td></tr>
+              <tr><td><strong>Safety backups</strong></td><td>A copy of your save taken <strong>before every incoming sync</strong>. Separate from snapshots, and the reason an unwanted sync is recoverable</td></tr>
+              <tr><td><strong>Retention period</strong></td><td>How long those safety copies are kept, from 7 to 90 days</td></tr>
+              <tr><td><strong>Automatic snapshot cap</strong></td><td>Default for newly tracked games, per branch. 0 keeps everything</td></tr>
+              <tr><td><strong>Manual snapshot cap</strong></td><td>The ones you took yourself. <strong>0 means forever, and that is the default</strong></td></tr>
+              <tr><td><strong>Extra scan folders</strong></td><td>Additional places to look. Point it at a second games library</td></tr>
+              <tr><td><strong>Excluded folders</strong></td><td>Places auto-scan should skip for good</td></tr>
+              <tr><td><strong>Daemon port</strong></td><td>The local and LAN peer port, 8383 by default. Needs a restart, and it is also how other devices reach you</td></tr>
+              <tr><td><strong>Path translation</strong></td><td>Rewrite rules for paths that differ between machines, so a Windows save folder maps to its Steam Deck equivalent</td></tr>
+              <tr><td><strong>Offer me betas</strong></td><td>Pre-releases as well as stable ones. Already on a beta? You get newer betas regardless, and the stable release the moment it is newer</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 13 -->
+      <section class="guide-section" id="odds">
+        <h2><span class="guide-num">13.</span>Things easy to miss</h2>
+
+        <h3>The same game named differently on two machines</h3>
+        <p>
+          If a title is tracked as "Elden Ring" here and "ELDEN RING" there, they will not sync —
+          they are two games as far as OpenSave is concerned. Either rename one, or link them
+          with <code>opensave link &lt;gameId&gt; &lt;otherGameId&gt;</code>. Games sharing a
+          Steam App ID can be matched automatically with <strong>Settings → Sync → match by App
+          ID</strong>, which is off by default so two genuinely separate copies are never merged
+          behind your back.
+        </p>
+
+        <h3>Moving to a new PC</h3>
+        <p>
+          If the old machine still works, pair the two and let them sync. If it does not, use
+          <strong>Cloud Backup → Export</strong> to write your whole library — games, settings,
+          snapshot history — to a single portable file, and <strong>Import</strong> it on the new
+          machine.
+        </p>
+
+        <h3>A few smaller ones</h3>
+        <ul>
+          <li><strong>Activity</strong> is the log of everything OpenSave has done. The first place to look when something did not happen and you want to know why.</li>
+          <li><strong>Launching games</strong> — set a game's executable in its Configuration tab and OpenSave gets a Play button.</li>
+          <li><strong>Untracking is safe.</strong> Removing a game never deletes a save file or a snapshot.</li>
+          <li><strong>Where your data lives</strong> — everything is in a <code>.opensave</code> folder in your home directory. Deleting it resets OpenSave completely and touches none of your actual game saves.</li>
+        </ul>
+      </section>
+
+      <!-- 14 -->
+      <section class="guide-section" id="trouble">
+        <h2><span class="guide-num">14.</span>When something looks wrong</h2>
+        <div class="guide-trouble">
+          <details open>
+            <summary>My devices cannot see each other</summary>
+            <p>Set the network profile to <em>Private</em>, allow OpenSave through the firewall, and make sure both are on the same network. Failing that, use <strong>Devices → Add by IP address</strong>, or a room code under Internet Sync, which works even on the same network.</p>
+          </details>
+          <details>
+            <summary>A game is not detected</summary>
+            <p>Use <strong>+ Track folder</strong> and point at it. Auto-scan covers a lot but cannot cover everything. <a href="https://www.pcgamingwiki.com" target="_blank" rel="noopener">PCGamingWiki</a> lists save paths for most games.</p>
+          </details>
+          <details>
+            <summary>A game is detected in the wrong place</summary>
+            <p>Open <strong>found in N folders</strong> on its tile and pick the folder with a recent date. If you already tracked the wrong one, untrack it and track the right one — untracking never deletes saves.</p>
+          </details>
+          <details>
+            <summary>My save did not sync</summary>
+            <p>Check both devices are tracking that game, that they show as paired under <strong>Devices</strong>, and that the game is not waiting on a conflict. <strong>Activity</strong> shows what OpenSave has been doing and usually says why.</p>
+          </details>
+          <details>
+            <summary>A folder shows as empty but I know it has saves</summary>
+            <p>The scan hides folders with no files — tick <strong>Show N empty</strong> to see them. If a folder really does have files and still shows as empty, OpenSave could not read it; check permissions.</p>
+          </details>
+          <details>
+            <summary>I restored the wrong snapshot</summary>
+            <p>Restore again. Your pre-restore state was snapshotted automatically, so it is in the list.</p>
+          </details>
+          <details>
+            <summary>"404 Not Found" when the app opens</summary>
+            <p>Another program is using port <code>8383</code> — often a second copy of OpenSave still running. Check the system tray and Task Manager, or change the port under <strong>Settings → Advanced</strong>.</p>
+          </details>
+          <details>
+            <summary>I want to start over</summary>
+            <p>Untracking a game removes it from your library and leaves every save file and snapshot on disk. Nothing you do in OpenSave deletes a save file except explicitly restoring over one.</p>
+          </details>
+        </div>
+      </section>
+
+      <!-- 15 -->
+      <section class="guide-section" id="glossary">
+        <h2><span class="guide-num">15.</span>Glossary</h2>
+        <div class="guide-table-wrap">
+          <table class="guide-table">
+            <thead>
+              <tr><th>Term</th><th>What it means</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Track</strong></td><td>Tell OpenSave to watch a folder. It does not move or change anything</td></tr>
+              <tr><td><strong>Snapshot</strong></td><td>A saved copy of how a save folder looked at one moment</td></tr>
+              <tr><td><strong>Restore</strong></td><td>Put a save folder back to how a snapshot has it</td></tr>
+              <tr><td><strong>Branch</strong></td><td>A separate line of saves for the same game — a second playthrough</td></tr>
+              <tr><td><strong>Peer</strong></td><td>Another machine running OpenSave that you have paired with</td></tr>
+              <tr><td><strong>Pairing</strong></td><td>Mutually approving two devices so they may sync. Both sides must agree</td></tr>
+              <tr><td><strong>Relay</strong></td><td>A server that forwards sync traffic between devices on different networks. It stores nothing, but it can see what passes through, so run your own if that matters</td></tr>
+              <tr><td><strong>Room code</strong></td><td>The shared word that lets two devices find each other through a relay</td></tr>
+              <tr><td><strong>Conflict</strong></td><td>Both devices changed a save independently. OpenSave asks rather than guessing</td></tr>
+              <tr><td><strong>Save location</strong></td><td>An extra folder belonging to the same game, for saves split across places</td></tr>
+              <tr><td><strong>Exclusion</strong></td><td>A file that should stay on its own machine. Still backed up, just never sent</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="guide-end">
+        <h2>Still stuck?</h2>
+        <p>
+          The Discord is the quickest way to get an answer, and where new builds are discussed
+          before they ship.
+        </p>
+        <div class="guide-end-ctas">
+          <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="btn-primary">Join the Discord</a>
+          <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener" class="btn-secondary">Report a bug</a>
+        </div>
+      </div>
+
+      </div><!-- /guide-main -->
+      </div><!-- /guide-layout -->
+
+    </div>
+  </main>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <img src="icon.png?v=2" alt="" class="logo-img">
+        <span class="logo-text">Open<span>Save</span></span>
+      </div>
+      <nav class="footer-links">
+        <a href="getting-started.html">Guide</a>
+        <a href="compare.html">Compare</a>
+        <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="footer-discord">Discord</a>
+        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="footer-donate">Donate</a>
+        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="cli.html">CLI</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener">Report a bug</a>
+      </nav>
+      <p class="footer-note">MIT licensed. No accounts. No telemetry. Made for people who love their saves.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+  <script>
+    // Highlight the section being read in the contents sidebar. A list of
+    // fifteen links is only useful if it tells you where you are in them.
+    (function () {
+      var links = Array.prototype.slice.call(
+        document.querySelectorAll('.guide-toc a[href^="#"]')
+      );
+      if (!links.length || !('IntersectionObserver' in window)) return;
+
+      var byId = {};
+      links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
+      var sections = links
+        .map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); })
+        .filter(Boolean);
+
+      var visible = {};
+      function mark() {
+        // The topmost section currently on screen wins; falling back to the
+        // last one passed means the highlight never blanks out between them.
+        var current = null;
+        for (var i = 0; i < sections.length; i++) {
+          if (visible[sections[i].id]) { current = sections[i].id; break; }
+        }
+        if (!current) {
+          for (var j = sections.length - 1; j >= 0; j--) {
+            if (sections[j].getBoundingClientRect().top < 120) { current = sections[j].id; break; }
+          }
+        }
+        links.forEach(function (a) { a.classList.remove('is-current'); });
+        if (current && byId[current]) byId[current].classList.add('is-current');
+      }
+
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
+        mark();
+      }, { rootMargin: '-100px 0px -65% 0px' });
+
+      sections.forEach(function (s) { io.observe(s); });
+      window.addEventListener('scroll', mark, { passive: true });
+      mark();
+    })();
+  </script>
+</body>
+</html>
