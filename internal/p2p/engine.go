@@ -87,6 +87,11 @@ type Engine struct {
 	buildMu    sync.Mutex
 	peerBuilds map[string]PeerBuild
 
+	// Consecutive failed pings per peer. One missed probe is not evidence
+	// that a device has gone away — see offlineStrikes.
+	pingMu     sync.Mutex
+	pingMisses map[string]int
+
 	// Lineage refreshes already running after a peer-applied deletion, keyed
 	// by game+peer. Deletions arrive one file at a time, and each one leaves
 	// the merge-base needing to be re-derived — so clearing a save folder of
@@ -333,6 +338,35 @@ func (e *Engine) OnlinePeers() []syncengine.Peer {
 	return online
 }
 
+// offlineStrikes is how many consecutive failed pings it takes before a
+// paired device is called offline.
+//
+// Three, against a 3-second ping timeout on a probe that runs every few
+// seconds: long enough that a transient stall does not evict a device that is
+// still there, short enough that one genuinely gone is noticed in well under a
+// minute. Recovery is not rationed — a single successful ping restores online
+// immediately.
+const offlineStrikes = 3
+
+// notePingMiss records a failed probe and returns how many have now failed in
+// a row for this peer.
+func (e *Engine) notePingMiss(peerID string) int {
+	e.pingMu.Lock()
+	defer e.pingMu.Unlock()
+	if e.pingMisses == nil {
+		e.pingMisses = map[string]int{}
+	}
+	e.pingMisses[peerID]++
+	return e.pingMisses[peerID]
+}
+
+// clearPingMisses forgets a peer's failures after it answers.
+func (e *Engine) clearPingMisses(peerID string) {
+	e.pingMu.Lock()
+	defer e.pingMu.Unlock()
+	delete(e.pingMisses, peerID)
+}
+
 // PingPairedPeers probes every paired LAN peer and updates their
 // online/offline status.
 func (e *Engine) PingPairedPeers(ctx context.Context) {
@@ -354,11 +388,29 @@ func (e *Engine) PingPairedPeers(ctx context.Context) {
 		if ok && info.AppVersion != "" {
 			e.recordPeerBuild(p.ID, info.AppVersion, info.BuildTimeMs)
 		}
-		newStatus := "offline"
+
+		// Quick to believe a device is back, slow to declare it gone.
+		//
+		// A single failed ping used to mark a peer offline outright, and one
+		// ping is a 3-second HTTP round trip: a busy machine, a wifi blip or a
+		// laptop that suspended for a moment all produce one. The device is
+		// then reported offline while sitting on the same desk, and a sync
+		// started in that window fails with "no online peers available" — for
+		// a peer that never actually left.
+		//
+		// Holding the previous status until several probes in a row have
+		// failed cannot lose anything: a device that really has gone is
+		// declared offline a few probes later, and the only cost is a sync
+		// attempt that fails the way it would have anyway.
+		newStatus := p.Status
 		if ok {
+			e.clearPingMisses(p.ID)
 			newStatus = "online"
+		} else if e.notePingMiss(p.ID) >= offlineStrikes {
+			newStatus = "offline"
 		}
-		if p.Status != newStatus {
+
+		if newStatus != "" && p.Status != newStatus {
 			p.Status = newStatus
 			p.LastSeenMs = time.Now().UnixMilli()
 			_ = e.Store.UpsertPeer(p)
