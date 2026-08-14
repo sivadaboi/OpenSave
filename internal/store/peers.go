@@ -48,6 +48,11 @@ type Peer struct {
 	LastSynced NullString `db:"last_synced" json:"lastSynced"`
 	LastSeenMs int64      `db:"last_seen_ms" json:"-"`
 	Status     string     `db:"status" json:"status"`
+	// PublicKey is the peer's X25519 public half, pinned when pairing
+	// completed. Empty for a peer paired before end-to-end encryption existed,
+	// or by a build that does not have it — which means "cannot encrypt with
+	// this one", not "encryption failed".
+	PublicKey string `db:"public_key" json:"-"`
 }
 
 // UpsertPeer inserts a new paired peer or updates an existing one's

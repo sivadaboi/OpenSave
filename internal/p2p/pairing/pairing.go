@@ -23,6 +23,10 @@ type IncomingRequest struct {
 	Port       int    `json:"port"`
 	ReceivedAt int64  `json:"receivedAt"` // unix ms
 	IsWan      bool   `json:"isWan"`
+	// PublicKey is the asking device's X25519 public half, held until the
+	// user approves and it can be pinned. Empty from a build without
+	// end-to-end encryption, which pairs exactly as before.
+	PublicKey string `json:"-"`
 }
 
 // Manager is safe for concurrent use.
