@@ -55,6 +55,20 @@ func cmdLocations(d *daemon.Daemon, args []string) int {
 	}
 
 	// Bare game id: list.
+	//
+	// Only bare. Anything after the id is refused rather than dropped: the
+	// subcommand comes before the game here, and putting it after is the
+	// natural mistake — "locations <game> add config <path>" reads fine and
+	// used to print that game's locations, discarding the other three
+	// arguments and reporting nothing wrong. The listing looks like success,
+	// so the location silently never existed. Exactly the fault the relay had
+	// when it accepted arguments and ignored them.
+	if len(args) > 1 {
+		fmt.Fprintf(os.Stderr, "opensave locations: unexpected argument %q after the game id\n\n", args[1])
+		fmt.Fprintln(os.Stderr, locationsUsage)
+		return 1
+	}
+
 	gameID := args[0]
 	game, err := d.Store.GetGame(gameID)
 	if err != nil {
