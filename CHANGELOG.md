@@ -17,7 +17,90 @@ folder before you commit to it, hides the empty ones, and shows one tile per
 game instead of one per folder. Self-hosting a relay is a single command. And
 there is a guide for somebody who has never opened the app.
 
+The other half of the release came out of going looking for what was quietly
+wrong rather than waiting to be told. A save is now copied before anything
+overwrites it, instead of the risk being estimated from a record that several
+parts of the app were expected to keep current and none of them did. Room codes
+were short enough to enumerate. A relay address that would have put save files
+on the wire readable was accepted without comment. The check meant to stop two
+save locations owning the same file did nothing at all on Linux. And what the
+documentation said a relay could see was not what a relay can see.
+
+### Security / safety
+
+- **A save is snapshotted before anything overwrites it.** Applying a peer's
+  changes could replace or delete local files with no copy kept, guarded only
+  by a heuristic: before pulling, the engine asked whether the save held
+  anything no snapshot had captured, and refused to sync if so.
+
+  That question was too broad and its answer unreliable. Too broad because it
+  asked whether *anything* was arriving rather than whether anything was
+  *leaving* — a pull carrying only files this device had never held can destroy
+  nothing, yet was refused because some unrelated folder had been edited. That
+  is a config folder holding a save folder hostage, which per-location lineage
+  exists to prevent. Unreliable because the record it consulted was only ever
+  written by the watcher's automatic snapshot: a snapshot taken by hand did not
+  update it, and neither did a sync, so it was as likely to be stale as
+  accurate.
+
+  Now the files a sync would actually destroy are identified — those a pull
+  writes over, and those a peer's deletion removes — and a snapshot is taken
+  before it proceeds. Deletions are included deliberately: they take the local
+  copy just as thoroughly as an overwrite, and are easier to be wrong about,
+  the file being gone rather than replaced with something recognisable.
+
+  If that snapshot cannot be taken, **the sync stops** rather than guessing. A
+  full disk or a missing backups folder is visible and fixable; a save
+  overwritten with no copy behind it is neither.
+
+- **Room codes are ~60 bits instead of ~19.** Two words from a list of eight
+  plus four digits is 576,000 possibilities — small enough to enumerate the
+  entire keyspace rather than guess at it — and they came from `Math.random()`,
+  which is not a cryptographic generator. Anyone holding a room code learns
+  each device's name, its type, and the games it tracks, and can send pairing
+  requests; the guide already said to treat one like a password, and now that
+  is true. Twelve characters from a 32-symbol alphabet, from the platform's
+  secure generator, with the shapes people mistype left out. Existing codes
+  keep working.
+
+- **A relay that would carry saves in the clear is refused.** Nothing in
+  OpenSave encrypts the sync payload, so `wss://` is the only thing between a
+  save file and the network it crosses — which makes "ws or wss" a security
+  decision rather than a preference, and nothing checked it. Refused now at the
+  settings screen, at `config set relay-url`, and at the connection itself,
+  that last one because `OPENSAVE_RELAY_URL` passes through neither of the
+  others. Still allowed where the network is the trust boundary: a LAN, a
+  private overlay such as Tailscale, or this machine.
+
+- **What the relay can see is described accurately.** The guide said a relay
+  "cannot read your saves". It can: there is no end-to-end encryption, the
+  encryption ends *at* the relay, and the process handles save data in the
+  clear. It stores none of it, which is the part that was true. Corrected
+  wherever it appeared, alongside the honest consequence — whoever runs a relay
+  is being trusted with what passes through it, which is the real argument for
+  running your own.
+
+- **One missed ping no longer means a device has gone.** A single failed probe
+  marked a paired device offline, and a probe is a three-second round trip — so
+  a busy machine, a brief wifi drop, or a laptop that suspended for a moment
+  was enough. The device showed as offline while sitting on the same desk, and
+  a sync started in that window failed with "no online peers available". Three
+  consecutive failures now; a single reply restores it immediately.
+
+- **Overlapping save locations are refused on every platform.** The check that
+  stops two locations owning the same file compared paths using the host's own
+  conventions, so a Windows-style path was only understood on Windows. On Linux
+  it recognised no overlap at all and let every one through — and overlapping
+  locations fight: the same file lands in two manifests, each sync patches it
+  twice, and a deletion propagated for one is pushed back by the other.
+
 ### Fixed
+
+- **The relay installer no longer hands out an address the app refuses.** It
+  printed the machine's public address with a `ws://` scheme and told you to
+  paste it in — which the client now declines, so a correctly installed relay
+  looked broken. It offers an unencrypted address only where the network is the
+  trust boundary, and on a hosted server prints none at all, saying why.
 
 - **The daemon's port can be changed and stay changed, and a clash says what
   to do.** `daemon start --port` only ever applied to one run, the field in
@@ -88,6 +171,24 @@ there is a guide for somebody who has never opened the app.
   the merge base translated so adding a rule does not raise a one-off conflict.
 
 ### Added
+
+- **The relay installer can be given a Google client secret.** A relay
+  completes Google Drive's sign-in for clients using the built-in credentials,
+  and the installer had no way to supply what that needs — so an installed
+  relay synced correctly and failed sign-in, fixable only by knowing the
+  variable's name and hand-writing a systemd override. `--google-secret-file`
+  takes a path rather than the value, since an argument is visible to every
+  user on the machine while the command runs, and the file is stored root-only
+  and removed by `--uninstall`. Not needed for sync, and not needed at all by
+  anyone using their own OAuth credentials in the app — that path talks to the
+  provider directly and never reaches the relay.
+
+- **Snapshots record what they hold, file by file.** Each one now notes the
+  hash of every file it captured, written once and never revised, so "is this
+  exact save recoverable?" can be answered exactly instead of inferred from a
+  single whole-save value that nothing kept current. Snapshots taken before
+  this have no such record and are treated as unproven, which is the cautious
+  side.
 
 - **The frontend has tests now.** It had none — not a thin suite, none — while
   the Go side had forty passing packages. That gap was not academic: of the
