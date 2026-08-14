@@ -21,8 +21,15 @@ that runs entirely on your own devices.
 - **Peer-to-peer sync** transfers save data directly between your paired
   devices — over your LAN, or over the internet through a relay.
 - **The relay** (whether the default public relay or one you self-host) only
-  routes encrypted WebSocket frames between paired devices. It does not store
-  your saves and cannot read their contents.
+  routes WebSocket frames between paired devices. It writes no save to disk and
+  keeps nothing once a device disconnects.
+
+  The connection to it is encrypted, but that encryption ends at the relay
+  rather than at your other device: save data is not sealed end-to-end yet, so
+  whoever operates a relay is in a position to read what passes through it.
+  Ours is `wss://relay.opensave.org`, running on hardware the project rents.
+  If you would rather not take our word for how it behaves, self-hosting one is
+  a single command, and LAN sync never involves a relay at all.
 
 ## Outbound network requests
 
