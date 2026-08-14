@@ -290,7 +290,7 @@
       <h3 class="section-title">🌐 Internet relay</h3>
       <div class="field">
         <label for="s-relay-url">WebSocket relay URL</label>
-        <input id="s-relay-url" bind:value={draft.relayUrl} placeholder="wss://open-save-backup-relay.onrender.com" />
+        <input id="s-relay-url" bind:value={draft.relayUrl} placeholder="wss://relay.opensave.org" />
         <span class="hint">The relay that carries syncs across the internet. Join a room from <strong>Internet Sync</strong>.</span>
       </div>
       <label class="check">

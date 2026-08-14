@@ -190,7 +190,7 @@ func importAll(s *store.Store, legacy legacyDB) error {
 		AutoSyncOnTrack:   boolOr(legacy.Settings.AutoSyncOnTrack, true),
 		CustomScanPaths:   legacy.Settings.CustomScanPaths,
 		PathTranslations:  legacy.Settings.PathTranslations,
-		RelayURL:          stringOr(legacy.Settings.RelayURL, "wss://open-save-backup-relay.onrender.com"),
+		RelayURL:          stringOr(legacy.Settings.RelayURL, "wss://relay.opensave.org"),
 		SyncCode:          legacy.Settings.SyncCode,
 		HostRelay:         legacy.Settings.HostRelay,
 		RelayPort:         intOr(legacy.Settings.RelayPort, 8386),
