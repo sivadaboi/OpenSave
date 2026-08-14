@@ -14,7 +14,7 @@ CREATE TABLE settings (
   auto_sync_on_track  INTEGER NOT NULL DEFAULT 1,
   custom_scan_paths   TEXT NOT NULL DEFAULT '[]',
   path_translations   TEXT NOT NULL DEFAULT '[]',
-  relay_url           TEXT NOT NULL DEFAULT 'wss://open-save-backup-relay.onrender.com',
+  relay_url           TEXT NOT NULL DEFAULT 'wss://relay.opensave.org',
   sync_code           TEXT NOT NULL DEFAULT '',
   host_relay          INTEGER NOT NULL DEFAULT 0,
   relay_port          INTEGER NOT NULL DEFAULT 8386,
