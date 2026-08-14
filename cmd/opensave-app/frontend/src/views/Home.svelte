@@ -1,5 +1,5 @@
 <script>
-  import { gameList, peers, navigate, toast, syncActivity, askConfirm } from '../lib/stores.js';
+  import { gameList, peers, navigate, toast, syncActivity, askConfirm, settings } from '../lib/stores.js';
   import { api, native, coverURL, gameCover } from '../lib/api.js';
   import { backdropClose } from '../lib/backdrop.js';
   // The scan screen's decisions live in a plain module so they can be tested
@@ -50,7 +50,12 @@
       const current = await api.get('/api/settings');
       const paths = current.excludePaths ?? [];
       if (!paths.includes(item.savePath)) {
-        await api.post('/api/settings', { excludePaths: [...paths, item.savePath] });
+        // The store has to take the result, not just the server. The Settings
+        // view builds its form by cloning these settings and saves the whole
+        // object back, so leaving a stale copy here means the next save from
+        // that form writes the old exclusion list over this one — and the file
+        // this was meant to keep out of sync quietly starts syncing again.
+        settings.set(await api.post('/api/settings', { excludePaths: [...paths, item.savePath] }));
       }
       scanResults = (scanResults ?? []).filter((r) => r.id !== item.id);
       selected.delete(item.id);

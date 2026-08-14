@@ -1,5 +1,5 @@
 <script>
-  import { gameList, toast, cloudAuthEvent, cloudUploadEvent, backupProgressEvent, askConfirm } from '../lib/stores.js';
+  import { gameList, toast, cloudAuthEvent, cloudUploadEvent, backupProgressEvent, askConfirm, settings } from '../lib/stores.js';
   import { api, native } from '../lib/api.js';
   import { backdropClose } from '../lib/backdrop.js';
   import { onMount, onDestroy } from 'svelte';
@@ -103,7 +103,7 @@
   async function save() {
     busy = true;
     try {
-      await api.post('/api/settings', { cloudSync: config });
+      settings.set(await api.post('/api/settings', { cloudSync: config }));
       toast('Cloud settings saved', 'success');
     } catch (e) {
       toast(e.message, 'error');
@@ -149,12 +149,12 @@
 
     busy = true;
     try {
-      await api.post('/api/settings', {
+      settings.set(await api.post('/api/settings', {
         cloudSync: {
           customClientIds: { [provider]: ownAppID.trim() },
           customClientSecrets: { [provider]: ownAppSecret.trim() }
         }
-      });
+      }));
       if (changed && wasConnected) {
         await api.post('/api/auth/disconnect');
         toast('Saved. Sign in again — the old connection belonged to the previous app.', 'success');
