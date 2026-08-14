@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/opensave/opensave/internal/delta"
+	"github.com/opensave/opensave/internal/e2ee"
 	"github.com/opensave/opensave/internal/p2p/discovery"
 	"github.com/opensave/opensave/internal/p2p/pairing"
 	"github.com/opensave/opensave/internal/p2p/syncengine"
@@ -609,6 +610,29 @@ func (e *Engine) SyncAllGames(ctx context.Context) {
 
 // InitiatePair sends a handshake to a device at address:port and opens the
 // approve-confirm grace window.
+// pairingIdentity builds the fields every handshake carries, including this
+// device's public key.
+//
+// A failure to produce the key is not a failure to pair: the pairing goes
+// ahead without one and the two devices simply sync unencrypted, which is what
+// every version before this did. Refusing to pair because a key could not be
+// generated would trade a working feature for one that is merely newer.
+func (e *Engine) pairingIdentity(settings store.Settings) map[string]any {
+	body := map[string]any{
+		"peerId":     settings.NodeID,
+		"deviceName": settings.DeviceName,
+		"deviceType": settings.DeviceType,
+		"port":       settings.Port,
+	}
+	id, err := e.Store.DeviceIdentity()
+	if err != nil {
+		e.Log("warn", fmt.Sprintf("pairing without an encryption key, so syncs with this peer stay unencrypted: %v", err))
+		return body
+	}
+	body["publicKey"] = e2ee.EncodeKey(id.Public)
+	return body
+}
+
 func (e *Engine) InitiatePair(ctx context.Context, address string, port int) error {
 	settings, err := e.Store.GetSettings()
 	if err != nil {
@@ -617,12 +641,7 @@ func (e *Engine) InitiatePair(ctx context.Context, address string, port int) err
 
 	e.Pairing.RecordSent(address, fmt.Sprintf("%s:%d", address, port))
 
-	err = postHandshake(ctx, address, port, map[string]any{
-		"peerId":     settings.NodeID,
-		"deviceName": settings.DeviceName,
-		"deviceType": settings.DeviceType,
-		"port":       settings.Port,
-	})
+	err = postHandshake(ctx, address, port, e.pairingIdentity(settings))
 	if err != nil {
 		return fmt.Errorf("handshake to %s:%d: %w", address, port, err)
 	}
@@ -639,12 +658,7 @@ func (e *Engine) InitiatePairWan(ctx context.Context, peerID string) error {
 	// "relay" is the JS grace-window key for WAN-initiated handshakes.
 	e.Pairing.RecordSent(peerID, "relay")
 
-	_, err = e.Wan.Request(ctx, peerID, "/handshake", "POST", map[string]any{
-		"peerId":     settings.NodeID,
-		"deviceName": settings.DeviceName,
-		"deviceType": settings.DeviceType,
-		"port":       settings.Port,
-	})
+	_, err = e.Wan.Request(ctx, peerID, "/handshake", "POST", e.pairingIdentity(settings))
 	if err != nil {
 		return fmt.Errorf("WAN handshake to %s: %w", peerID, err)
 	}
@@ -670,17 +684,18 @@ func (e *Engine) ApprovePairing(ctx context.Context, peerID string) error {
 	}); err != nil {
 		return err
 	}
+	if req.PublicKey != "" {
+		if err := e.Store.SetPeerPublicKey(req.PeerID, req.PublicKey); err != nil {
+			e.Log("warn", fmt.Sprintf("could not pin %q's encryption key, so syncs with it stay unencrypted: %v", req.DeviceName, err))
+		}
+	}
+
 	// Same machine, fresh identity (reinstall/reset) — drop the ghost entry.
 	if removed, _ := e.Store.PrunePeersAtAddress(req.Address, req.Port, req.PeerID); len(removed) > 0 {
 		e.Log("info", fmt.Sprintf("removed stale pairing %v — same device re-paired with a new identity", removed))
 	}
 
-	confirmBody := map[string]any{
-		"peerId":     settings.NodeID,
-		"deviceName": settings.DeviceName,
-		"deviceType": settings.DeviceType,
-		"port":       settings.Port,
-	}
+	confirmBody := e.pairingIdentity(settings)
 	if req.IsWan || req.Address == "relay" {
 		if _, err := e.Wan.Request(ctx, req.PeerID, "/approve-confirm", "POST", confirmBody); err != nil {
 			e.Log("warn", fmt.Sprintf("WAN approve-confirm to %s failed (peer saved anyway): %v", req.DeviceName, err))

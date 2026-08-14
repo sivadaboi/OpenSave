@@ -142,6 +142,7 @@ func (e *Engine) handleHandshake(w http.ResponseWriter, r *http.Request) {
 		DeviceName string `json:"deviceName"`
 		DeviceType string `json:"deviceType"`
 		Port       int    `json:"port"`
+		PublicKey  string `json:"publicKey"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PeerID == "" {
 		jsonError(w, http.StatusBadRequest, "peerId is required")
@@ -154,6 +155,7 @@ func (e *Engine) handleHandshake(w http.ResponseWriter, r *http.Request) {
 		DeviceType: orDefault(body.DeviceType, "desktop"),
 		Address:    clientIP(r),
 		Port:       body.Port,
+		PublicKey:  body.PublicKey,
 	})
 	e.Log("info", fmt.Sprintf("pairing request from %q (%s) — awaiting approval", body.DeviceName, clientIP(r)))
 	e.notifyPeerUpdate()
@@ -167,6 +169,7 @@ func (e *Engine) handleApproveConfirm(w http.ResponseWriter, r *http.Request) {
 		DeviceName string `json:"deviceName"`
 		DeviceType string `json:"deviceType"`
 		Port       int    `json:"port"`
+		PublicKey  string `json:"publicKey"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PeerID == "" {
 		jsonError(w, http.StatusBadRequest, "peerId is required")
@@ -195,6 +198,15 @@ func (e *Engine) handleApproveConfirm(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Pinned after the peer row exists, and separately from it: writing a key
+	// through UpsertPeer would mean every later status update carried one too,
+	// and the ones that do not know about keys would blank it.
+	if body.PublicKey != "" {
+		if err := e.Store.SetPeerPublicKey(body.PeerID, body.PublicKey); err != nil {
+			e.Log("warn", fmt.Sprintf("could not pin %q's encryption key, so syncs with it stay unencrypted: %v", body.DeviceName, err))
+		}
+	}
+
 	// Same machine, fresh identity (reinstall/reset) — drop the ghost entry.
 	if removed, _ := e.Store.PrunePeersAtAddress(ip, body.Port, body.PeerID); len(removed) > 0 {
 		e.Log("info", fmt.Sprintf("removed stale pairing %v — same device re-paired with a new identity", removed))
