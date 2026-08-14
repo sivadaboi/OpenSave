@@ -13,7 +13,7 @@
     try {
       info = await native.appInfo();
     } catch {
-      info = { name: 'OpenSave', version: '2.0.0' };
+      info = { name: 'OpenSave', version: 'dev' };
     }
   });
 
