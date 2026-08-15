@@ -106,7 +106,7 @@ If you only want background syncing and no window, the **command line has no
 such constraint** — it needs no WebKitGTK and runs anywhere:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh | sh
+curl -fsSL https://opensave.org/install.sh | sh
 opensave scan && opensave service install
 sudo loginctl enable-linger $USER
 ```
@@ -188,13 +188,13 @@ to do next. There is a fuller walkthrough on the
 **Linux & Steam Deck**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh | sh
+curl -fsSL https://opensave.org/install.sh | sh
 ```
 
 **Windows** (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.ps1 | iex
+irm https://opensave.org/install.ps1 | iex
 ```
 
 Installs to your user folder — no root, no admin — puts it on your `PATH`, and
