@@ -42,7 +42,7 @@ On a Linux server, one command does the lot — binary, systemd service,
 firewall, and a certificate if you have a domain pointed here:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/packaging/relay/install-relay.sh -o install-relay.sh
+curl -fsSL https://opensave.org/relay.sh -o install-relay.sh
 sudo bash install-relay.sh --domain relay.example.com
 ```
 

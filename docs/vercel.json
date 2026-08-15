@@ -1,0 +1,59 @@
+{
+  "redirects": [
+    {
+      "source": "/install.sh",
+      "destination": "https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh",
+      "permanent": false
+    },
+    {
+      "source": "/install.ps1",
+      "destination": "https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.ps1",
+      "permanent": false
+    },
+    {
+      "source": "/relay.sh",
+      "destination": "https://raw.githubusercontent.com/Liquid-co/OpenSave/dev/packaging/relay/install-relay.sh",
+      "permanent": false
+    },
+    {
+      "source": "/download",
+      "destination": "https://github.com/Liquid-co/OpenSave/releases/latest",
+      "permanent": false
+    },
+    {
+      "source": "/download/cli",
+      "destination": "https://github.com/Liquid-co/OpenSave/releases/latest/download/opensave-cli.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/windows",
+      "destination": "https://github.com/Liquid-co/OpenSave/releases/latest/download/OpenSave.Setup.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/linux",
+      "destination": "https://github.com/Liquid-co/OpenSave/releases/latest/download/opensave-linux-amd64.tar.gz",
+      "permanent": false
+    },
+    {
+      "source": "/download/relay",
+      "destination": "https://github.com/Liquid-co/OpenSave/releases/latest/download/opensave-relay.exe",
+      "permanent": false
+    },
+    {
+      "source": "/releases",
+      "destination": "https://github.com/Liquid-co/OpenSave/releases",
+      "permanent": false
+    },
+    {
+      "source": "/github",
+      "destination": "https://github.com/Liquid-co/OpenSave",
+      "permanent": false
+    },
+    {
+      "source": "/discord",
+      "destination": "https://discord.gg/hvBv92DZvn",
+      "permanent": false
+    }
+  ]
+}
