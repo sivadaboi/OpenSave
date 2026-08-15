@@ -71,6 +71,12 @@ type Engine struct {
 	Progress  ProgressCallbacks
 	Log       func(level, msg string)
 
+	// OnlinePeers resolves who is reachable right now. Only the queued
+	// follow-up uses it: every other caller passes the list it just looked
+	// up. Optional — without it the follow-up falls back to the list the
+	// sync it queued behind was started with.
+	OnlinePeers func() []Peer
+
 	mu              sync.Mutex
 	activeSyncs     map[string]bool
 	pendingSyncs    map[string]bool // a sync was requested while one ran
@@ -143,8 +149,28 @@ func (e *Engine) SyncGame(ctx context.Context, gameID string, onlinePeers []Peer
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 				defer cancel()
-				if _, err := e.SyncGame(ctx, gameID, onlinePeers); err != nil {
-					e.Log("info", fmt.Sprintf("queued follow-up sync for %s: %v", gameID, err))
+
+				// Resolve peers now rather than reusing the list the earlier
+				// sync started with. That list describes the moment this
+				// follow-up was queued behind, which can be minutes old: a
+				// device may have dropped, come back on a different address,
+				// or moved between LAN and relay. Syncing a queued change to
+				// the wrong address fails in a goroutine nobody is watching,
+				// and the caller was told "queued and will sync right after".
+				peers := onlinePeers
+				if e.OnlinePeers != nil {
+					peers = e.OnlinePeers()
+				}
+				if len(peers) == 0 {
+					// Say so. Returning quietly here is indistinguishable from
+					// a completed sync, and the change simply never left.
+					e.Log("warn", fmt.Sprintf(
+						"queued follow-up sync for %s found no reachable devices — "+
+							"it will go out on the next sync", gameID))
+					return
+				}
+				if _, err := e.SyncGame(ctx, gameID, peers); err != nil {
+					e.Log("warn", fmt.Sprintf("queued follow-up sync for %s: %v", gameID, err))
 				}
 			}()
 		}

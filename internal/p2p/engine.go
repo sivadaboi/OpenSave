@@ -272,6 +272,10 @@ func New(s *store.Store, snaps *snapshot.Manager, logf func(level, msg string)) 
 		wan: &wanTransport{wan: e.Wan},
 	})
 	e.Sync.Log = logf
+	// Lets the queued follow-up ask who is reachable at the moment it runs,
+	// instead of inheriting the peer list from whichever sync it queued
+	// behind.
+	e.Sync.OnlinePeers = e.OnlinePeers
 	return e
 }
 
