@@ -381,6 +381,41 @@ documentation said a relay could see was not what a relay can see.
   before and simply does not see the extra folders. Requested by tfe on
   Discord.
 
+## [2.2.3] — 2026-08-14
+
+The same emergency as 2.2.2, for the last time. The relay 2.2.2 moved everyone
+onto was suspended a week later for the same reason, and this points the app at
+one the project owns and pays for.
+
+### Fixed
+
+- **Internet sync works again, on `wss://relay.opensave.org`.** Both relays this
+  app has shipped were free tiers, and both were switched off for exhausting a
+  monthly allowance. A relay holds connections open and never idles, so it
+  spends an allowance meant for services that sleep — that was never a hosting
+  accident to wait out, and a third free tier would have ended the same way.
+
+  The new address belongs to the project rather than to a host, and points at a
+  rented machine. If it ever has to move again, that is a DNS record rather than
+  a release: the last two moves each cost an emergency version and a banner
+  asking every user to retype a setting by hand.
+
+  Google Drive sign-in comes back with it, since the relay proxies that step —
+  which is why signing in failed during both outages alongside pairing.
+
+- **Anyone who typed in the temporary address is moved too.** During the second
+  outage the website banner asked people to set the relay by hand. That address
+  was never a shipped default, so it sits in settings looking like a deliberate
+  choice; leaving it out of the migration would have stranded exactly the users
+  who did what we asked, on a third free tier, waiting to be switched off.
+
+  **If you set your own relay address, it is left exactly as it was.** Only
+  installs still holding one of the three abandoned addresses are moved, so a
+  self-hosted relay is never overwritten.
+
+  No save was ever at risk: the relay stores nothing and writes nothing to disk,
+  so anything on your machines was untouched throughout.
+
 ## [2.2.2] — 2026-08-12
 
 An emergency release with one purpose: the public relay was suspended for
@@ -1011,6 +1046,7 @@ and relay envelope).
   to paired peers.
 
 [2.3.0]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.3.0
+[2.2.3]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.3
 [2.2.2]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.2
 [2.2.1]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.1
 [2.2.0]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.0
