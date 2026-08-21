@@ -3,7 +3,7 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [2.3.0] — 2026-08-15
+## [2.3.0] — 2026-08-21
 
 Mostly about saves that were never in one folder to begin with. A game whose
 save is split across several places — a save folder here, settings under
@@ -25,6 +25,10 @@ were short enough to enumerate. A relay address that would have put save files
 on the wire readable was accepted without comment. The check meant to stop two
 save locations owning the same file did nothing at all on Linux. And what the
 documentation said a relay could see was not what a relay can see.
+
+Thanks to **u/enigmacarpc**, who tested this release through its betas and
+stayed with each problem until it was actually understood rather than merely
+closed.
 
 ### Security / safety
 
