@@ -111,33 +111,21 @@ func SharedKey(myPrivate, theirPublic []byte) ([]byte, error) {
 // no counter to keep, persist across restarts, or get wrong. A repeated nonce
 // with the same key is the one mistake that breaks this construction outright.
 func Seal(key, plaintext []byte) ([]byte, error) {
-	aead, err := chacha20poly1305.NewX(key)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, fmt.Errorf("generate nonce: %w", err)
-	}
-	// The nonce is prepended, so the ciphertext is self-contained.
-	return aead.Seal(nonce, nonce, plaintext, nil), nil
+	return sealAAD(key, plaintext, nil)
 }
 
 // Open reverses Seal. It fails if the data was altered in any way, which is
 // the point: a relay that rewrites a byte is caught here rather than landing a
 // corrupted save on disk.
 func Open(key, sealed []byte) ([]byte, error) {
-	aead, err := chacha20poly1305.NewX(key)
+	plain, err := openAAD(key, sealed, nil)
 	if err != nil {
+		// Keep this path's own wording: for a pairwise payload the cause is
+		// always one of these two, with no server in between to blame.
+		if strings.Contains(err.Error(), "integrity check") {
+			return nil, errors.New("payload failed its integrity check — wrong key, or altered in transit")
+		}
 		return nil, err
-	}
-	if len(sealed) < aead.NonceSize() {
-		return nil, errors.New("sealed payload is too short to contain a nonce")
-	}
-	nonce, body := sealed[:aead.NonceSize()], sealed[aead.NonceSize():]
-	plain, err := aead.Open(nil, nonce, body, nil)
-	if err != nil {
-		return nil, errors.New("payload failed its integrity check — wrong key, or altered in transit")
 	}
 	return plain, nil
 }
