@@ -1,7 +1,18 @@
 <script>
-  import { gameList, peers, navigate, toast, syncActivity, askConfirm } from '../lib/stores.js';
+  import { gameList, peers, navigate, toast, syncActivity, askConfirm, settings } from '../lib/stores.js';
   import { api, native, coverURL, gameCover } from '../lib/api.js';
   import { backdropClose } from '../lib/backdrop.js';
+  // The scan screen's decisions live in a plain module so they can be tested
+  // without opening the app — see scan.test.js, where each case is a mistake
+  // that actually reached a build.
+  import {
+    buildGroups,
+    contentsLabel,
+    isEmptyResult,
+    normPath,
+    plannedGames,
+    rootNameFor
+  } from '../lib/scan.js';
 
   export let params = {};
 
@@ -39,7 +50,12 @@
       const current = await api.get('/api/settings');
       const paths = current.excludePaths ?? [];
       if (!paths.includes(item.savePath)) {
-        await api.post('/api/settings', { excludePaths: [...paths, item.savePath] });
+        // The store has to take the result, not just the server. The Settings
+        // view builds its form by cloning these settings and saves the whole
+        // object back, so leaving a stale copy here means the next save from
+        // that form writes the old exclusion list over this one — and the file
+        // this was meant to keep out of sync quietly starts syncing again.
+        settings.set(await api.post('/api/settings', { excludePaths: [...paths, item.savePath] }));
       }
       scanResults = (scanResults ?? []).filter((r) => r.id !== item.id);
       selected.delete(item.id);
@@ -80,6 +96,14 @@
   let selected = new Set();
   let selectedCount = 0; // reactive mirror of selected.size
   let showTracked = false; // include saves already being tracked
+  // Folders with nothing in them are hidden by default — a fifth of a real
+  // machine's results, mostly userdata shells Steam creates for every game
+  // you own. Kept reachable, since tracking a folder before the game's first
+  // save is a legitimate thing to want.
+  let showEmpty = false;
+  // Which game's folder list is open. One at a time: the panel spans the grid
+  // and several open at once turns the tiles into a wall of paths.
+  let expandedGroup = null;
 
   async function scan() {
     scanning = true;
@@ -125,15 +149,18 @@
     if (e.key === 'Escape' && scanOpen) closeScan();
   }
 
-  // Compare save paths case-insensitively and ignoring a trailing separator,
-  // so a tracked game still matches its scan entry when one of them carries a
-  // trailing slash.
-  const normPath = (p) => (p ?? '').replace(/[\\/]+$/, '').toLowerCase();
   $: trackedPaths = new Set($gameList.map((g) => normPath(g.savePath)));
   const isTracked = (r) => trackedPaths.has(normPath(r.savePath));
   // Note: reference trackedPaths directly (not via isTracked) so Svelte sees
   // it as a dependency and refreshes the list when tracked-state changes.
-  $: filteredResults = (scanResults ?? []).filter((r) => {
+
+  // Everything the type tabs and the counts describe. Empty folders are out
+  // of the pool entirely unless asked for, so the tab counts match what the
+  // grid shows rather than counting rows nobody can see.
+  $: scanPool = (scanResults ?? []).filter((r) => showEmpty || !isEmptyResult(r));
+  $: emptyCount = (scanResults ?? []).filter(isEmptyResult).length;
+
+  $: filteredResults = scanPool.filter((r) => {
     if (!showTracked && trackedPaths.has(normPath(r.savePath))) return false;
     if (scanType !== 'all' && r.type !== scanType) return false;
     if (scanFilter && !`${r.name} ${r.savePath}`.toLowerCase().includes(scanFilter.toLowerCase())) return false;
@@ -142,15 +169,16 @@
   // Keep the saves you can actually add at the top and push already-tracked
   // ones below a divider — with "Show tracked" on, interleaving them buries
   // the actionable entries in a wall of tiles.
-  $: availableResults = filteredResults.filter((r) => !trackedPaths.has(normPath(r.savePath)));
-  $: trackedResults = filteredResults.filter((r) => trackedPaths.has(normPath(r.savePath)));
-  $: orderedResults = [...availableResults, ...trackedResults];
-  $: shownAvailable = availableResults.length;
+  $: allGroups = buildGroups(filteredResults, trackedPaths);
+  $: availableGroups = allGroups.filter((g) => !trackedPaths.has(normPath(g.primary.savePath)));
+  $: trackedGroups = allGroups.filter((g) => trackedPaths.has(normPath(g.primary.savePath)));
+  $: orderedGroups = [...availableGroups, ...trackedGroups];
+  $: shownAvailable = availableGroups.length;
   $: scanCounts = {
-    all: (scanResults ?? []).length,
-    emulator: (scanResults ?? []).filter((r) => r.type === 'emulator').length,
-    repack: (scanResults ?? []).filter((r) => r.type === 'repack').length,
-    game: (scanResults ?? []).filter((r) => r.type === 'game').length
+    all: scanPool.length,
+    emulator: scanPool.filter((r) => r.type === 'emulator').length,
+    repack: scanPool.filter((r) => r.type === 'repack').length,
+    game: scanPool.filter((r) => r.type === 'game').length
   };
 
   function toggleSelect(id) {
@@ -159,8 +187,22 @@
     selected = selected; // trigger reactivity
     selectedCount = selected.size;
   }
+  // Clicking a game picks the folders the daemon suggests for it — the save
+  // folder plus anything sitting beside it that belongs to the same save.
+  // Folders it flagged as already covered, or as another install's leftovers,
+  // are left for you to tick yourself.
+  function toggleGroup(group) {
+    const on = group.suggested.every((m) => selected.has(m.id));
+    for (const m of group.suggested) {
+      if (on) selected.delete(m.id);
+      else selected.add(m.id);
+    }
+    selected = selected;
+    selectedCount = selected.size;
+  }
+  const groupSelected = (group, sel) => group.members.some((m) => sel.has(m.id));
   function selectAllVisible() {
-    for (const r of filteredResults) if (!isTracked(r)) selected.add(r.id);
+    for (const g of availableGroups) for (const m of g.suggested) selected.add(m.id);
     selected = selected;
     selectedCount = selected.size;
   }
@@ -169,16 +211,57 @@
     selectedCount = 0;
   }
 
-  async function trackDetected(item, keepOpen = false) {
+  // Track one game from a set of folders: the first is the save folder and the
+  // rest become its extra locations. Adding a location can legitimately fail —
+  // the daemon refuses one that sits inside the save folder, because two
+  // locations over the same files fight over them — so those are collected and
+  // reported rather than swallowed.
+  async function trackAsOneGame(primary, extras) {
+    const created = await api.post('/api/games', {
+      name: primary.name,
+      savePath: primary.savePath,
+      appId: primary.appId ?? ''
+    });
+    const gameId = created?.id;
+    const failed = [];
+    if (gameId) {
+      const taken = new Set();
+      for (const e of extras) {
+        try {
+          await api.post(`/api/games/${gameId}/roots`, {
+            name: rootNameFor(e.savePath, taken),
+            path: e.savePath
+          });
+        } catch (err) {
+          failed.push(`${e.savePath}: ${err.message}`);
+        }
+      }
+    }
+    return { gameId, failed };
+  }
+
+  // Drop the rows just tracked. With "Show tracked" on they stay and re-render
+  // as tracked tiles — removing them would make what you just tracked vanish
+  // from a list whose whole point is showing tracked saves.
+  function consumeRows(ids) {
+    if (scanResults && !showTracked) scanResults = scanResults.filter((r) => !ids.has(r.id));
+    for (const id of ids) selected.delete(id);
+    selected = selected;
+    selectedCount = selected.size;
+  }
+
+  async function trackGroup(group) {
+    const [primary, ...extras] = group.suggested;
     try {
-      await api.post('/api/games', { name: item.name, savePath: item.savePath, appId: item.appId ?? '' });
-      // With "Show tracked" on, keep the entry and let it re-render as a
-      // tracked tile — dropping it would make the thing you just tracked
-      // vanish from a list whose whole point is showing tracked saves.
-      if (scanResults && !showTracked) scanResults = scanResults.filter((r) => r.id !== item.id);
-      selected.delete(item.id);
-      selectedCount = selected.size;
-      if (!keepOpen) toast(`Now tracking "${item.name}"`, 'success');
+      const { failed } = await trackAsOneGame(primary, extras);
+      consumeRows(new Set(group.suggested.map((m) => m.id)));
+      if (failed.length > 0) {
+        toast(`Tracking "${primary.name}" — ${failed.length} folder(s) could not be added: ${failed[0]}`, 'error');
+      } else if (extras.length > 0) {
+        toast(`Now tracking "${primary.name}" across ${extras.length + 1} folders`, 'success');
+      } else {
+        toast(`Now tracking "${primary.name}"`, 'success');
+      }
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -187,19 +270,54 @@
   async function trackSelected() {
     const items = (scanResults ?? []).filter((r) => selected.has(r.id));
     if (items.length === 0) return;
-    let ok = 0;
-    for (const item of items) {
+
+    // Folders of one game go in as one game with locations, not as several
+    // games that happen to share a name. That is the whole point of grouping:
+    // tracking Scores, Tracks and Profiles separately gives you three library
+    // entries that each sync a third of a save.
+    let games = 0;
+    let locations = 0;
+    const problems = [];
+    for (const { primary, extras } of plannedGames(items)) {
       try {
-        await api.post('/api/games', { name: item.name, savePath: item.savePath, appId: item.appId ?? '' });
-        ok++;
-      } catch {}
+        const { failed } = await trackAsOneGame(primary, extras);
+        games++;
+        locations += extras.length - failed.length;
+        problems.push(...failed);
+      } catch (e) {
+        problems.push(`${primary.name}: ${e.message}`);
+      }
     }
-    if (!showTracked) {
-      scanResults = (scanResults ?? []).filter((r) => !selected.has(r.id));
-    }
+
+    consumeRows(new Set(items.map((i) => i.id)));
     clearSelection();
-    toast(`Tracked ${ok} game${ok === 1 ? '' : 's'}`, 'success');
+    const extra = locations > 0 ? ` with ${locations} extra location${locations === 1 ? '' : 's'}` : '';
+    toast(`Tracked ${games} game${games === 1 ? '' : 's'}${extra}`, problems.length > 0 ? 'error' : 'success');
+    if (problems.length > 0) toast(problems[0], 'error');
     if (filteredResults.length === 0) closeScan();
+  }
+
+  // The escape hatch: fold whatever is ticked into one game, whatever the
+  // daemon decided. It gets the grouping right most of the time and cannot get
+  // it right always — two folders of one game with unrelated names and no
+  // AppID have nothing to match on.
+  async function mergeSelectedIntoOneGame() {
+    const items = (scanResults ?? []).filter((r) => selected.has(r.id));
+    if (items.length < 2) return;
+    // The most recently written folder leads, matching how the daemon picks a
+    // group's primary — the freshest is the save actually being played.
+    const ordered = [...items].sort((a, b) => (b.latestMtime ?? 0) - (a.latestMtime ?? 0));
+    const [primary, ...extras] = ordered;
+    try {
+      const { failed } = await trackAsOneGame(primary, extras);
+      consumeRows(new Set(items.map((i) => i.id)));
+      clearSelection();
+      if (failed.length > 0) toast(`Tracked "${primary.name}", but ${failed.length} folder(s) failed: ${failed[0]}`, 'error');
+      else toast(`Tracking "${primary.name}" across ${items.length} folders`, 'success');
+      if (filteredResults.length === 0) closeScan();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
   }
 
   async function syncAll() {
@@ -309,7 +427,7 @@
         <div>
           <h2>🔍 Auto-scan results</h2>
           <p class="scan-modal-sub">
-            {#if scanning}Scanning your system…{:else}Found {scanCounts.all} save location{scanCounts.all === 1 ? '' : 's'} — {shownAvailable} available to track{/if}
+            {#if scanning}Scanning your system…{:else}Found {scanCounts.all} save location{scanCounts.all === 1 ? '' : 's'} — {shownAvailable} available to track{#if emptyCount > 0 && !showEmpty}, {emptyCount} empty hidden{/if}{/if}
           </p>
         </div>
         <button class="btn icon" on:click={closeScan} title="Close">✕</button>
@@ -331,22 +449,30 @@
             <input type="checkbox" bind:checked={showTracked} />
             Show tracked
           </label>
+          {#if emptyCount > 0}
+            <label class="scan-show-tracked" title="Folders that exist but hold no files. Steam creates one for every game you own, whether or not saves go there.">
+              <input type="checkbox" bind:checked={showEmpty} />
+              Show {emptyCount} empty
+            </label>
+          {/if}
         </div>
 
         <div class="scan-modal-list">
           <div class="scan-grid">
-            {#each orderedResults as item, i (item.id)}
-              {#if i === availableResults.length && trackedResults.length > 0}
+            {#each orderedGroups as group, i (group.id)}
+              {@const item = group.primary}
+              {#if i === availableGroups.length && trackedGroups.length > 0}
                 <div class="scan-divider">
-                  Already tracked ({trackedResults.length})
+                  Already tracked ({trackedGroups.length})
                 </div>
               {/if}
               <div
                 class="cover-tile"
-                class:sel={selected.has(item.id)}
+                class:sel={groupSelected(group, selected)}
                 class:tracked={isTracked(item)}
-                on:click={() => !isTracked(item) && toggleSelect(item.id)}
-                on:keydown={(e) => !isTracked(item) && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleSelect(item.id))}
+                class:empty-result={isEmptyResult(item)}
+                on:click={() => !isTracked(item) && toggleGroup(group)}
+                on:keydown={(e) => !isTracked(item) && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), toggleGroup(group))}
                 role="button"
                 tabindex="0"
                 title={item.savePath}
@@ -365,7 +491,7 @@
                     <span class="cover-fallback-name">{item.name}</span>
                   </div>
 
-                  {#if selected.has(item.id)}
+                  {#if groupSelected(group, selected)}
                     <div class="cover-check">✓</div>
                   {/if}
                   <span class="cover-type">{typeLabels[item.type] ?? item.type}</span>
@@ -374,7 +500,9 @@
                     <span class="cover-tracked">✓ Tracked</span>
                   {:else}
                     <div class="cover-hover">
-                      <button class="btn small primary" on:click|stopPropagation={() => trackDetected(item)}>Track</button>
+                      <button class="btn small primary" on:click|stopPropagation={() => trackGroup(group)}>
+                        {group.suggested.length > 1 ? `Track all ${group.suggested.length}` : 'Track'}
+                      </button>
                       <button
                         class="btn small"
                         disabled={excluding === item.id}
@@ -387,7 +515,48 @@
                   {/if}
                 </div>
                 <div class="cover-name" title={item.name}>{item.name}</div>
+                <div class="cover-meta" title={item.savePath}>{contentsLabel(item)}</div>
+                {#if group.extras.length > 0}
+                  <button
+                    class="cover-folders"
+                    class:open={expandedGroup === group.id}
+                    on:click|stopPropagation={() => (expandedGroup = expandedGroup === group.id ? null : group.id)}
+                  >
+                    {expandedGroup === group.id ? '▾' : '▸'} found in {group.members.length} folders
+                    {#if group.suggested.length > 1}<span class="cover-folders-hint">· {group.suggested.length} are one save</span>{/if}
+                  </button>
+                {/if}
               </div>
+
+              {#if expandedGroup === group.id}
+                <div class="group-detail">
+                  <div class="group-detail-head">
+                    <strong>{item.name}</strong> was found in {group.members.length} places.
+                    Tick the folders that belong to this save — they are tracked as one game.
+                  </div>
+                  {#each group.members as m (m.id)}
+                    <label class="group-row" class:covered={m.role === 'inside'}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(m.id)}
+                        disabled={m.role === 'inside' || isTracked(m)}
+                        on:change={() => toggleSelect(m.id)}
+                      />
+                      <span class="group-row-main">
+                        <span class="group-row-path">{m.savePath}</span>
+                        <span class="group-row-meta">
+                          {contentsLabel(m)}
+                          {#if m.role === 'primary'}<span class="tag tag-primary">the save folder</span>
+                          {:else if m.role === 'location'}<span class="tag tag-loc">part of the same save</span>
+                          {:else if m.role === 'inside'}<span class="tag">already inside the folder above</span>
+                          {:else if m.role === 'alternative'}<span class="tag tag-alt">another copy — probably an old install</span>{/if}
+                          {#if isTracked(m)}<span class="tag tag-primary">already tracked</span>{/if}
+                        </span>
+                      </span>
+                    </label>
+                  {/each}
+                </div>
+              {/if}
             {:else}
               <div class="scan-empty">
                 {scanCounts.all === 0 ? 'Nothing detected. You can still track any folder manually.' : 'No matches for this filter.'}
@@ -398,14 +567,28 @@
 
         <div class="scan-modal-foot">
           <div class="scan-select-actions">
-            <button class="btn small" on:click={selectAllVisible} disabled={filteredResults.length === 0}>Select all ({filteredResults.length})</button>
+            <button class="btn small" on:click={selectAllVisible} disabled={availableGroups.length === 0}>Select all ({availableGroups.length})</button>
             {#if selectedCount > 0}
               <button class="btn small" on:click={clearSelection}>Clear</button>
             {/if}
           </div>
-          <button class="btn primary" disabled={selectedCount === 0} on:click={trackSelected}>
-            Track selected ({selectedCount})
-          </button>
+          <!-- Both tracking actions sit together on the right: they are the
+               two answers to the same question — one game or several — and
+               splitting them across the bar made the merge read as a filter. -->
+          <div class="scan-track-actions">
+            {#if selectedCount > 1}
+              <button
+                class="btn primary"
+                title="Track everything ticked as a single game, whatever it was grouped under. For a split save the scan did not spot."
+                on:click={mergeSelectedIntoOneGame}
+              >
+                Track as one game
+              </button>
+            {/if}
+            <button class="btn primary" disabled={selectedCount === 0} on:click={trackSelected}>
+              Track selected ({selectedCount})
+            </button>
+          </div>
         </div>
       {/if}
     </div>
@@ -835,6 +1018,114 @@
   .cover-tile.sel .cover-name {
     color: var(--text);
   }
+  .cover-meta {
+    margin-top: 2px;
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* An empty folder is shown greyed rather than removed: it is still
+     trackable on purpose, for a game that has not saved yet. */
+  .cover-tile.empty-result .cover-art {
+    opacity: 0.45;
+  }
+  .cover-tile.empty-result .cover-meta {
+    font-style: italic;
+  }
+
+  /* ── A game found in more than one place ───────────────────────── */
+  .cover-folders {
+    margin-top: 4px;
+    width: 100%;
+    background: none;
+    border: 0;
+    padding: 2px 0;
+    font-size: 0.72rem;
+    color: var(--accent);
+    cursor: pointer;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cover-folders:hover,
+  .cover-folders.open {
+    text-decoration: underline;
+  }
+  .cover-folders-hint {
+    color: var(--text-faint);
+  }
+  /* Spans the grid so the folder list reads as a list, not as a tile. */
+  .group-detail {
+    grid-column: 1 / -1;
+    background: var(--bg-elev, rgba(127, 127, 127, 0.08));
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 2px 0 10px;
+  }
+  .group-detail-head {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .group-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 6px 4px;
+    border-top: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .group-row:first-of-type {
+    border-top: 0;
+  }
+  .group-row.covered {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .group-row-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .group-row-path {
+    font-size: 0.78rem;
+    color: var(--text);
+    word-break: break-all;
+  }
+  .group-row-meta {
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .tag {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 7px;
+    font-size: 0.68rem;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+  .tag-primary {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .tag-loc {
+    border-color: var(--ok, var(--accent));
+    color: var(--ok, var(--accent));
+  }
+  .tag-alt {
+    border-color: var(--warn, var(--border));
+    color: var(--warn, var(--text-dim));
+  }
   .scan-empty {
     grid-column: 1 / -1;
     text-align: center;
@@ -851,6 +1142,11 @@
   .scan-select-actions {
     display: flex;
     gap: 8px;
+  }
+  .scan-track-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
 
   .stats {

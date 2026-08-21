@@ -123,7 +123,7 @@ func Run(args []string) int {
 	// exist, where they live, or whether they auto-sync tells it to catch up.
 	switch cmd {
 	case "scan":
-		return cmdScan(d)
+		return cmdScan(d, rest)
 	case "add":
 		return withWatchReload(cmdAdd(d, rest))
 	case "status":
@@ -148,6 +148,10 @@ func Run(args []string) int {
 		return cmdLink(d, rest)
 	case "unlink":
 		return cmdUnlinkGame(d, rest)
+	case "ignore":
+		return cmdIgnore(d, rest)
+	case "locations":
+		return withWatchReload(cmdLocations(d, rest))
 	case "links":
 		return cmdLinks(d, rest)
 	case "config":
@@ -166,10 +170,19 @@ func Run(args []string) int {
 }
 
 func runDaemon(args []string) int {
-	port := 0 // resolved from settings below
+	// -1, not 0, means "not given". 0 is a real request: bind whatever the OS
+	// has free. They were the same value before, so `--port 0` — the obvious
+	// way to ask for any free port — silently started on the configured one
+	// instead.
+	port := -1
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--port" && i+1 < len(args) {
-			fmt.Sscanf(args[i+1], "%d", &port)
+			if args[i+1] == "auto" {
+				port = 0
+			} else if _, err := fmt.Sscanf(args[i+1], "%d", &port); err != nil || port < 0 || port > 65535 {
+				fmt.Fprintf(os.Stderr, "error: --port needs a number from 0 to 65535, or \"auto\"\n")
+				return 1
+			}
 			i++
 		}
 	}
@@ -181,7 +194,7 @@ func runDaemon(args []string) int {
 	}
 	defer d.Stop()
 
-	if port == 0 {
+	if port < 0 {
 		settings, err := d.Store.GetSettings()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -199,6 +212,17 @@ func runDaemon(args []string) int {
 	addr, err := server.Start(port)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		// A port clash here is nearly always a second OpenSave, and the raw
+		// bind error says nothing about that or about the ways out of it.
+		if isAddrInUse(err) {
+			fmt.Fprintf(os.Stderr, `
+Port %d is already taken — usually the desktop app or another `+"`opensave daemon start`"+`.
+
+  opensave daemon status          is one already running?
+  opensave daemon start --port auto   use any free port, just this once
+  opensave config set port <n>    change it for good (takes effect next start)
+`, port)
+		}
 		return 1
 	}
 	defer server.Stop()
@@ -265,7 +289,21 @@ func cmdUpnp(args []string) int {
 	return 0
 }
 
-func cmdScan(d *daemon.Daemon) int {
+func cmdScan(d *daemon.Daemon, args []string) int {
+	// Folders holding nothing are hidden by default. They are a fifth of a
+	// real machine's results — Steam makes a userdata folder for every game
+	// you own whether or not saves go there — and a listing where most rows
+	// are places nothing has ever been written is a listing nobody reads.
+	// --all brings them back, for the case of wanting to track a folder
+	// before the game has first saved.
+	asJSON, args := jsonFlag(args)
+	showEmpty := false
+	for _, a := range args {
+		if a == "--all" {
+			showEmpty = true
+		}
+	}
+
 	settings, err := d.Store.GetSettings()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -273,38 +311,38 @@ func cmdScan(d *daemon.Daemon) int {
 	}
 	found := d.Scanner.Scan(settings.CustomScanPaths)
 	found = presets.FilterExcluded(found, settings.ExcludePaths)
-	if len(found) == 0 {
-		section("Auto-scan")
-		note("No game saves detected.")
-		hint("opensave add <name> <path>     track a folder yourself")
-		fmt.Println()
-		return 0
-	}
+	presets.Measure(found)
 
-	// Grouped by kind, because a flat list of 250 entries is unreadable.
-	byType := map[string][]presets.DiscoveredSave{}
-	for _, f := range found {
-		byType[f.Type] = append(byType[f.Type], f)
+	total, emptyCount := len(found), presets.CountEmpty(found)
+	if !showEmpty {
+		found = presets.WithoutEmpty(found)
+	}
+	// One entry per game, its other folders underneath. A scan finds the same
+	// game several times over — different detection passes, so its rows are
+	// scattered rather than adjacent — and a flat list leaves working out
+	// which of 250 lines are the same title to the reader.
+	presets.Group(found)
+	groups := presets.Groups(found)
+
+	byType := map[string][][]presets.DiscoveredSave{}
+	for _, g := range groups {
+		byType[g[0].Type] = append(byType[g[0].Type], g)
 	}
 	labels := []struct{ kind, title string }{
 		{"game", "Games"}, {"emulator", "Emulators"}, {"repack", "Repacks"},
 	}
 
-	// Collected in display order so the numbers printed are the numbers
-	// `add <n>` resolves.
+	// The display order, settled once and used by both outputs. `add <n>`
+	// resolves against whichever ran last, so JSON and the printed listing
+	// have to agree about which result is number n — a script that reads the
+	// JSON and then calls `add` would otherwise track a different folder from
+	// the one it chose.
+	var ordered [][]presets.DiscoveredSave
 	var numbered []presets.DiscoveredSave
-
-	section(fmt.Sprintf("Auto-scan %s %d save location(s)", symDot(), len(found)))
 	for _, l := range labels {
-		list := byType[l.kind]
-		if len(list) == 0 {
-			continue
-		}
-		fmt.Printf("\n  %s %s\n", faint(strings.ToUpper(l.title)), faint(fmt.Sprintf("(%d)", len(list))))
-		for _, f := range list {
-			numbered = append(numbered, f)
-			fmt.Printf("    %s %s\n", accent(fmt.Sprintf("[%d]", len(numbered))), bold(f.Name))
-			fmt.Printf("        %s\n", faint(f.SavePath))
+		for _, g := range byType[l.kind] {
+			ordered = append(ordered, g)
+			numbered = append(numbered, g...)
 		}
 	}
 
@@ -315,10 +353,144 @@ func cmdScan(d *daemon.Daemon) int {
 	// the papercut this exists to remove.
 	saveScanResults(d.Paths.HomeDir, numbered)
 
-	hint("opensave add <number>          track one of these",
-		"opensave add <name> <path>     track something else")
+	if asJSON {
+		if numbered == nil {
+			numbered = []presets.DiscoveredSave{} // an empty scan is [], never null
+		}
+		return emitJSON(numbered)
+	}
+
+	if len(numbered) == 0 {
+		section("Auto-scan")
+		if emptyCount > 0 {
+			note(fmt.Sprintf("No saved games found. %d detected folder(s) hold no files yet.", emptyCount))
+			hint("opensave scan --all            show them anyway")
+		} else {
+			note("No game saves detected.")
+		}
+		hint("opensave add <name> <path>     track a folder yourself")
+		fmt.Println()
+		return 0
+	}
+
+	header := fmt.Sprintf("Auto-scan %s %d save location(s) in %d game(s)", symDot(), len(found), len(groups))
+	if hidden := total - len(found); hidden > 0 {
+		header += fmt.Sprintf(" %s %d empty hidden", symDot(), hidden)
+	}
+	section(header)
+	n := 0
+	for _, l := range labels {
+		list := byType[l.kind]
+		if len(list) == 0 {
+			continue
+		}
+		fmt.Printf("\n  %s %s\n", faint(strings.ToUpper(l.title)), faint(fmt.Sprintf("(%d)", len(list))))
+		for _, g := range list {
+			n++
+			fmt.Printf("    %s %s\n", accent(fmt.Sprintf("[%d]", n)), bold(g[0].Name))
+			fmt.Printf("        %s\n", faint(g[0].SavePath))
+			fmt.Printf("        %s\n", faint(scanContents(g[0])))
+			for _, m := range g[1:] {
+				n++
+				fmt.Printf("      %s %s %s\n",
+					accent(fmt.Sprintf("[%d]", n)), faint(roleNote(m.Role)), faint(m.SavePath))
+				fmt.Printf("           %s\n", faint(scanContents(m)))
+			}
+		}
+	}
+
+	hints := []string{
+		"opensave add <number>          track one of these",
+		"opensave add <name> <path>     track something else",
+	}
+	// Only worth saying when the listing actually shows a split save. `add`
+	// stays one folder per call — the number you type is the folder you are
+	// looking at — so joining them up is a second, explicit step.
+	if countRole(found, presets.RoleLocation) > 0 {
+		hints = append(hints, "opensave locations add <id> <name> <path>",
+			"                               join a game's other folders to it")
+	}
+	if !showEmpty && emptyCount > 0 {
+		hints = append(hints, fmt.Sprintf("opensave scan --all            also show %d empty folder(s)", emptyCount))
+	}
+	hint(hints...)
 	fmt.Println()
 	return 0
+}
+
+// roleNote labels a folder listed under the game it belongs to. Written for
+// someone who did not ask why the same game appears twice, so each says what
+// to do about it rather than naming the category.
+func roleNote(role string) string {
+	switch role {
+	case presets.RoleLocation:
+		return "part of the same save:"
+	case presets.RoleInside:
+		return "inside the folder above:"
+	case presets.RoleAlternative:
+		return "another copy, probably an old install:"
+	default:
+		return "also:"
+	}
+}
+
+func countRole(saves []presets.DiscoveredSave, role string) int {
+	n := 0
+	for _, s := range saves {
+		if s.Role == role {
+			n++
+		}
+	}
+	return n
+}
+
+// scanContents renders one location's size and age: what is in the folder,
+// and when the game last wrote to it. Together they are what separates a save
+// still in use from one left behind by an install that has moved on.
+func scanContents(f presets.DiscoveredSave) string {
+	if !f.Measured {
+		return "size unknown"
+	}
+	if f.FileCount == 0 {
+		return "empty"
+	}
+	// The "+" belongs on the number, not after the noun: counting stopped at a
+	// cap, so 20000+ files is a floor, not twenty thousand files and a bit.
+	plus := ""
+	if f.Truncated {
+		plus = "+"
+	}
+	count := fmt.Sprintf("%d%s files", f.FileCount, plus)
+	if f.FileCount == 1 && !f.Truncated {
+		count = "1 file"
+	}
+	return fmt.Sprintf("%s %s %s %s last written %s",
+		count, symDot(), humanBytes(f.TotalBytes), symDot(), humanAge(f.LatestMtime))
+}
+
+// humanAge renders a unix timestamp as a rough age. Rough on purpose: the
+// question it answers is "is this folder still in use", and to that a date is
+// something you have to do arithmetic on.
+func humanAge(unix int64) string {
+	if unix <= 0 {
+		return "never"
+	}
+	d := time.Since(time.Unix(unix, 0))
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+	years := d.Hours() / 24 / 365
+	if years < 2 {
+		return "over a year ago"
+	}
+	return fmt.Sprintf("%.0f years ago", years)
 }
 
 // scanResultsPath is where the last listing is remembered for `add <n>`.
@@ -625,4 +797,16 @@ func cmdRemove(d *daemon.Daemon, args []string) int {
 	}
 	fmt.Printf("No longer tracking %q (snapshot files kept on disk)\n", args[0])
 	return 0
+}
+
+// isAddrInUse reports whether a listen failure was a port clash. Matched on
+// the message rather than syscall.EADDRINUSE so it reads the same on Windows,
+// where the equivalent errno has a different name and a different value.
+func isAddrInUse(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "address already in use") ||
+		strings.Contains(msg, "only one usage of each socket address")
 }

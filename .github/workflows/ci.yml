@@ -6,6 +6,28 @@ on:
   pull_request:
 
 jobs:
+  # The Go suite covers none of the frontend, and the scan screen's real bugs
+  # have all been decisions rather than rendering — which folder of a game
+  # counts as the save, whether an already-tracked folder may be adopted into
+  # another. Those live in plain modules now so they can be checked in
+  # milliseconds. Its own job because it needs Node and nothing else, and
+  # finishing in seconds it should not wait behind a 30-minute race run.
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cmd/opensave-app/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm test
+      # A frontend that does not compile is a broken build whatever the unit
+      # tests say.
+      - run: npm run build
+
   tests:
     runs-on: ${{ matrix.os }}
     strategy:

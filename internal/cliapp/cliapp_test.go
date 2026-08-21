@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/opensave/opensave/internal/presets"
 )
 
 // TestJSONFlag pins that --json can appear anywhere in the arguments and is
@@ -467,5 +470,68 @@ func TestFlagValue(t *testing.T) {
 	// A trailing flag with no value must not read past the end.
 	if got := flagValue([]string{"--url"}, "--url"); got != "" {
 		t.Errorf("trailing flag returned %q", got)
+	}
+}
+
+// TestScanContents pins what a scan row says about a folder. The three cases
+// have to stay distinguishable in the text itself: "empty" is a fact about the
+// disk, "size unknown" is an admission that we could not look, and reading the
+// second as the first is what would send someone past a save that is really
+// there.
+func TestScanContents(t *testing.T) {
+	day := time.Now().Add(-48 * time.Hour).Unix()
+	cases := []struct {
+		name string
+		in   presets.DiscoveredSave
+		want string
+	}{
+		{"unmeasured", presets.DiscoveredSave{}, "size unknown"},
+		{"empty", presets.DiscoveredSave{Measured: true}, "empty"},
+		{
+			"one file",
+			presets.DiscoveredSave{Measured: true, FileCount: 1, TotalBytes: 512, LatestMtime: day},
+			"1 file",
+		},
+		{
+			"many files",
+			presets.DiscoveredSave{Measured: true, FileCount: 14, TotalBytes: 11 << 20, LatestMtime: day},
+			"14 files",
+		},
+		{
+			"capped count reads as a floor",
+			presets.DiscoveredSave{Measured: true, FileCount: 20000, TotalBytes: 1 << 30, LatestMtime: day, Truncated: true},
+			"20000+ files",
+		},
+	}
+	for _, c := range cases {
+		got := scanContents(c.in)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: scanContents = %q, want it to contain %q", c.name, got, c.want)
+		}
+	}
+	// An unmeasured folder must never be described as empty.
+	if strings.Contains(scanContents(presets.DiscoveredSave{}), "empty") {
+		t.Error("an unmeasured folder was described as empty")
+	}
+}
+
+func TestHumanAge(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		in   int64
+		want string
+	}{
+		{0, "never"},
+		{now.Add(-30 * time.Second).Unix(), "just now"},
+		{now.Add(-20 * time.Minute).Unix(), "20m ago"},
+		{now.Add(-5 * time.Hour).Unix(), "5h ago"},
+		{now.Add(-22 * 24 * time.Hour).Unix(), "22d ago"},
+		{now.Add(-400 * 24 * time.Hour).Unix(), "over a year ago"},
+		{now.Add(-3 * 365 * 24 * time.Hour).Unix(), "3 years ago"},
+	}
+	for _, c := range cases {
+		if got := humanAge(c.in); got != c.want {
+			t.Errorf("humanAge(%d) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }

@@ -9,6 +9,7 @@
   import StatusBar from './components/StatusBar.svelte';
   import Toasts from './components/Toasts.svelte';
   import ConflictModal from './components/ConflictModal.svelte';
+  import LocationConflictModal from './components/LocationConflictModal.svelte';
   import PairingBanner from './components/PairingBanner.svelte';
   import ConfirmDialog from './components/ConfirmDialog.svelte';
 
@@ -186,6 +187,7 @@
   <StatusBar />
   <Toasts />
   <ConflictModal />
+  <LocationConflictModal />
   <ConfirmDialog />
   {#if ready}<PairingBanner />{/if}
 </div>

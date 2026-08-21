@@ -2,11 +2,15 @@ package snapshot
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/opensave/opensave/internal/store"
 )
 
 // ZipPath archives sourcePath into a ZIP at outPath. A directory is
@@ -19,14 +23,22 @@ import (
 // entries) are skipped and reported rather than failing the whole
 // snapshot — but if nothing at all could be archived, that's an error.
 func ZipPath(sourcePath, outPath string) (skipped []string, err error) {
+	skipped, _, err = ZipPathCapturing(sourcePath, outPath)
+	return skipped, err
+}
+
+// ZipPathCapturing is ZipPath, also reporting the hash of every file it
+// archived so the caller can record what the snapshot holds. The hashes come
+// free: the bytes pass through a hasher on their way into the archive.
+func ZipPathCapturing(sourcePath, outPath string) (skipped []string, captured []store.CapturedFile, err error) {
 	info, err := os.Stat(sourcePath)
 	if err != nil {
-		return nil, fmt.Errorf("source path does not exist: %w", err)
+		return nil, nil, fmt.Errorf("source path does not exist: %w", err)
 	}
 
 	out, err := os.Create(outPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer out.Close()
 
@@ -34,7 +46,12 @@ func ZipPath(sourcePath, outPath string) (skipped []string, err error) {
 	defer w.Close()
 
 	if !info.IsDir() {
-		return nil, addFileEntry(w, sourcePath, filepath.Base(sourcePath))
+		name := filepath.Base(sourcePath)
+		hash, addErr := addFileEntry(w, sourcePath, name)
+		if addErr != nil {
+			return nil, nil, addErr
+		}
+		return nil, []store.CapturedFile{{Path: name, Hash: hash}}, nil
 	}
 
 	archived := 0
@@ -63,42 +80,55 @@ func ZipPath(sourcePath, outPath string) (skipped []string, err error) {
 			}
 			return nil
 		}
-		if err := addFileEntry(w, path, rel); err != nil {
+		hash, addErr := addFileEntry(w, path, rel)
+		if addErr != nil {
 			skipped = append(skipped, path)
 			return nil
 		}
+		captured = append(captured, store.CapturedFile{Path: rel, Hash: hash})
 		archived++
 		return nil
 	})
 	if walkErr != nil {
-		return skipped, walkErr
+		return skipped, captured, walkErr
 	}
 	if archived == 0 && len(skipped) > 0 {
-		return skipped, fmt.Errorf("no files could be read (%d unreadable)", len(skipped))
+		return skipped, captured, fmt.Errorf("no files could be read (%d unreadable)", len(skipped))
 	}
-	return skipped, nil
+	return skipped, captured, nil
 }
 
-func addFileEntry(w *zip.Writer, filePath, entryName string) error {
+// The returned hash is the sha256 of the file's contents, hex encoded —
+// deliberately the same value delta.FileEntry.Hash carries, so a recorded
+// snapshot file can be compared against a manifest without either side
+// re-reading anything.
+//
+// It costs nothing to produce here. The bytes are already streaming through
+// this function on their way into the archive, so hashing them is a second
+// writer on the same copy rather than a second pass over the disk.
+func addFileEntry(w *zip.Writer, filePath, entryName string) (string, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return err
+		return "", err
 	}
 	header := &zip.FileHeader{Name: entryName, Method: zip.Store}
 	header.Modified = info.ModTime()
 
 	entry, err := w.CreateHeader(header)
 	if err != nil {
-		return err
+		return "", err
 	}
-	_, err = io.Copy(entry, f)
-	return err
+	sum := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(entry, sum), f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
 // UnzipTo extracts a snapshot ZIP over targetPath. Single-file save mode
@@ -152,8 +182,17 @@ func UnzipTo(zipPath, targetPath string) error {
 }
 
 func extractEntry(entry *zip.File, destDir string) error {
+	return extractEntryAs(entry, destDir, entry.Name)
+}
+
+// extractEntryAs writes one entry under destDir at relName, which may differ
+// from the entry's own name — a save location's files are stored inside the
+// archive under a prefix and restored without it. The zip-slip check runs on
+// the name actually being written, since that is the one that decides where
+// bytes land.
+func extractEntryAs(entry *zip.File, destDir, relName string) error {
 	// Reject entries that would escape the destination (zip-slip).
-	cleanName := filepath.Clean(filepath.FromSlash(entry.Name))
+	cleanName := filepath.Clean(filepath.FromSlash(relName))
 	if strings.HasPrefix(cleanName, "..") || filepath.IsAbs(cleanName) {
 		return fmt.Errorf("zip entry %q escapes destination", entry.Name)
 	}

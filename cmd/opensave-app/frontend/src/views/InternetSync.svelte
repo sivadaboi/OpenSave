@@ -1,23 +1,40 @@
 <script>
   import { settings, wanRoom, peers, toast } from '../lib/stores.js';
   import { api } from '../lib/api.js';
+  import { generateRoomCode } from '../lib/roomcode.js';
 
   let codeDraft = '';
   let relayDraft = '';
   let busy = false;
   let health = null;
 
+  // Seeded once, when the fields are still blank — which includes every time
+  // this view is rebuilt after a tab switch, because the drafts are component
+  // state and do not survive that.
+  //
+  // The room code comes from the live room in preference to the saved setting.
+  // They normally agree, but the room is the thing actually joined, and it can
+  // be changed from the CLI or another window; showing the stored code instead
+  // would tell you that you are in a room you have already left.
   $: if ($settings && codeDraft === '' && relayDraft === '') {
-    codeDraft = $settings.syncCode ?? '';
+    codeDraft = $wanRoom?.roomCode || ($settings.syncCode ?? '');
     relayDraft = $settings.relayUrl ?? '';
+  }
+
+  // Every save here has to put the server's answer back into the store.
+  // Nothing else does: the store is filled by the `init` message at launch and
+  // by the Settings view saving its own form, so a relay or room code changed
+  // from this view stayed invisible to the rest of the app — and to this view
+  // itself once a tab switch destroyed it and the fields above re-seeded from
+  // the settings as they were before the change.
+  async function saveSettings(patch) {
+    settings.set(await api.post('/api/settings', patch));
   }
   $: pairedIds = new Set(Object.keys($peers));
   $: roomPeers = $wanRoom?.peers ?? [];
 
   function randomCode() {
-    const words = ['swift', 'cozy', 'pixel', 'nova', 'ember', 'lunar', 'frost', 'zen'];
-    const w = () => words[Math.floor(Math.random() * words.length)];
-    codeDraft = `${w()}-${w()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    codeDraft = generateRoomCode();
   }
 
   async function run(fn, okMsg) {
@@ -40,7 +57,7 @@
       const code = codeDraft.trim();
       if (!code) {
         if ($wanRoom?.enabled) {
-          await api.post('/api/settings', { syncCode: '', relayUrl: relayDraft.trim() });
+          await saveSettings({ syncCode: '', relayUrl: relayDraft.trim() });
           toast('Left the relay room', 'success');
         } else {
           toast('Enter a room code first', 'error');
@@ -48,7 +65,7 @@
         return;
       }
       const rejoining = code === ($wanRoom?.roomCode ?? '') && relayDraft.trim() === ($settings?.relayUrl ?? '');
-      await api.post('/api/settings', { syncCode: code, relayUrl: relayDraft.trim() });
+      await saveSettings({ syncCode: code, relayUrl: relayDraft.trim() });
       // Saving identical settings doesn't re-dial, so force a fresh attempt.
       if (rejoining) await api.post('/api/relay/reconnect');
       toast(rejoining ? `Reconnecting to room “${code}”…` : `Joining room “${code}”…`);
@@ -61,7 +78,7 @@
     });
   const leaveRoom = () => {
     codeDraft = '';
-    return run(() => api.post('/api/settings', { syncCode: '' }), 'Left the relay room');
+    return run(() => saveSettings({ syncCode: '' }), 'Left the relay room');
   };
   const pairWan = (p) =>
     run(() => api.post('/api/peers/pair', { peerId: p.id, address: 'relay' }), `Pairing request sent to ${p.deviceName}`);
@@ -82,8 +99,24 @@
 </script>
 
 <p class="lead">
-  Sync across the internet with no port forwarding: both devices join the same room code on a relay, and
-  saves travel through an encrypted tunnel. The relay never stores your files.
+  Sync across the internet with no port forwarding: both devices join the same room code on a relay,
+  and the connection to it is encrypted. The relay stores nothing — no copy of a save is written to it.
+</p>
+
+<!-- Said here, at the point where somebody decides whether to use the public
+     relay, rather than only in the documentation.
+
+     The encryption is transport-level and ends AT the relay: there is no
+     end-to-end layer, so the relay process handles save data in the clear.
+     Calling that "an encrypted tunnel" and stopping was true enough to be
+     misleading — it invites the reading that nobody in the middle can see the
+     save, which is the opposite of the case. Whoever runs the relay is being
+     trusted, and the person choosing is the one who should get to weigh it. -->
+<p class="lead subtle">
+  That encryption ends at the relay rather than at your other device, so whoever runs the relay could
+  read the saves passing through it. For the public relay, that is us. Running
+  <a href="https://github.com/Liquid-co/OpenSave/blob/main/docs/RELAY.md" target="_blank" rel="noreferrer">your own relay</a>
+  makes it you instead.
 </p>
 
 <!-- Always-visible connection status: exactly one of four states. Keyed
@@ -130,7 +163,7 @@
     <div class="field grow">
       <label for="room-code">Room code — share this with your other device</label>
       <div class="code-row">
-        <input id="room-code" placeholder="e.g. cozy-nova-4821" bind:value={codeDraft} />
+        <input id="room-code" placeholder="e.g. k7m2-9xqp-4wnt" bind:value={codeDraft} />
         <button class="btn" on:click={randomCode}>🎲</button>
         {#if $wanRoom?.enabled}
           <button class="btn" on:click={copyCode}>Copy</button>
@@ -141,8 +174,18 @@
   <div class="row">
     <div class="field grow">
       <label for="relay-url">Relay server (self-hostable)</label>
-      <input id="relay-url" bind:value={relayDraft} />
-      <span class="hint">Run your own with the opensave-relay binary and point this at it.</span>
+      <!-- Pinned by the environment: shown, because it is the relay actually
+           in use, but not editable, because typing here would be discarded. -->
+      <input id="relay-url" bind:value={relayDraft} readonly={$settings?.relayUrlLocked} />
+      {#if $settings?.relayUrlLocked}
+        <span class="hint">
+          Set by the <code>OPENSAVE_RELAY_URL</code> environment variable, so it can't be changed
+          here. Change the variable and restart OpenSave, or unset it to go back to the saved
+          setting.
+        </span>
+      {:else}
+        <span class="hint">Run your own with the opensave-relay binary and point this at it.</span>
+      {/if}
     </div>
   </div>
   <div class="actions">
@@ -199,6 +242,18 @@
     font-size: 0.9rem;
     max-width: 640px;
     margin-bottom: 20px;
+  }
+  /* The trust note under the lead. Quieter than the sentence above it, and
+     deliberately not styled as a warning: nothing is wrong, it is a fact about
+     the arrangement that the person choosing a relay should have. */
+  .lead.subtle {
+    color: var(--text-faint);
+    font-size: 0.85rem;
+    margin-top: -12px;
+  }
+  .lead.subtle a {
+    color: var(--text-dim);
+    text-decoration: underline;
   }
   .status {
     display: flex;

@@ -12,7 +12,12 @@ import (
 // syncSettleWindow covers the mtime-vs-lastSynced skew: an edit made within
 // the same second as the recorded sync can't be distinguished from the synced
 // state, so divergence tests must wait it out before writing.
-const syncSettleWindow = 2500 * time.Millisecond
+// syncSettleWindow is how long a test waits for background work to finish
+// before staging the next step: a watcher debounce, then whatever auto-sync
+// that triggers. Scaled, because an unscaled settle is what lets a background
+// sync land in the middle of a later step and fail an assertion that has
+// nothing to do with it.
+var syncSettleWindow = 2500 * time.Millisecond * time.Duration(testutil.SettleScale)
 
 type syncResults struct {
 	Results map[string]struct {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/opensave/opensave/internal/delta"
+	"github.com/opensave/opensave/internal/e2ee"
 	"github.com/opensave/opensave/internal/p2p/discovery"
 	"github.com/opensave/opensave/internal/p2p/pairing"
 	"github.com/opensave/opensave/internal/p2p/syncengine"
@@ -86,6 +87,11 @@ type Engine struct {
 	// pings/hellos, powering the "update from this device" flow.
 	buildMu    sync.Mutex
 	peerBuilds map[string]PeerBuild
+
+	// Consecutive failed pings per peer. One missed probe is not evidence
+	// that a device has gone away — see offlineStrikes.
+	pingMu     sync.Mutex
+	pingMisses map[string]int
 
 	// Lineage refreshes already running after a peer-applied deletion, keyed
 	// by game+peer. Deletions arrive one file at a time, and each one leaves
@@ -266,6 +272,10 @@ func New(s *store.Store, snaps *snapshot.Manager, logf func(level, msg string)) 
 		wan: &wanTransport{wan: e.Wan},
 	})
 	e.Sync.Log = logf
+	// Lets the queued follow-up ask who is reachable at the moment it runs,
+	// instead of inheriting the peer list from whichever sync it queued
+	// behind.
+	e.Sync.OnlinePeers = e.OnlinePeers
 	return e
 }
 
@@ -333,6 +343,35 @@ func (e *Engine) OnlinePeers() []syncengine.Peer {
 	return online
 }
 
+// offlineStrikes is how many consecutive failed pings it takes before a
+// paired device is called offline.
+//
+// Three, against a 3-second ping timeout on a probe that runs every few
+// seconds: long enough that a transient stall does not evict a device that is
+// still there, short enough that one genuinely gone is noticed in well under a
+// minute. Recovery is not rationed — a single successful ping restores online
+// immediately.
+const offlineStrikes = 3
+
+// notePingMiss records a failed probe and returns how many have now failed in
+// a row for this peer.
+func (e *Engine) notePingMiss(peerID string) int {
+	e.pingMu.Lock()
+	defer e.pingMu.Unlock()
+	if e.pingMisses == nil {
+		e.pingMisses = map[string]int{}
+	}
+	e.pingMisses[peerID]++
+	return e.pingMisses[peerID]
+}
+
+// clearPingMisses forgets a peer's failures after it answers.
+func (e *Engine) clearPingMisses(peerID string) {
+	e.pingMu.Lock()
+	defer e.pingMu.Unlock()
+	delete(e.pingMisses, peerID)
+}
+
 // PingPairedPeers probes every paired LAN peer and updates their
 // online/offline status.
 func (e *Engine) PingPairedPeers(ctx context.Context) {
@@ -354,11 +393,29 @@ func (e *Engine) PingPairedPeers(ctx context.Context) {
 		if ok && info.AppVersion != "" {
 			e.recordPeerBuild(p.ID, info.AppVersion, info.BuildTimeMs)
 		}
-		newStatus := "offline"
+
+		// Quick to believe a device is back, slow to declare it gone.
+		//
+		// A single failed ping used to mark a peer offline outright, and one
+		// ping is a 3-second HTTP round trip: a busy machine, a wifi blip or a
+		// laptop that suspended for a moment all produce one. The device is
+		// then reported offline while sitting on the same desk, and a sync
+		// started in that window fails with "no online peers available" — for
+		// a peer that never actually left.
+		//
+		// Holding the previous status until several probes in a row have
+		// failed cannot lose anything: a device that really has gone is
+		// declared offline a few probes later, and the only cost is a sync
+		// attempt that fails the way it would have anyway.
+		newStatus := p.Status
 		if ok {
+			e.clearPingMisses(p.ID)
 			newStatus = "online"
+		} else if e.notePingMiss(p.ID) >= offlineStrikes {
+			newStatus = "offline"
 		}
-		if p.Status != newStatus {
+
+		if newStatus != "" && p.Status != newStatus {
 			p.Status = newStatus
 			p.LastSeenMs = time.Now().UnixMilli()
 			_ = e.Store.UpsertPeer(p)
@@ -557,6 +614,29 @@ func (e *Engine) SyncAllGames(ctx context.Context) {
 
 // InitiatePair sends a handshake to a device at address:port and opens the
 // approve-confirm grace window.
+// pairingIdentity builds the fields every handshake carries, including this
+// device's public key.
+//
+// A failure to produce the key is not a failure to pair: the pairing goes
+// ahead without one and the two devices simply sync unencrypted, which is what
+// every version before this did. Refusing to pair because a key could not be
+// generated would trade a working feature for one that is merely newer.
+func (e *Engine) pairingIdentity(settings store.Settings) map[string]any {
+	body := map[string]any{
+		"peerId":     settings.NodeID,
+		"deviceName": settings.DeviceName,
+		"deviceType": settings.DeviceType,
+		"port":       settings.Port,
+	}
+	id, err := e.Store.DeviceIdentity()
+	if err != nil {
+		e.Log("warn", fmt.Sprintf("pairing without an encryption key, so syncs with this peer stay unencrypted: %v", err))
+		return body
+	}
+	body["publicKey"] = e2ee.EncodeKey(id.Public)
+	return body
+}
+
 func (e *Engine) InitiatePair(ctx context.Context, address string, port int) error {
 	settings, err := e.Store.GetSettings()
 	if err != nil {
@@ -565,12 +645,7 @@ func (e *Engine) InitiatePair(ctx context.Context, address string, port int) err
 
 	e.Pairing.RecordSent(address, fmt.Sprintf("%s:%d", address, port))
 
-	err = postHandshake(ctx, address, port, map[string]any{
-		"peerId":     settings.NodeID,
-		"deviceName": settings.DeviceName,
-		"deviceType": settings.DeviceType,
-		"port":       settings.Port,
-	})
+	err = postHandshake(ctx, address, port, e.pairingIdentity(settings))
 	if err != nil {
 		return fmt.Errorf("handshake to %s:%d: %w", address, port, err)
 	}
@@ -587,12 +662,7 @@ func (e *Engine) InitiatePairWan(ctx context.Context, peerID string) error {
 	// "relay" is the JS grace-window key for WAN-initiated handshakes.
 	e.Pairing.RecordSent(peerID, "relay")
 
-	_, err = e.Wan.Request(ctx, peerID, "/handshake", "POST", map[string]any{
-		"peerId":     settings.NodeID,
-		"deviceName": settings.DeviceName,
-		"deviceType": settings.DeviceType,
-		"port":       settings.Port,
-	})
+	_, err = e.Wan.Request(ctx, peerID, "/handshake", "POST", e.pairingIdentity(settings))
 	if err != nil {
 		return fmt.Errorf("WAN handshake to %s: %w", peerID, err)
 	}
@@ -618,17 +688,18 @@ func (e *Engine) ApprovePairing(ctx context.Context, peerID string) error {
 	}); err != nil {
 		return err
 	}
+	if req.PublicKey != "" {
+		if err := e.Store.SetPeerPublicKey(req.PeerID, req.PublicKey); err != nil {
+			e.Log("warn", fmt.Sprintf("could not pin %q's encryption key, so syncs with it stay unencrypted: %v", req.DeviceName, err))
+		}
+	}
+
 	// Same machine, fresh identity (reinstall/reset) — drop the ghost entry.
 	if removed, _ := e.Store.PrunePeersAtAddress(req.Address, req.Port, req.PeerID); len(removed) > 0 {
 		e.Log("info", fmt.Sprintf("removed stale pairing %v — same device re-paired with a new identity", removed))
 	}
 
-	confirmBody := map[string]any{
-		"peerId":     settings.NodeID,
-		"deviceName": settings.DeviceName,
-		"deviceType": settings.DeviceType,
-		"port":       settings.Port,
-	}
+	confirmBody := e.pairingIdentity(settings)
 	if req.IsWan || req.Address == "relay" {
 		if _, err := e.Wan.Request(ctx, req.PeerID, "/approve-confirm", "POST", confirmBody); err != nil {
 			e.Log("warn", fmt.Sprintf("WAN approve-confirm to %s failed (peer saved anyway): %v", req.DeviceName, err))

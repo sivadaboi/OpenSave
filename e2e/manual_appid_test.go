@@ -53,7 +53,15 @@ func TestManualAppID_DrivesCrossDeviceMatching(t *testing.T) {
 
 	// The payoff: two names with nothing in common now sync, because the
 	// shared App ID is what resolves the peer's game to the local one.
-	a.API(http.MethodPost, "/api/games/"+gameA+"/sync", nil, nil)
+	//
+	// Through syncTo rather than a bare POST. A sync request that arrives
+	// while one is already running for this game answers 200 with
+	// {"queued":true} and no results — success as far as the caller can see,
+	// but the transfer is then owed by a background follow-up. Firing once
+	// and waiting made this test depend on that follow-up, which is not what
+	// it is here to check. syncTo retries until the response actually carries
+	// a result for this peer.
+	syncTo(a, gameA, b.NodeID())
 
 	if !testutil.WaitFor(45*time.Second, func() bool {
 		return b.ReadSave("slot1.sav") == "from-A"

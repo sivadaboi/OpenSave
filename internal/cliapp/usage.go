@@ -23,7 +23,7 @@ type commandGroup struct {
 
 var commandGroups = []commandGroup{
 	{"Games", []commandEntry{
-		{"scan", "Auto-detect game saves on this machine"},
+		{"scan [--all]", "Auto-detect game saves (--all includes empty folders)"},
 		{"add <name> <path>", "Track a game save folder or file"},
 		{"add <number>", "Track one of the last scan's results"},
 		{"remove <gameId>", "Stop tracking a game"},
@@ -78,6 +78,8 @@ var commandGroups = []commandGroup{
 		{"link <gameId> <otherId>", "Treat two tracked games as the same"},
 		{"unlink <aliasId>", "Undo a link"},
 		{"links <gameId>", "Show ids linked to a game"},
+		{"locations <gameId>", "Extra save folders belonging to a game"},
+		{"ignore <gameId>", "Files in a save folder that should not sync"},
 	}},
 	{"Service", []commandEntry{
 		{"daemon start [--port N]", "Run the daemon (REST API + watcher)"},

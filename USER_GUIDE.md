@@ -3,6 +3,10 @@
 OpenSave keeps your game saves in sync across your devices, peer-to-peer. No
 accounts, no subscriptions. This guide walks through everyday use.
 
+> **New to OpenSave?** Start with [Getting Started](GETTING_STARTED.md) — it
+> covers the same ground from a fresh install and explains the terms as it
+> goes. This page is the reference for when you know what you are looking for.
+
 ## 1. First run
 
 When you open OpenSave the first time your library is empty. Two ways to add
@@ -15,7 +19,100 @@ games:
 - **+ Track folder** — point OpenSave at any save folder or single save file
   manually.
 
+### Reading the scan results
+
+Each result shows how many files the folder holds, how big it is, and when it
+was last written. That last one is the useful one: the same game is often
+detected in three or four places — the Steam folder, wherever the launcher put
+it, and one left behind by an install you have moved on from — and the one
+with a recent date is the live save.
+
+**One tile per game.** When a game is found in several places you get a single
+tile with **found in N folders** underneath it. Click that to see them all,
+each labelled with what OpenSave thinks it is:
+
+| Label | What it means |
+|---|---|
+| **the save folder** | the one to track — the freshest of the group |
+| **part of the same save** | sits beside the save folder and holds another piece of it. Ticked by default, tracked as one game |
+| **another copy — probably an old install** | the same game somewhere unrelated. Not ticked; tick it if it is the one you actually play |
+| **already inside the folder above** | covered already, so it cannot be ticked |
+
+Clicking a tile ticks the save folder plus anything marked *part of the same
+save*, and **Track** adds them as one game with extra locations — not as
+several games that share a name. Open the list to overrule any of it.
+
+If OpenSave puts two folders in different tiles when they are really one game
+— it has nothing to match on when the names differ and there is no Steam AppID
+— tick both and use **Track as one game** at the bottom.
+
+Folders holding no files are hidden, because Steam creates one for every game
+you own whether or not saves go there; on a typical library that is a fifth of
+the results. Tick **Show N empty** in the scan toolbar to see them, which is
+worth doing if you want to track a game before it has saved for the first
+time. From the command line, `opensave scan --all` does the same.
+
 Tracked games appear in the sidebar and on the Home grid.
+
+### A game whose save is split across folders
+
+Some games keep their save data in one place and their settings or mods in
+another. Open the game, go to **Configuration -> Save locations**, name the
+extra folder and pick it. It is then synced, snapshotted and restored along
+with the main one.
+
+Give the location the **same name** on your other devices. The name is what
+the two sides match on -- the folder itself lives somewhere different on each
+machine, so the path cannot be. A location whose name a device knows but has
+no folder for is shown as needing one, and is skipped until you choose it.
+
+Removing a location never deletes its files; it only stops OpenSave covering
+them. From the command line:
+
+```
+opensave locations <gameId>
+opensave locations add <gameId> config "C:/Users/me/Documents/Game"
+opensave locations remove <gameId> config
+```
+
+### Files that shouldn't sync
+
+Some games keep device-specific settings in the same folder as the save, and
+copying those to another machine can break the game there. Open the game, go
+to **Configuration -> Files that shouldn't sync**, and list them one per line,
+like a `.gitignore`:
+
+```
+Config.gs      # a file of that name, at any depth
+/Config.gs     # only at the top of the save folder
+*.log          # by extension
+logs/          # a folder and everything in it
+!keep.log      # an exception to an earlier line
+```
+
+Matching ignores case. Set the same list on your other devices -- each applies
+its own, and a device without the list is unaffected.
+
+You don't have to know the filenames in advance. Click **Pick from your save
+folder** under the box to list what is actually in there, each file marked
+**syncs** or **won't sync**. Tick one and the pattern is written for you,
+anchored so it can only mean that file; untick one caught by a wildcard and an
+`!` exception is added instead of the wildcard being thrown away. The verdicts
+come from the same matcher the sync itself uses, and they update as you type,
+so you can see a rule working before you rely on it.
+
+A pattern applies to every one of a game's folders, so if the same filename
+appears in two save locations it is excluded in both.
+
+**Snapshots still capture these files**, so a restore brings them back.
+Excluding something stops it travelling between devices; it never stops it
+being backed up. From the command line:
+
+```
+opensave ignore <gameId>
+opensave ignore <gameId> add Config.gs
+opensave ignore <gameId> test Config.gs      # would this sync?
+```
 
 ## 2. Snapshots & restore
 
@@ -43,8 +140,8 @@ changed blocks are stored, so history is cheap). Open a game to:
 3. Click **Pair**; approve the request on the other device.
 4. Paired devices sync tracked games automatically.
 
-If discovery is blocked, use **Connect via IP** with the other device's LAN
-IP and port (default `8383`).
+If discovery is blocked, use **Devices -> Add by IP address** with the other
+device's LAN IP and port (default `8383`), then **Send pairing request**.
 
 ### Across the internet (relay)
 
@@ -67,9 +164,17 @@ WebDAV, a webhook, or a local/NAS folder. Sign in, flip the toggle, and every
 new snapshot uploads in the background. Use **Browse cloud** to explore and
 restore snapshots per game.
 
-> Note: the built-in Google Drive credentials use a shared OAuth app that may
-> expire weekly. For always-on cloud sync, enter your own Client ID under the
-> "Custom OAuth Client ID" box, or use Dropbox / WebDAV / a local folder.
+> **Google Drive** uses shared built-in credentials from an app still in
+> testing, so it can ask you to sign in again weekly. Open **Use your own
+> OAuth app** under the provider and paste a Client ID from the
+> [Google Cloud console](https://console.cloud.google.com/apis/credentials)
+> (redirect URI `http://localhost/callback`) to stop that.
+>
+> **OneDrive requires your own app registration** before it works at all --
+> Microsoft does not allow a shared one. Selecting OneDrive shows the fields
+> and links to the Azure portal.
+>
+> Dropbox, WebDAV and a local/NAS folder need none of this.
 
 ## 5. Settings
 

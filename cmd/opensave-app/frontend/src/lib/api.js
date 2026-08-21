@@ -106,10 +106,15 @@ export function connectWS(onMessage, onState) {
 const app = () => window.go?.main?.App;
 
 // Fallback metadata for `wails dev` / browser preview where the Go binding
-// is absent. Kept loosely in sync with AppInfo() in app.go.
+// is absent.
+//
+// The version is deliberately not a number. It used to say 2.0.0 and was
+// "kept loosely in sync" with AppInfo(), which meant three releases later a
+// dev build still announced itself as 2.0.0 — a plausible number, so believed.
+// "dev" cannot go stale and cannot be mistaken for a release.
 const FALLBACK_INFO = {
   name: 'OpenSave',
-  version: '2.0.0',
+  version: 'dev',
   tagline: 'Peer-to-peer game save sync',
   license: 'MIT',
   copyright: '© 2026 Siva Prakash & OpenSave contributors',

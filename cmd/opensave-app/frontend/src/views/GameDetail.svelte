@@ -1,6 +1,7 @@
 <script>
   import { games, navigate, toast, syncActivity, askConfirm } from '../lib/stores.js';
   import { api, native, coverURL, gameCover } from '../lib/api.js';
+  import { addExclusion, addNegation, removeDirectExclusion } from '../lib/ignorerules.js';
 
   export let params = {};
 
@@ -38,13 +39,92 @@
       coverUrl: game.coverUrl ?? '',
       autoSync: game.autoSync ?? true,
       maxSnapshots: game.maxSnapshots ?? 5,
-      maxManualSnapshots: game.maxManualSnapshots ?? 0
+      maxManualSnapshots: game.maxManualSnapshots ?? 0,
+      syncIgnore: game.syncIgnore ?? ''
     };
   }
   // Cover preview for the config editor: a custom URL wins, else the proxied
   // Steam art for the App ID being edited.
   $: cfgCover =
     cfg?.coverUrl && !cfg.coverUrl.includes('steamstatic.com') ? cfg.coverUrl : coverURL(cfg?.appId);
+
+  // ── Picking files to exclude ─────────────────────────────────────
+  // The pattern box on its own asks you to type a filename you have to
+  // already know, for a folder you cannot see, in a syntax you have to learn
+  // — and gives no answer until the file turns up on another machine days
+  // later. This lists what is actually in the game's folders and marks each
+  // file with the verdict the sync engine itself would reach, so the rule and
+  // its effect are on screen together.
+  let showFiles = false;
+  let saveFiles = null;
+  let filesTruncated = false;
+  let filesError = '';
+  $: excludedCount = (saveFiles ?? []).filter((f) => f.excluded).length;
+
+  // Reset with the game, like the other per-game view state above.
+  $: if (params.gameId !== filesLoadedFor) {
+    filesLoadedFor = params.gameId;
+    showFiles = false;
+    saveFiles = null;
+    filesError = '';
+  }
+  let filesLoadedFor = null;
+
+  // Ask the daemon to judge a rule list against the real folders. The rules
+  // are sent rather than saved first: the point of a verdict is watching it
+  // change as you type, and saving to find out would mean writing a rule to
+  // discover whether it was the rule you meant.
+  async function refreshSaveFiles(rulesText) {
+    if (!game) return;
+    try {
+      const q = encodeURIComponent(rulesText ?? '');
+      const res = await api.get(`/api/games/${game.id}/save-files?rules=${q}`);
+      saveFiles = res?.files ?? [];
+      filesTruncated = !!res?.truncated;
+      filesError = '';
+    } catch (e) {
+      filesError = e.message;
+    }
+  }
+
+  async function toggleFilePicker() {
+    showFiles = !showFiles;
+    if (showFiles && saveFiles === null) await refreshSaveFiles(cfg?.syncIgnore ?? '');
+  }
+
+  // Typing in the box re-judges the list, but not on every keystroke.
+  let previewTimer = null;
+  let lastPreviewed = null;
+  $: if (showFiles && cfg && cfg.syncIgnore !== lastPreviewed) {
+    lastPreviewed = cfg.syncIgnore;
+    clearTimeout(previewTimer);
+    const text = cfg.syncIgnore ?? '';
+    previewTimer = setTimeout(() => refreshSaveFiles(text), 250);
+  }
+
+  // Ticking a file adds its pattern. Unticking removes the lines that name it
+  // outright — and if it is still caught after that, by a wildcard or a folder
+  // rule, adds a "!" exception, which is the only thing that can rescue one
+  // file from a broader rule without abandoning the rule.
+  //
+  // Whether it is still caught is a question only the daemon can answer: it
+  // holds the matcher the sync engine itself uses. The text editing around
+  // that answer lives in ../lib/ignorerules.js, where it is tested.
+  async function toggleFileExcluded(f) {
+    if (!cfg) return;
+    let text;
+    if (!f.excluded) {
+      text = addExclusion(cfg.syncIgnore, f.path);
+    } else {
+      text = removeDirectExclusion(cfg.syncIgnore, f.path);
+      await refreshSaveFiles(text);
+      const still = (saveFiles ?? []).find((x) => x.path === f.path && x.location === f.location);
+      if (still?.excluded) text = addNegation(text, f.path);
+    }
+    cfg.syncIgnore = text;
+    lastPreviewed = text;
+    await refreshSaveFiles(text);
+  }
 
   // Cloud explorer state.
   let cloudSnaps = null;
@@ -162,6 +242,55 @@
     }
   }
 
+  // ── Extra save locations ─────────────────────────────────────────
+  //
+  // A location learned from a peer or a backup arrives named but not placed:
+  // the name travels between devices, the folder it lives in does not. Those
+  // show as needing a folder, because until one is chosen the location is
+  // silently skipped by every sync and every restore — and silence is exactly
+  // what makes that dangerous.
+  let locations = [];
+  let locationsFor = null;
+  let newLocation = '';
+  $: if (game && tab === 'config' && locationsFor !== game.id) loadLocations();
+
+  async function loadLocations() {
+    locationsFor = game.id;
+    try {
+      locations = (await api.get(`/api/games/${game.id}/roots`)) ?? [];
+    } catch {
+      locations = [];
+    }
+  }
+
+  async function pickLocation(name) {
+    const label = String(name ?? '').trim();
+    if (!label || busy) return;
+    const dir = await native.selectDirectory(`Folder for “${label}” — ${game.name}`);
+    if (!dir) return;
+    await run(`“${label}” now covered`, async () => {
+      await api.post(`/api/games/${game.id}/roots`, { name: label, path: dir });
+      newLocation = '';
+      locationsFor = null; // force a reload
+      await loadLocations();
+    });
+  }
+
+  async function removeLocation(name) {
+    if (
+      !(await askConfirm(
+        `Stop covering the “${name}” folder for ${game.name}? Its files are left exactly where they are — this only stops OpenSave syncing and snapshotting them.`,
+        { title: 'Remove save location?', confirmText: 'Remove', danger: true }
+      ))
+    )
+      return;
+    await run(`Removed “${name}”`, async () => {
+      await api.del(`/api/games/${game.id}/roots/${encodeURIComponent(name)}`);
+      locationsFor = null;
+      await loadLocations();
+    });
+  }
+
   // Linked copies — cross-device "same game" links (the manual counterpart
   // to App-ID matching). Loaded lazily when the Manage tab is opened.
   let aliases = [];
@@ -264,7 +393,8 @@
         coverUrl: cfg.coverUrl,
         autoSync: cfg.autoSync,
         maxSnapshots: Number(cfg.maxSnapshots),
-        maxManualSnapshots: Number(cfg.maxManualSnapshots)
+        maxManualSnapshots: Number(cfg.maxManualSnapshots),
+        syncIgnore: cfg.syncIgnore ?? ''
       })
     );
   }
@@ -565,6 +695,115 @@
             <span class="hint">
               Snapshots you took yourself get their own budget, so a game that auto-saves often
               can't push them out. <strong>0 = keep forever</strong> (the default).
+            </span>
+          </div>
+          <div class="excludes">
+            <h4>Files that shouldn't sync</h4>
+            <p class="hint">
+              Some games keep device-specific settings in the same folder as the save, and copying
+              those to another machine can break the game there. List them here and they stay put:
+              never sent, never received, never deleted by a sync.
+            </p>
+            <textarea
+              class="exclude-box"
+              rows="4"
+              spellcheck="false"
+              placeholder={'Config.gs\n*.log\nlogs/'}
+              bind:value={cfg.syncIgnore}
+            ></textarea>
+            <span class="hint">
+              One pattern per line, like a <code>.gitignore</code> — <code>Config.gs</code> by name,
+              <code>/Config.gs</code> only at the top, <code>*.log</code> by extension,
+              <code>logs/</code> for a whole folder, <code>!keep.log</code> for an exception. Case
+              doesn't matter. Set the same list on your other devices; each one applies its own.
+            </span>
+            <span class="hint">
+              <strong>Snapshots still capture these files</strong>, so a restore brings them back —
+              excluding something stops it travelling, it never stops it being backed up.
+            </span>
+
+            <div class="picker-head">
+              <button class="btn small" on:click={toggleFilePicker}>
+                {showFiles ? '▾' : '▸'} Pick from your save folder
+              </button>
+              {#if showFiles && saveFiles}
+                <span class="hint picker-count">
+                  {excludedCount} of {saveFiles.length} files excluded
+                  {#if filesTruncated}· first {saveFiles.length} shown{/if}
+                </span>
+              {/if}
+            </div>
+
+            {#if showFiles}
+              {#if filesError}
+                <p class="hint err">{filesError}</p>
+              {:else if !saveFiles}
+                <p class="hint"><span class="cspin"></span> Reading the save folder…</p>
+              {:else if saveFiles.length === 0}
+                <p class="hint">This game's folders are empty, so there is nothing to pick yet.</p>
+              {:else}
+                <div class="file-picker">
+                  {#each saveFiles as f (f.location + '/' + f.path)}
+                    <label class="file-row" class:excluded={f.excluded}>
+                      <input type="checkbox" checked={f.excluded} on:change={() => toggleFileExcluded(f)} />
+                      <span class="file-name">
+                        {#if f.location}<span class="file-loc">{f.location} ›</span>{/if}{f.path}
+                      </span>
+                      <span class="file-verdict">{f.excluded ? "won't sync" : 'syncs'}</span>
+                    </label>
+                  {/each}
+                </div>
+                <span class="hint">
+                  Ticking a file writes the pattern for you, anchored so it can only ever mean that
+                  one file. Unticking a file caught by a wildcard adds a <code>!</code> exception
+                  rather than deleting the wildcard.
+                  {#if locations.length > 0}
+                    A pattern applies to <strong>every one of this game's folders</strong>, so a
+                    name that appears in two of them is excluded in both.
+                  {/if}
+                </span>
+              {/if}
+            {/if}
+          </div>
+          <div class="locations">
+            <h4>Save locations</h4>
+            <p class="hint">
+              Some games keep their save split across more than one folder — the save data in one
+              place, settings or mods in another. Add each extra folder here and it is synced,
+              snapshotted and restored along with the main one.
+            </p>
+            <div class="loc-row">
+              <span class="loc-name">main save</span>
+              <span class="loc-path" title={game.savePath}>{game.savePath}</span>
+            </div>
+            {#each locations as loc (loc.name)}
+              <div class="loc-row" class:unmapped={!loc.mapped}>
+                <span class="loc-name">{loc.name}</span>
+                {#if loc.mapped}
+                  <span class="loc-path" title={loc.path}>{loc.path}</span>
+                {:else}
+                  <span class="loc-path missing">
+                    no folder on this device — this location isn't being synced
+                  </span>
+                {/if}
+                <button class="btn small" disabled={busy} on:click={() => pickLocation(loc.name)}>
+                  {loc.mapped ? 'Change' : 'Choose folder'}
+                </button>
+                <button class="btn small danger" disabled={busy} on:click={() => removeLocation(loc.name)}>
+                  Remove
+                </button>
+              </div>
+            {/each}
+            <div class="loc-add">
+              <input placeholder="Name for the folder (e.g. config)" bind:value={newLocation} />
+              <button class="btn" disabled={!newLocation || busy} on:click={() => pickLocation(newLocation)}>
+                + Add a folder
+              </button>
+            </div>
+            <span class="hint">
+              Give the same <strong>name</strong> on your other devices — that is what the two
+              sides match on, since the folder lives somewhere different on each machine. Removing
+              a location here never deletes its files.
             </span>
           </div>
           <div class="config-save">
@@ -1095,6 +1334,152 @@
   }
   .config-fields .field {
     margin-bottom: 14px;
+  }
+  .excludes {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .excludes h4 {
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .exclude-box {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+  }
+  .exclude-box:focus {
+    border-color: var(--accent);
+  }
+  .excludes .hint + .hint {
+    margin-top: 6px;
+  }
+  .picker-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .picker-count {
+    margin-top: 0;
+  }
+  .file-picker {
+    margin-top: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+  .file-row:last-child {
+    border-bottom: 0;
+  }
+  .file-row:hover {
+    background: var(--bg-elev, rgba(127, 127, 127, 0.06));
+  }
+  .file-name {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+    word-break: break-all;
+  }
+  /* The location a file lives in, when the game has more than its save
+     folder — the same filename can appear in two of them. */
+  .file-loc {
+    color: var(--accent);
+    margin-right: 6px;
+  }
+  .file-verdict {
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+    color: var(--text-faint);
+  }
+  .file-row.excluded .file-name {
+    text-decoration: line-through;
+    color: var(--text-faint);
+  }
+  .file-row.excluded .file-verdict {
+    color: var(--warn, var(--accent));
+  }
+  .hint.err {
+    color: var(--danger, #e5484d);
+  }
+  .locations {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .locations h4 {
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .loc-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    margin-top: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.84rem;
+  }
+  .loc-row.unmapped {
+    border-color: rgba(251, 191, 36, 0.4);
+  }
+  .loc-name {
+    flex: none;
+    min-width: 90px;
+    font-weight: 600;
+  }
+  .loc-path {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .loc-path.missing {
+    color: var(--warn);
+  }
+  .loc-add {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .loc-add input {
+    flex: 1;
+    padding: 8px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.86rem;
+    outline: none;
   }
   .config-save {
     display: flex;

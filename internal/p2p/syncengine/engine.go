@@ -71,10 +71,19 @@ type Engine struct {
 	Progress  ProgressCallbacks
 	Log       func(level, msg string)
 
+	// OnlinePeers resolves who is reachable right now. Only the queued
+	// follow-up uses it: every other caller passes the list it just looked
+	// up. Optional — without it the follow-up falls back to the list the
+	// sync it queued behind was started with.
+	OnlinePeers func() []Peer
+
 	mu              sync.Mutex
 	activeSyncs     map[string]bool
 	pendingSyncs    map[string]bool // a sync was requested while one ran
 	activeConflicts map[string]*Conflict
+	// rootConflicts holds divergences in a game's EXTRA save locations, keyed
+	// by game and location so several can wait on a decision at once.
+	rootConflicts map[string]*RootConflict
 }
 
 // New creates an Engine.
@@ -87,6 +96,7 @@ func New(s *store.Store, snaps *snapshot.Manager, transport Transport) *Engine {
 		activeSyncs:     map[string]bool{},
 		pendingSyncs:    map[string]bool{},
 		activeConflicts: map[string]*Conflict{},
+		rootConflicts:   map[string]*RootConflict{},
 	}
 }
 
@@ -139,8 +149,28 @@ func (e *Engine) SyncGame(ctx context.Context, gameID string, onlinePeers []Peer
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 				defer cancel()
-				if _, err := e.SyncGame(ctx, gameID, onlinePeers); err != nil {
-					e.Log("info", fmt.Sprintf("queued follow-up sync for %s: %v", gameID, err))
+
+				// Resolve peers now rather than reusing the list the earlier
+				// sync started with. That list describes the moment this
+				// follow-up was queued behind, which can be minutes old: a
+				// device may have dropped, come back on a different address,
+				// or moved between LAN and relay. Syncing a queued change to
+				// the wrong address fails in a goroutine nobody is watching,
+				// and the caller was told "queued and will sync right after".
+				peers := onlinePeers
+				if e.OnlinePeers != nil {
+					peers = e.OnlinePeers()
+				}
+				if len(peers) == 0 {
+					// Say so. Returning quietly here is indistinguishable from
+					// a completed sync, and the change simply never left.
+					e.Log("warn", fmt.Sprintf(
+						"queued follow-up sync for %s found no reachable devices — "+
+							"it will go out on the next sync", gameID))
+					return
+				}
+				if _, err := e.SyncGame(ctx, gameID, peers); err != nil {
+					e.Log("warn", fmt.Sprintf("queued follow-up sync for %s: %v", gameID, err))
 				}
 			}()
 		}
@@ -222,6 +252,18 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 		return Result{}, fmt.Errorf("build local manifest: %w", err)
 	}
 
+	// Apply this game's exclusion rules to BOTH sides, before anything is
+	// compared, hashed or decided. From here on an excluded path simply does
+	// not exist: it cannot be pulled, pushed, deleted, or counted into a merge
+	// base. See ignore.go for why filtering the manifest at build time instead
+	// would propagate a deletion of the very file being protected.
+	ignoreRules := e.rulesFor(gameID)
+	unfilteredLocal, unfilteredRemote := localManifest, remoteData.Manifest
+	if !ignoreRules.Empty() {
+		localManifest = filterManifest(localManifest, ignoreRules)
+		remoteData.Manifest = filterManifest(remoteData.Manifest, ignoreRules)
+	}
+
 	// 3. Existing unresolved conflict blocks further syncing.
 	e.mu.Lock()
 	if existing := e.activeConflicts[gameID]; existing != nil {
@@ -282,6 +324,26 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 		}
 	}
 
+	// A merge base recorded before the exclusion rules existed was hashed over
+	// the whole save, so it cannot equal either side's filtered hash — and a
+	// base that matches neither side reads as both having moved: a conflict on
+	// the first sync after anyone adds a rule.
+	//
+	// Rewriting the base when the rules change is not enough on its own,
+	// because an in-flight sync can record an unfiltered one straight
+	// afterwards. Translating it here needs no such timing to hold: if a
+	// side's UNFILTERED state still hashes to the base then that side has not
+	// changed since, whichever view the base was written in, and its filtered
+	// hash is the same fact expressed in today's terms.
+	if !ignoreRules.Empty() && agreedHash != "" {
+		switch agreedHash {
+		case unfilteredLocal.ManifestHash():
+			agreedHash = localManifest.ManifestHash()
+		case unfilteredRemote.ManifestHash():
+			agreedHash = remoteData.Manifest.ManifestHash()
+		}
+	}
+
 	if DetectConflict(localManifest, remoteData.Manifest, lastSyncMs, agreedHash) {
 		e.registerConflict(gameID, peer, localManifest, remoteData)
 		return Result{Status: "conflict", PeerID: peer.ID, PeerName: peer.Name}, nil
@@ -291,6 +353,15 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	lineageFiles, lineageDirs, err := e.lineageSets(gameID, peer.ID)
 	if err != nil {
 		return Result{}, err
+	}
+	// The lineage is filtered too, and this is the half that is easy to
+	// forget: on a game that synced BEFORE the rule was written, the excluded
+	// path is still recorded as shared. Leave it there and the decision reads
+	// "we both had this and now I do not" — and propagates a deletion of the
+	// file the rule exists to protect.
+	if rules := e.rulesFor(gameID); !rules.Empty() {
+		lineageFiles = filterLineage(lineageFiles, rules)
+		lineageDirs = filterLineage(lineageDirs, rules)
 	}
 	decision := Compute(localManifest, remoteData.Manifest, lineageFiles, lineageDirs)
 
@@ -310,31 +381,57 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 			"peerName":     e.deviceName(),
 			"manifestHash": localManifest.ManifestHash(),
 		})
+		// The primary location agreeing says nothing about the others.
+		e.syncExtraRoots(ctx, gameID, game, peer, remoteData)
 		return Result{Status: "in_sync", Direction: "none"}, nil
 	}
 
-	// Race-free safety net: the mtime-based conflict check above can miss a
-	// divergence under clock skew / sync races. If we're about to overwrite
-	// local files while the local save has changes that aren't captured in
-	// any snapshot yet, those unsaved changes would be lost. Surface it as a
-	// conflict for the user to resolve instead of silently overwriting.
-	if len(decision.FilesToPull) > 0 && game.LastManifestHash != "" &&
-		localManifest.ManifestHash() != game.LastManifestHash {
-		e.Log("warn", fmt.Sprintf("uncaptured local changes on %q would be overwritten by %q — raising conflict", game.Name, peer.Name))
-		e.registerConflict(gameID, peer, localManifest, remoteData)
-		return Result{Status: "conflict", PeerID: peer.ID, PeerName: peer.Name}, nil
+	// Nothing below is about files arriving, only about local files leaving.
+	// A pull that brings files this device never held destroys nothing.
+	atRisk := filesAtRisk(localManifest, decision)
+
+	// Take the copy before doing the damage, rather than reasoning about
+	// whether the damage is survivable.
+	//
+	// The check underneath used to stand alone: it asked whether the save held
+	// anything no snapshot captured and, if so, refused to sync and raised a
+	// conflict. That protects the files but it answers a whole-save question
+	// about a per-file danger — one edit anywhere blocked every sync for the
+	// game — and it leans on a record that only the watcher's automatic
+	// snapshot ever wrote, so it was as likely to be stale as accurate.
+	//
+	// A snapshot here removes the question. Whatever these files hold now is
+	// recoverable from this moment on, so the sync can proceed on its merits.
+	//
+	// And if it cannot be taken, the sync stops. There used to be a fallback
+	// that consulted Game.LastManifestHash to guess whether overwriting
+	// unprotected files was survivable, which is the wrong shape of answer
+	// twice over: that value is maintained by other subsystems and goes stale
+	// without anyone noticing, and guessing is not what to do when the honest
+	// statement is "your save could not be backed up". Refusing is visible and
+	// fixable — a full disk, a missing backups folder — where overwriting a
+	// save with no copy behind it is neither.
+	if len(atRisk) > 0 {
+		if _, err := e.Snapshots.Create(gameID, "before sync replaced local files", true); err != nil {
+			e.Log("error", fmt.Sprintf(
+				"not syncing %q with %q: %d local file(s) would be replaced and they could not be snapshotted first: %v",
+				game.Name, peer.Name, len(atRisk), err))
+			return Result{}, fmt.Errorf(
+				"refusing to replace %d local file(s) for %q: they could not be snapshotted first: %w",
+				len(atRisk), game.Name, err)
+		}
 	}
 
 	// 6. Apply deletions (locally + propagate to peer).
-	e.applyLocalDeletions(game, decision)
-	e.propagateDeletions(ctx, peer, gameID, game, decision)
+	e.applyLocalDeletions(primaryRootOf(game), decision)
+	e.propagateDeletions(ctx, peer, gameID, primaryRootOf(game), decision)
 
 	// 7. Create pulled directories (parents first).
 	e.createPulledDirs(game, decision.DirsToPull)
 
 	// 8. Pull changed files.
 	if len(decision.FilesToPull) > 0 {
-		if err := e.pullFiles(ctx, peer, gameID, game, localManifest, remoteData, decision.FilesToPull); err != nil {
+		if err := e.pullFiles(ctx, peer, gameID, game, primaryRootOf(game), localManifest, remoteData, decision.FilesToPull); err != nil {
 			return Result{}, err
 		}
 	}
@@ -376,6 +473,11 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	} else if freshErr == nil {
 		_ = e.Store.SetPushedHash(gameID, peer.ID, freshManifest.ManifestHash())
 	}
+
+	// Extra locations sync last and on their own terms, so the primary save —
+	// the thing anyone actually opened the app about — is already settled and
+	// recorded before any of them is touched.
+	e.syncExtraRoots(ctx, gameID, game, peer, remoteData)
 
 	return e.classifyResult(decision), nil
 }
@@ -428,6 +530,14 @@ func (e *Engine) lineageSets(gameID, peerID string) (files, dirs map[string]stru
 // on the first sync after the peer's manifest actually contains them.
 func (e *Engine) persistLineage(gameID, peerID string, local, remote delta.Manifest) {
 	files, dirs := IntersectLineage(local, remote)
+	// Excluded paths must never re-enter the record of what both sides hold.
+	// RefreshLineage rebuilds this from unfiltered manifests, so without a
+	// filter here an excluded file would be written back in — and the next
+	// sync would read it as shared, then as deleted, and propagate that.
+	if rules := e.rulesFor(gameID); !rules.Empty() {
+		files = filterPathList(files, rules)
+		dirs = filterPathList(dirs, rules)
+	}
 	if err := e.Store.SetSyncState(gameID, peerID, files, dirs); err != nil {
 		e.Log("warn", fmt.Sprintf("persist sync lineage failed: %v", err))
 	}
@@ -529,6 +639,32 @@ func (e *Engine) RefreshLineage(ctx context.Context, gameID string, peer Peer) {
 	if local.ManifestHash() == remoteData.Manifest.ManifestHash() {
 		_ = e.Store.SetAgreedHash(gameID, peer.ID, local.ManifestHash())
 	}
+	e.refreshRootLineage(gameID, remoteData, peer)
+}
+
+// refreshRootLineage does the same for a game's extra save locations.
+//
+// Without it those locations only ever get lineage on the side that STARTED a
+// sync. The receiving side stays blank, and a blank lineage cannot tell "the
+// other device deleted this file" from "the other device has never had it" —
+// so it reads a deletion as a file it ought to push, and sends it straight
+// back. The deletion undoes itself, on the very device that made it.
+//
+// That went unnoticed until extra locations became watched: before that,
+// nothing ever prompted the receiving side to start a sync of one, so its
+// empty lineage was never consulted.
+func (e *Engine) refreshRootLineage(gameID string, remoteData ManifestResponse, peer Peer) {
+	for _, sr := range e.sharedRoots(gameID, remoteData) {
+		local, err := delta.BuildManifest(sr.root.Path)
+		if err != nil {
+			continue
+		}
+		e.persistRootLineage(gameID, peer.ID, sr.root.Name, local, sr.remote)
+		if local.RootHash(delta.PrimaryRoot) == sr.remote.RootHash(delta.PrimaryRoot) {
+			_ = e.Store.SetAgreedHashForRoot(gameID, peer.ID, sr.root.Name,
+				local.RootHash(delta.PrimaryRoot))
+		}
+	}
 }
 
 func (e *Engine) registerConflict(gameID string, peer Peer, localManifest delta.Manifest, remoteData ManifestResponse) {
@@ -621,13 +757,27 @@ func diffManifests(local, remote delta.Manifest) []DiffFile {
 	return out
 }
 
-func (e *Engine) applyLocalDeletions(game store.Game, d Decision) {
+// syncRoot is one save location taking part in a sync: the name both devices
+// know it by, and where it lives on this device. The two always travel
+// together — a name with no local path cannot be written to, and a path with
+// no name cannot be matched against what the peer sent.
+type syncRoot struct {
+	Name string // "" is the primary location, i.e. game.SavePath
+	Path string
+}
+
+// primaryRootOf is the single-location view every existing game has.
+func primaryRootOf(game store.Game) syncRoot {
+	return syncRoot{Name: delta.PrimaryRoot, Path: game.SavePath}
+}
+
+func (e *Engine) applyLocalDeletions(root syncRoot, d Decision) {
 	for _, relPath := range d.FilesToDeleteLocally {
-		if !delta.IsSafePath(game.SavePath, relPath) {
+		if !delta.IsSafePath(root.Path, relPath) {
 			e.Log("warn", "path traversal deletion denied: "+relPath)
 			continue
 		}
-		full := filepath.Join(game.SavePath, filepath.FromSlash(relPath))
+		full := filepath.Join(root.Path, filepath.FromSlash(relPath))
 		_ = os.Chmod(full, 0o666)
 		if err := os.Remove(full); err == nil {
 			e.Log("info", "deleted locally (peer deleted): "+relPath)
@@ -638,10 +788,10 @@ func (e *Engine) applyLocalDeletions(game store.Game, d Decision) {
 	dirs := append([]string{}, d.DirsToDeleteLocally...)
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
 	for _, relDir := range dirs {
-		if !delta.IsSafePath(game.SavePath, relDir) {
+		if !delta.IsSafePath(root.Path, relDir) {
 			continue
 		}
-		full := filepath.Join(game.SavePath, filepath.FromSlash(relDir))
+		full := filepath.Join(root.Path, filepath.FromSlash(relDir))
 		if info, err := os.Stat(full); err == nil && info.IsDir() {
 			if err := os.Remove(full); err == nil { // only removes empty dirs, matching rmdirSync
 				e.Log("info", "deleted directory locally (peer deleted): "+relDir)
@@ -650,42 +800,52 @@ func (e *Engine) applyLocalDeletions(game store.Game, d Decision) {
 	}
 }
 
-func (e *Engine) propagateDeletions(ctx context.Context, peer Peer, gameID string, game store.Game, d Decision) {
+func (e *Engine) propagateDeletions(ctx context.Context, peer Peer, gameID string, root syncRoot, d Decision) {
 	for _, relPath := range d.FilesToDeleteOnPeer {
-		if !delta.IsSafePath(game.SavePath, relPath) {
+		if !delta.IsSafePath(root.Path, relPath) {
 			continue
 		}
-		if err := e.Transport.DeleteRemote(ctx, peer, gameID, relPath); err != nil {
+		ref := FileRef{GameID: gameID, Root: root.Name, RelPath: relPath}
+		if err := e.Transport.DeleteRemote(ctx, peer, ref); err != nil {
 			e.Log("warn", fmt.Sprintf("could not propagate deletion of %s: %v", relPath, err))
 		}
 	}
 	dirs := append([]string{}, d.DirsToDeleteOnPeer...)
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
 	for _, relDir := range dirs {
-		if !delta.IsSafePath(game.SavePath, relDir) {
+		if !delta.IsSafePath(root.Path, relDir) {
 			continue
 		}
-		if err := e.Transport.DeleteRemote(ctx, peer, gameID, relDir); err != nil {
+		ref := FileRef{GameID: gameID, Root: root.Name, RelPath: relDir}
+		if err := e.Transport.DeleteRemote(ctx, peer, ref); err != nil {
 			e.Log("warn", fmt.Sprintf("could not propagate dir deletion of %s: %v", relDir, err))
 		}
 	}
 }
 
 func (e *Engine) createPulledDirs(game store.Game, dirsToPull []string) {
+	e.createPulledDirsIn(primaryRootOf(game), dirsToPull)
+}
+
+func (e *Engine) createPulledDirsIn(root syncRoot, dirsToPull []string) {
 	dirs := append([]string{}, dirsToPull...)
 	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) < len(dirs[j]) }) // parents first
 	for _, relDir := range dirs {
-		if !delta.IsSafePath(game.SavePath, relDir) {
+		if !delta.IsSafePath(root.Path, relDir) {
 			continue
 		}
-		_ = os.MkdirAll(filepath.Join(game.SavePath, filepath.FromSlash(relDir)), 0o777)
+		_ = os.MkdirAll(filepath.Join(root.Path, filepath.FromSlash(relDir)), 0o777)
 	}
 }
 
 // pullFiles downloads and patches every file in filesToPull with bounded
 // concurrency, progress reporting, throttling, and a mirror snapshot at
 // the end.
-func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game store.Game,
+// pullFiles patches one save location. game is carried alongside root
+// because snapshot mirroring is a game-level concern while every path
+// decision belongs to the location — keeping them separate is what stops a
+// second location's files being written relative to the primary save path.
+func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game store.Game, root syncRoot,
 	localManifest delta.Manifest, remoteData ManifestResponse, filesToPull []string) (retErr error) {
 
 	deviceName := e.deviceName()
@@ -707,8 +867,8 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 
 	// Make sure every remote directory exists before patching into it.
 	for _, dir := range remoteData.Manifest.Dirs {
-		if delta.IsSafePath(game.SavePath, dir) {
-			_ = os.MkdirAll(filepath.Join(game.SavePath, filepath.FromSlash(dir)), 0o777)
+		if delta.IsSafePath(root.Path, dir) {
+			_ = os.MkdirAll(filepath.Join(root.Path, filepath.FromSlash(dir)), 0o777)
 		}
 	}
 
@@ -745,9 +905,9 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 	}
 	const diskMargin = 16 << 20 // 16 MiB headroom
 	needed := netGrowth + maxNewSize + diskMargin
-	spaceDir := game.SavePath
+	spaceDir := root.Path
 	if fi, err := os.Stat(spaceDir); err != nil || !fi.IsDir() {
-		spaceDir = filepath.Dir(game.SavePath)
+		spaceDir = filepath.Dir(root.Path)
 	}
 	if avail, ok := availableDiskBytes(spaceDir); ok && uint64(needed) > avail {
 		return fmt.Errorf("not enough free storage: this sync needs about %s but only %s is free on the drive holding your save",
@@ -785,17 +945,17 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 	}
 
 	for _, relPath := range filesToPull {
-		if !delta.IsSafePath(game.SavePath, relPath) {
+		if !delta.IsSafePath(root.Path, relPath) {
 			return fmt.Errorf("path traversal attempt on pulled file %s", relPath)
 		}
 		remoteFile := remoteData.Manifest.Files[relPath]
 		indices := changedBlocks[relPath]
 
-		localFilePath := filepath.Join(game.SavePath, filepath.FromSlash(relPath))
-		if isFile, _ := delta.ResolveLocalSaveFilePath(game.SavePath); isFile {
-			localFilePath = game.SavePath // single-file save mode
+		localFilePath := filepath.Join(root.Path, filepath.FromSlash(relPath))
+		if isFile, _ := delta.ResolveLocalSaveFilePath(root.Path); isFile {
+			localFilePath = root.Path // single-file save mode
 		}
-		if err := e.pullFile(ctx, peer, gameID, relPath, localFilePath,
+		if err := e.pullFile(ctx, peer, FileRef{GameID: gameID, Root: root.Name, RelPath: relPath}, localFilePath,
 			remoteFile, indices, throttle, tracker, reportProgress); err != nil {
 			return err
 		}
@@ -826,9 +986,11 @@ func (e *Engine) pullFiles(ctx context.Context, peer Peer, gameID string, game s
 // arrives rather than collecting them all first. Memory stays proportional to
 // the blocks in flight instead of to the file — a 1 GB save used to need 1 GB
 // of RAM before a single byte was written.
-func (e *Engine) pullFile(ctx context.Context, peer Peer, gameID, relPath, localFilePath string,
+func (e *Engine) pullFile(ctx context.Context, peer Peer, ref FileRef, localFilePath string,
 	remoteFile delta.FileEntry, indices []int, throttle *throttler, tracker *progressTracker,
 	onProgress func(force bool)) error {
+
+	relPath := ref.RelPath
 
 	writer, err := delta.NewPatchWriter(localFilePath, remoteFile)
 	if err != nil {
@@ -850,7 +1012,7 @@ func (e *Engine) pullFile(ctx context.Context, peer Peer, gameID, relPath, local
 		return fmt.Errorf("patch %s: %w", relPath, err)
 	}
 
-	if err := e.fetchFileBlocks(ctx, peer, gameID, relPath, remoteFile, indices,
+	if err := e.fetchFileBlocks(ctx, peer, ref, remoteFile, indices,
 		throttle, tracker, onProgress, writer); err != nil {
 		return err
 	}
@@ -867,9 +1029,11 @@ func (e *Engine) pullFile(ctx context.Context, peer Peer, gameID, relPath, local
 // at every group boundary, so the slowest request in each group stalled the
 // rest — costly over a relay, where one slow round trip is common. A pool
 // keeps every slot busy until the work runs out.
-func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, gameID, relPath string,
+func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, ref FileRef,
 	remoteFile delta.FileEntry, indices []int, throttle *throttler, tracker *progressTracker,
 	onProgress func(force bool), writer *delta.PatchWriter) error {
+
+	relPath := ref.RelPath
 
 	batches := BatchIndices(indices, remoteFile.BlockSize, peer.Wan())
 	if len(batches) == 0 {
@@ -905,7 +1069,7 @@ func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, gameID, relPath
 		go func() {
 			defer wg.Done()
 			for batch := range work {
-				blocks, err := fetchWithRetry(ctx, e.Transport, peer, gameID, relPath, batch, remoteFile.BlockSize, e.Log)
+				blocks, err := fetchWithRetry(ctx, e.Transport, peer, ref, batch, remoteFile.BlockSize, e.Log)
 				if err != nil {
 					fail(fmt.Errorf("fetch blocks for %s: %w", relPath, err))
 					return
@@ -947,18 +1111,18 @@ func (e *Engine) fetchFileBlocks(ctx context.Context, peer Peer, gameID, relPath
 	return ctx.Err()
 }
 
-func fetchWithRetry(ctx context.Context, t Transport, peer Peer, gameID, relPath string,
+func fetchWithRetry(ctx context.Context, t Transport, peer Peer, ref FileRef,
 	indices []int, blockSize int, logf func(string, string)) ([]BlockData, error) {
 
 	const maxAttempts = 3
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		blocks, err := t.FetchBlocks(ctx, peer, gameID, relPath, indices, blockSize)
+		blocks, err := t.FetchBlocks(ctx, peer, ref, indices, blockSize)
 		if err == nil {
 			return blocks, nil
 		}
 		lastErr = err
-		logf("warn", fmt.Sprintf("block fetch attempt %d/%d failed for %s: %v", attempt, maxAttempts, relPath, err))
+		logf("warn", fmt.Sprintf("block fetch attempt %d/%d failed for %s: %v", attempt, maxAttempts, ref.RelPath, err))
 		if attempt < maxAttempts {
 			select {
 			case <-ctx.Done():
@@ -990,7 +1154,16 @@ func (e *Engine) recordMirrorSnapshot(gameID string, game store.Game, peer Peer,
 		return
 	}
 	zipPath := filepath.Join(destDir, remoteSnap.ID+".zip")
-	if _, err := snapshot.ZipPath(game.SavePath, zipPath); err != nil {
+	// Every save location, like any other snapshot. Archiving only the main
+	// folder here would quietly put entries in the history that hold half the
+	// game — and nothing about them would look different, so someone rolling
+	// back to one would find their settings folder untouched and no
+	// explanation for it.
+	mirrorRoots, rootsErr := e.Store.GameRootPaths(gameID)
+	if rootsErr != nil {
+		mirrorRoots = nil
+	}
+	if _, err := snapshot.ZipRoots(game.SavePath, mirrorRoots, zipPath); err != nil {
 		e.Log("warn", fmt.Sprintf("mirror snapshot zip failed: %v", err))
 		return
 	}

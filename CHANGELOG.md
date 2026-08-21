@@ -3,6 +3,423 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] — 2026-08-21
+
+Mostly about saves that were never in one folder to begin with. A game whose
+save is split across several places — a save folder here, settings under
+Documents, a profile in AppData — is one game again, and every location travels
+with it through sync, snapshots, restore, backups and conflicts. Alongside it,
+files that should never sync can be excluded per game, written like a
+`.gitignore`.
+
+The auto-scan was rebuilt around the same problem: it now says what is in each
+folder before you commit to it, hides the empty ones, and shows one tile per
+game instead of one per folder. Self-hosting a relay is a single command. And
+there is a guide for somebody who has never opened the app.
+
+The other half of the release came out of going looking for what was quietly
+wrong rather than waiting to be told. A save is now copied before anything
+overwrites it, instead of the risk being estimated from a record that several
+parts of the app were expected to keep current and none of them did. Room codes
+were short enough to enumerate. A relay address that would have put save files
+on the wire readable was accepted without comment. The check meant to stop two
+save locations owning the same file did nothing at all on Linux. And what the
+documentation said a relay could see was not what a relay can see.
+
+Thanks to **u/enigmacarpc**, who tested this release through its betas and
+stayed with each problem until it was actually understood rather than merely
+closed.
+
+### Security / safety
+
+- **A save is snapshotted before anything overwrites it.** Applying a peer's
+  changes could replace or delete local files with no copy kept, guarded only
+  by a heuristic: before pulling, the engine asked whether the save held
+  anything no snapshot had captured, and refused to sync if so.
+
+  That question was too broad and its answer unreliable. Too broad because it
+  asked whether *anything* was arriving rather than whether anything was
+  *leaving* — a pull carrying only files this device had never held can destroy
+  nothing, yet was refused because some unrelated folder had been edited. That
+  is a config folder holding a save folder hostage, which per-location lineage
+  exists to prevent. Unreliable because the record it consulted was only ever
+  written by the watcher's automatic snapshot: a snapshot taken by hand did not
+  update it, and neither did a sync, so it was as likely to be stale as
+  accurate.
+
+  Now the files a sync would actually destroy are identified — those a pull
+  writes over, and those a peer's deletion removes — and a snapshot is taken
+  before it proceeds. Deletions are included deliberately: they take the local
+  copy just as thoroughly as an overwrite, and are easier to be wrong about,
+  the file being gone rather than replaced with something recognisable.
+
+  If that snapshot cannot be taken, **the sync stops** rather than guessing. A
+  full disk or a missing backups folder is visible and fixable; a save
+  overwritten with no copy behind it is neither.
+
+- **Room codes are ~60 bits instead of ~19.** Two words from a list of eight
+  plus four digits is 576,000 possibilities — small enough to enumerate the
+  entire keyspace rather than guess at it — and they came from `Math.random()`,
+  which is not a cryptographic generator. Anyone holding a room code learns
+  each device's name, its type, and the games it tracks, and can send pairing
+  requests; the guide already said to treat one like a password, and now that
+  is true. Twelve characters from a 32-symbol alphabet, from the platform's
+  secure generator, with the shapes people mistype left out. Existing codes
+  keep working.
+
+- **A relay that would carry saves in the clear is refused.** Nothing in
+  OpenSave encrypts the sync payload, so `wss://` is the only thing between a
+  save file and the network it crosses — which makes "ws or wss" a security
+  decision rather than a preference, and nothing checked it. Refused now at the
+  settings screen, at `config set relay-url`, and at the connection itself,
+  that last one because `OPENSAVE_RELAY_URL` passes through neither of the
+  others. Still allowed where the network is the trust boundary: a LAN, a
+  private overlay such as Tailscale, or this machine.
+
+- **What the relay can see is described accurately.** The guide said a relay
+  "cannot read your saves". It can: there is no end-to-end encryption, the
+  encryption ends *at* the relay, and the process handles save data in the
+  clear. It stores none of it, which is the part that was true. Corrected
+  wherever it appeared, alongside the honest consequence — whoever runs a relay
+  is being trusted with what passes through it, which is the real argument for
+  running your own.
+
+- **One missed ping no longer means a device has gone.** A single failed probe
+  marked a paired device offline, and a probe is a three-second round trip — so
+  a busy machine, a brief wifi drop, or a laptop that suspended for a moment
+  was enough. The device showed as offline while sitting on the same desk, and
+  a sync started in that window failed with "no online peers available". Three
+  consecutive failures now; a single reply restores it immediately.
+
+- **Overlapping save locations are refused on every platform.** The check that
+  stops two locations owning the same file compared paths using the host's own
+  conventions, so a Windows-style path was only understood on Windows. On Linux
+  it recognised no overlap at all and let every one through — and overlapping
+  locations fight: the same file lands in two manifests, each sync patches it
+  twice, and a deletion propagated for one is pushed back by the other.
+
+### Changed
+
+- **The public relay is `relay.opensave.org`, on hardware the project rents.**
+  Internet sync went down twice in a fortnight. Both relays were free tiers,
+  and both were switched off for exhausting an allowance: a relay holds
+  connections open and never idles, so it spends a month's quota simply by
+  existing. That was never a hosting accident to be waited out — it is what
+  that arrangement does to this kind of service, and a third free tier would
+  have ended the same way.
+
+  The address now belongs to the project rather than to a host. Moving
+  machines from here is a DNS change nobody has to notice, which is the point:
+  each of the last two moves cost an emergency release and a banner asking
+  every user to retype a setting by hand.
+
+  **A relay address you set yourself is left exactly as it was.** Only installs
+  still holding one of the three abandoned addresses are moved — including the
+  one that was never a shipped default, but went out in a website banner during
+  the second outage. Anyone who followed that banner is carried over too, since
+  otherwise the people who did what we asked would have been the only ones left
+  behind.
+
+  Google Drive sign-in moves with it: the relay proxies that step, which is why
+  sign-in failed during both outages alongside pairing.
+
+### Fixed
+
+- **The relay installer no longer hands out an address the app refuses.** It
+  printed the machine's public address with a `ws://` scheme and told you to
+  paste it in — which the client now declines, so a correctly installed relay
+  looked broken. It offers an unencrypted address only where the network is the
+  trust boundary, and on a hosted server prints none at all, saying why.
+
+- **The daemon's port can be changed and stay changed, and a clash says what
+  to do.** `daemon start --port` only ever applied to one run, the field in
+  the window is no use on a headless box, and there was no `config set` key —
+  so a machine where 8383 was already taken had no durable way off it. There
+  is now `opensave config set port <n>`.
+
+  `--port auto` also does what it looks like. `--port 0` used to be
+  indistinguishable from not passing the flag at all, because 0 was the
+  internal "not given" sentinel, so asking for any free port silently started
+  on the configured one instead. And a clash printed the raw bind error and
+  nothing else; it now says a second OpenSave is the usual cause and lists the
+  three ways out.
+
+- **`opensave-relay` no longer ignores its arguments.** It accepted anything
+  you typed, discarded it, and started a server. Somebody self-hosting ran
+  `opensave-relay config set relay-url wss://...` — reasonable, since that is
+  roughly what the client command looks like — and got `bind: address already
+  in use`, because the arguments went nowhere and the only thing left to do
+  was start a second relay beside the one already running. The error described
+  neither what they asked for nor what was wrong with it. It now recognises
+  that shape, says `relay-url` is a client setting and where it belongs, and
+  exits non-zero. `--help` and `--version` work too, and a port clash on
+  startup now says what a port clash usually means.
+- **OneDrive's setup is where you hit the problem, not three screens away.**
+  It ships with no OAuth credentials — Microsoft does not allow a shared
+  public app — so it needs your own before it will connect at all. A client-ID
+  box did exist, under Settings → Sync, in a row of three unlabelled inputs;
+  but the failure told you to look under Settings → Cloud Backup, which is a
+  different tab, and nothing said what to create or where. Selecting OneDrive
+  now opens the field in place, with a link to the Azure portal and the
+  redirect URI to register.
+- **Your own OAuth app, set beside the provider it belongs to.** The client-ID
+  inputs have moved out of Settings → Sync and into Cloud Backup, under **Use
+  your own OAuth app**, next to the provider you are connecting. They also now
+  take the client SECRET, which the daemon has always read and nothing could
+  set; and changing an id while you are signed in now signs you out, because
+  the tokens were issued to the previous app and no refresh of them would be
+  accepted — leaving them in place showed "Connected" over credentials that
+  could not work.
+
+  For Google Drive this is the real fix for the weekly re-login: the built-in
+  credentials belong to a shared app still in testing, and consent expires on
+  a timer. Your own client id does not.
+- **`opensave scan --json` no longer ignores the flag.** It printed the
+  formatted listing and exited 0, which is the worst way to not support
+  something: a script piping it to `jq` got a parse error rather than an
+  unknown-flag message, and the manual said every command accepts `--json`.
+  It now emits the results in the same order the printed listing numbers them,
+  so index *n* is what `add n` tracks, with the file count, size, last-written
+  time and grouping each row carries.
+- **Exclusions now cover a game's extra save locations, not just its main
+  folder.** A rule protected the save folder and was quietly ignored
+  everywhere else — so a device-specific config kept in a game's settings
+  folder, which is one of the commonest reasons to have a second location at
+  all, travelled to the other machine anyway. Worse than travelling: with the
+  rule on one device only, that device pushed its own copy over the other's,
+  destroying the very file the rule was written to protect.
+
+  It was invisible from outside, because nothing reports a file that synced.
+  The signal was internal — the guard hash has always been computed with every
+  location filtered, so it left the file out while the sync carried it across.
+  The two halves disagreed about whether the file existed.
+
+  Every location now applies the rules exactly as the main folder does:
+  filtered on both sides before anything is compared, filtered out of the
+  lineage so a missing file is never read as a deletion to propagate, and with
+  the merge base translated so adding a rule does not raise a one-off conflict.
+
+### Added
+
+- **The relay installer can be given a Google client secret.** A relay
+  completes Google Drive's sign-in for clients using the built-in credentials,
+  and the installer had no way to supply what that needs — so an installed
+  relay synced correctly and failed sign-in, fixable only by knowing the
+  variable's name and hand-writing a systemd override. `--google-secret-file`
+  takes a path rather than the value, since an argument is visible to every
+  user on the machine while the command runs, and the file is stored root-only
+  and removed by `--uninstall`. Not needed for sync, and not needed at all by
+  anyone using their own OAuth credentials in the app — that path talks to the
+  provider directly and never reaches the relay.
+
+- **Snapshots record what they hold, file by file.** Each one now notes the
+  hash of every file it captured, written once and never revised, so "is this
+  exact save recoverable?" can be answered exactly instead of inferred from a
+  single whole-save value that nothing kept current. Snapshots taken before
+  this have no such record and are treated as unproven, which is the cautious
+  side.
+
+- **The frontend has tests now.** It had none — not a thin suite, none — while
+  the Go side had forty passing packages. That gap was not academic: of the
+  frontend bugs found in this cycle, three were pure decisions sitting inside
+  `.svelte` files, where the only way to exercise them was to open the app and
+  look. Which folder of a game counts as the save. Whether a folder already
+  tracked as its own game may be adopted as a location of another. Whether a
+  truncated count reads as a floor.
+
+  Those decisions now live in `src/lib/scan.js` and `src/lib/ignorerules.js`,
+  with 31 Vitest cases against them, each one a mistake that actually reached a
+  build rather than a hypothetical. They run in 8ms and are wired into CI as
+  their own job, so they do not queue behind a thirty-minute race run.
+
+  Deliberately NOT moved: anything that needs the daemon. Whether a file is
+  excluded is answered by the daemon, which holds the matcher the sync engine
+  itself uses — a second, nearly-right copy in the client would be wrong in the
+  worst direction, telling someone a file is protected when it is not.
+
+- **A one-command relay installer.** Self-hosting meant fetching a binary,
+  writing a systemd unit, opening a port, and — for the encryption clients
+  default to — a reverse proxy with the two WebSocket settings everyone
+  misses. All of it identical on every machine, which makes it a script's job.
+  `packaging/relay/install-relay.sh` does the lot, takes `--domain` to get a
+  certificate automatically via Caddy, prints the relay URL and the exact
+  client commands when it finishes, and `--uninstall` reverses it.
+
+  It runs as root, so two things are not optional: the download is verified
+  against the release's `SHA256SUMS` before anything is installed, and
+  `--dry-run` prints every change it would make — the systemd unit included —
+  without privileges and without touching the machine. It cannot point DNS at
+  your server; that is the one step only your registrar can do, and without it
+  the relay serves plain `ws://` and says so.
+
+  Now tested on real Linux rather than only in dry run, which immediately
+  found that it hung forever. It ran the freshly installed binary to report
+  its version — and every relay before this release ignores its arguments and
+  starts a server instead, so that call never returned. The unit file went
+  unwritten and a stray relay was left listening. Installing v2.2.1, the
+  version anyone running the script today would get, reproduced it exactly.
+  It now reports the tag it installed, which it already knows, and does not
+  execute a binary downloaded seconds earlier just to ask it a question.
+
+  Verified end to end afterwards on Ubuntu with systemd: install completes in
+  about a minute, the service is active and enabled and runs as its own
+  unprivileged user, it survives a restart, two clients on that machine find
+  each other through it and a save edited on one arrived on the other in about
+  three seconds, and `--uninstall` leaves no service, unit, binary or user
+  behind.
+
+- **`OPENSAVE_RELAY_URL` pins the relay from the environment.** Settings live
+  in SQLite, which is awkward for a machine that is provisioned rather than
+  configured — a container, or an image rebuilt onto a fresh volume, where
+  running a command once after first boot is not a step you get to take.
+  While the variable is set it overrides the stored value on every read, so
+  the window, the CLI and the sync engine all agree on which relay is in use;
+  the field shows it and says where it came from, and `config set relay-url`
+  refuses rather than pretending to save. Your stored setting is untouched, so
+  unsetting the variable returns to it. Prefixed deliberately — a bare
+  `RELAY_URL` is a name other things use, and silently redirecting someone's
+  sync traffic over a collision is not worth eight characters.
+- **Files that shouldn't sync can be picked from a list instead of typed.**
+  The pattern box asked you to name a file you had to already know, in a
+  folder you could not see, in a syntax you had to learn — and said nothing
+  until the file turned up on another machine days later. **Pick from your
+  save folder** now lists what is actually there, across every save location,
+  each file marked *syncs* or *won't sync*.
+
+  Ticking a file writes the pattern, anchored so it can only ever mean that
+  one file. Unticking one caught by a wildcard adds an `!` exception rather
+  than discarding the wildcard. The verdicts are computed by the same matcher
+  the sync engine uses, on the same relative paths, and they update as you
+  type — so a rule can be checked before it is trusted, rather than after.
+  Patterns still matter for files that do not exist yet, like `*.log`; this
+  is a way in, not a replacement.
+- **A CLI guide and a relay guide.** The command reference has always listed
+  what exists; neither said where a command belongs. Somebody self-hosting a
+  relay had the container running and asked for the command to join the room
+  from the CLI *on the relay* — a question with no answer, because the relay
+  is a passive broker and joining is something gaming devices do. Both guides
+  now lead with that: [`docs/CLI.md`](docs/CLI.md) opens on which machine runs
+  what and which commands need a daemon, then gives worked sequences for
+  pairing, internet sync, headless setup, snapshots, split saves, exclusions
+  and scripting; [`docs/RELAY.md`](docs/RELAY.md) covers self-hosting, TLS,
+  and the reverse-proxy settings WebSockets need.
+- **A Getting Started guide**, for people who have not used OpenSave before:
+  the whole thing from a fresh install, explaining each term as it arrives,
+  including how to read a scan result, what to do when two devices disagree,
+  and a glossary. [`GETTING_STARTED.md`](GETTING_STARTED.md). The User Guide
+  stays as the reference.
+- **Auto-scan says what is actually in each folder, and hides the ones holding
+  nothing.** Every result now shows its file count, its size, and when it was
+  last written. The last of those is the one that earns its place: the same
+  game is routinely detected in three or four places at once — the Steam
+  folder, wherever the launcher wrote it, and one left behind by an install
+  that has moved on — and until now there was nothing on screen to say which
+  was the live save. On the library this was built against, 24 of the 30 games
+  found in more than one place had over two months between the freshest folder
+  and the stalest.
+
+  Folders holding no files are hidden by default, because Steam creates one
+  for every game you own whether or not saves go there. That was 48 of 235
+  results — a fifth of the list, all of it rows nobody could use. **Show N
+  empty** in the scan toolbar brings them back, for tracking a game before it
+  has saved for the first time, and `opensave scan --all` is the same thing.
+
+  A folder that could not be read is reported as unknown, never as empty, and
+  is never hidden. Measuring can fail — an unreadable subfolder, a path the
+  walk chokes on — and a folder we failed to look inside is exactly the one
+  that must stay on the list.
+- **Auto-scan shows one tile per game, not one per folder.** A game found in
+  several places used to produce several rows, scattered through the list
+  rather than adjacent, because each came from a different detection pass.
+  They are one tile now, with **found in N folders** underneath; opening it
+  labels each folder with what it is.
+
+  The labels matter more than the collapsing, because the duplicates are not
+  one thing. A folder **inside** another is the same files seen twice, and
+  cannot be tracked separately at all — two locations over one set of files
+  fight over them. A folder **beside** the save folder is another piece of the
+  same save, and those are now offered together as one game with extra
+  locations: TrackMania's Scores, Tracks and Profiles go in with one click.
+  A folder somewhere unrelated is **another copy**, usually left by an install
+  you have moved on from, and is offered but never assumed.
+
+  Two folders are only treated as one game when they share a Steam AppID, or a
+  name specific enough to mean something. Rows called "Saves" or "User Data"
+  are left alone: grouping on a name that could belong to anything would merge
+  unrelated titles, which is the one mistake here that ends with a save in a
+  folder nobody chose. When the grouping does miss a pair, ticking both and
+  choosing **Track as one game** overrides it.
+- **Files that shouldn't sync can be excluded per game.** Some games keep
+  device-specific settings in the same folder as the save — Neva keeps
+  `Config.gs` beside `Progress.gs` — and copying those to another machine can
+  break the game there. The folder cannot be narrowed without losing the save,
+  so the exclusion has to be per file. List them under **Configuration ->
+  Files that shouldn't sync**, one per line, written like a `.gitignore`:
+  names, `*` wildcards, `logs/` for a folder, `!` for an exception. Matching
+  ignores case, so a rule written on a PC keeps working on a Steam Deck. Each
+  device applies its own list, and a device without one is unaffected.
+  **Snapshots still capture excluded files**, so a restore brings them back —
+  excluding something stops it travelling, never stops it being backed up.
+  From the command line, `opensave ignore <gameId> add <pattern>`, and
+  `opensave ignore <gameId> test <path>` answers "would this sync?" without
+  waiting to find out on the other device. Requested by RrOoSsSsOo.
+  On a fleet where one device has not updated yet, the rule protects the
+  updated one and leaves the other exactly as it was: the older device may
+  still receive the file, because the alternative — hiding it from that
+  device — would make it read the gap as a deletion and remove its own copy.
+  Once both devices have the rule, the file stops travelling entirely.
+- **A game whose save is split across folders is one game again.** Plenty of
+  titles keep their save data in one place and their settings or mods in
+  another, and the only way to cover both was to track the same game twice:
+  two cards in the library, two conflicts to settle, two things to restore in
+  step with each other. A game can now have as many save folders as it needs.
+  Name each extra one under **Configuration -> Save locations** and it is
+  synced, snapshotted, backed up and restored along with the main folder. Give
+  it the same name on your other devices — the name is what the two sides
+  match on, since the folder itself lives somewhere different on each machine.
+  A device that knows a location's name but has no folder for it says so and
+  skips it, rather than guessing where your files belong. Each folder also
+  keeps its own sync history, so a settings folder both devices edited raises
+  a question about the settings folder instead of holding the save hostage.
+  A device on an older build is unaffected: it syncs the main save exactly as
+  before and simply does not see the extra folders. Requested by tfe on
+  Discord.
+
+## [2.2.3] — 2026-08-14
+
+The same emergency as 2.2.2, for the last time. The relay 2.2.2 moved everyone
+onto was suspended a week later for the same reason, and this points the app at
+one the project owns and pays for.
+
+### Fixed
+
+- **Internet sync works again, on `wss://relay.opensave.org`.** Both relays this
+  app has shipped were free tiers, and both were switched off for exhausting a
+  monthly allowance. A relay holds connections open and never idles, so it
+  spends an allowance meant for services that sleep — that was never a hosting
+  accident to wait out, and a third free tier would have ended the same way.
+
+  The new address belongs to the project rather than to a host, and points at a
+  rented machine. If it ever has to move again, that is a DNS record rather than
+  a release: the last two moves each cost an emergency version and a banner
+  asking every user to retype a setting by hand.
+
+  Google Drive sign-in comes back with it, since the relay proxies that step —
+  which is why signing in failed during both outages alongside pairing.
+
+- **Anyone who typed in the temporary address is moved too.** During the second
+  outage the website banner asked people to set the relay by hand. That address
+  was never a shipped default, so it sits in settings looking like a deliberate
+  choice; leaving it out of the migration would have stranded exactly the users
+  who did what we asked, on a third free tier, waiting to be switched off.
+
+  **If you set your own relay address, it is left exactly as it was.** Only
+  installs still holding one of the three abandoned addresses are moved, so a
+  self-hosted relay is never overwritten.
+
+  No save was ever at risk: the relay stores nothing and writes nothing to disk,
+  so anything on your machines was untouched throughout.
+
 ## [2.2.2] — 2026-08-12
 
 An emergency release with one purpose: the public relay was suspended for
@@ -632,7 +1049,12 @@ and relay envelope).
 - The local API and dashboard remain loopback-only; relay traffic is limited
   to paired peers.
 
+[2.3.0]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.3.0
+[2.2.3]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.3
 [2.2.2]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.2
+[2.2.1]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.1
+[2.2.0]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.2.0
+[2.1.1]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.1.1
 [2.1.0]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.1.0
 [2.0.1]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.0.1
 [2.0.0]: https://github.com/Liquid-co/OpenSave/releases/tag/v2.0.0

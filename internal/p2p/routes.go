@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -140,6 +142,7 @@ func (e *Engine) handleHandshake(w http.ResponseWriter, r *http.Request) {
 		DeviceName string `json:"deviceName"`
 		DeviceType string `json:"deviceType"`
 		Port       int    `json:"port"`
+		PublicKey  string `json:"publicKey"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PeerID == "" {
 		jsonError(w, http.StatusBadRequest, "peerId is required")
@@ -152,6 +155,7 @@ func (e *Engine) handleHandshake(w http.ResponseWriter, r *http.Request) {
 		DeviceType: orDefault(body.DeviceType, "desktop"),
 		Address:    clientIP(r),
 		Port:       body.Port,
+		PublicKey:  body.PublicKey,
 	})
 	e.Log("info", fmt.Sprintf("pairing request from %q (%s) — awaiting approval", body.DeviceName, clientIP(r)))
 	e.notifyPeerUpdate()
@@ -165,6 +169,7 @@ func (e *Engine) handleApproveConfirm(w http.ResponseWriter, r *http.Request) {
 		DeviceName string `json:"deviceName"`
 		DeviceType string `json:"deviceType"`
 		Port       int    `json:"port"`
+		PublicKey  string `json:"publicKey"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PeerID == "" {
 		jsonError(w, http.StatusBadRequest, "peerId is required")
@@ -193,6 +198,15 @@ func (e *Engine) handleApproveConfirm(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Pinned after the peer row exists, and separately from it: writing a key
+	// through UpsertPeer would mean every later status update carried one too,
+	// and the ones that do not know about keys would blank it.
+	if body.PublicKey != "" {
+		if err := e.Store.SetPeerPublicKey(body.PeerID, body.PublicKey); err != nil {
+			e.Log("warn", fmt.Sprintf("could not pin %q's encryption key, so syncs with it stay unencrypted: %v", body.DeviceName, err))
+		}
+	}
+
 	// Same machine, fresh identity (reinstall/reset) — drop the ghost entry.
 	if removed, _ := e.Store.PrunePeersAtAddress(ip, body.Port, body.PeerID); len(removed) > 0 {
 		e.Log("info", fmt.Sprintf("removed stale pairing %v — same device re-paired with a new identity", removed))
@@ -481,13 +495,33 @@ func (e *Engine) handleManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	manifest, err := delta.BuildManifest(game.SavePath)
+	// Extra save locations are included when this game has any; a game with
+	// none produces exactly the manifest it always did, down to the absent
+	// field. An unreadable extra location is logged and left out rather than
+	// listed empty, which the peer would read as everything in it being
+	// deleted.
+	extra, rootsErr := e.Store.GameRootPaths(gameID)
+	if rootsErr != nil {
+		extra = nil
+	}
+	manifest, failures, err := delta.BuildMultiManifest(game.SavePath, extra)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "manifest build failed: "+err.Error())
 		return
 	}
+	for name, failure := range failures {
+		e.Log("warn", fmt.Sprintf("could not read the %q location of %q: %v — it is left out of this sync", name, game.Name, failure))
+	}
 
-	resp := syncengine.ManifestResponse{Manifest: manifest, ActiveBranch: game.ActiveBranch}
+	// Proto tells the asking peer this device understands save locations
+	// beyond the primary one, so it is safe to send a root name in a block or
+	// delete request. A peer that predates this answers without it and is
+	// only ever asked about the primary location.
+	resp := syncengine.ManifestResponse{
+		Manifest:     manifest,
+		ActiveBranch: game.ActiveBranch,
+		Proto:        ServedProto(),
+	}
 	if latest, err := e.Snapshots.LatestSnapshot(gameID, ""); err == nil {
 		resp.LatestSnapshot = &syncengine.SnapshotInfo{ID: latest.ID, Timestamp: latest.Timestamp, Comment: latest.Comment}
 	}
@@ -497,7 +531,11 @@ func (e *Engine) handleManifest(w http.ResponseWriter, r *http.Request) {
 func (e *Engine) handleBlocks(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
 	var body struct {
-		RelPath      string   `json:"relPath"`
+		RelPath string `json:"relPath"`
+		// Root names which save location the path is relative to. Absent on
+		// every peer that predates multi-root, which is why it is only ever
+		// sent to a peer that answered a manifest request with a proto.
+		Root         string   `json:"root"`
 		BlockIndices []int    `json:"blockIndices"`
 		BlockSize    int      `json:"blockSize"`
 		Encodings    []string `json:"encodings"`
@@ -512,14 +550,19 @@ func (e *Engine) handleBlocks(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "Game not found.")
 		return
 	}
-	if !delta.IsSafePath(game.SavePath, body.RelPath) {
+	base, ok := e.resolveServeRoot(gameID, game, body.Root)
+	if !ok {
+		jsonError(w, http.StatusNotFound, "This device has no save location named "+strconv.Quote(body.Root)+" for that game.")
+		return
+	}
+	if !delta.IsSafePath(base, body.RelPath) {
 		jsonError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 
-	fullPath := filepath.Join(game.SavePath, filepath.FromSlash(body.RelPath))
-	if isFile, _ := delta.ResolveLocalSaveFilePath(game.SavePath); isFile {
-		fullPath = game.SavePath
+	fullPath := filepath.Join(base, filepath.FromSlash(body.RelPath))
+	if isFile, _ := delta.ResolveLocalSaveFilePath(base); isFile {
+		fullPath = base
 	}
 
 	blocks, err := delta.ReadBlocks(fullPath, body.BlockIndices, body.BlockSize)
@@ -535,6 +578,7 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 	gameID := chi.URLParam(r, "gameId")
 	var body struct {
 		RelPath string `json:"relPath"`
+		Root    string `json:"root"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RelPath == "" {
 		jsonError(w, http.StatusBadRequest, "relPath is required.")
@@ -546,12 +590,17 @@ func (e *Engine) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusNotFound, "Game not found.")
 		return
 	}
-	if !delta.IsSafePath(game.SavePath, body.RelPath) {
+	base, ok := e.resolveServeRoot(gameID, game, body.Root)
+	if !ok {
+		jsonError(w, http.StatusNotFound, "This device has no save location named "+strconv.Quote(body.Root)+" for that game.")
+		return
+	}
+	if !delta.IsSafePath(base, body.RelPath) {
 		jsonError(w, http.StatusBadRequest, "invalid path")
 		return
 	}
 
-	full := filepath.Join(game.SavePath, filepath.FromSlash(body.RelPath))
+	full := filepath.Join(base, filepath.FromSlash(body.RelPath))
 	_ = os.Chmod(full, 0o666)
 	if info, statErr := os.Stat(full); statErr == nil {
 		if info.IsDir() {
@@ -720,4 +769,47 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// resolveServeRoot maps a root name from a peer request to this device's
+// path for it, defaulting to the game's primary location.
+//
+// An unknown or unmapped name is an error rather than a fallback to the
+// primary path. Falling back would mean serving — or worse, deleting — a
+// file in the save folder because a peer asked about a location this device
+// does not have, which is precisely the "files end up somewhere they should
+// not" failure the root name exists to prevent.
+func (e *Engine) resolveServeRoot(gameID string, game store.Game, root string) (string, bool) {
+	if root == delta.PrimaryRoot {
+		return game.SavePath, true
+	}
+	paths, err := e.Store.GameRootPaths(gameID)
+	if err != nil {
+		return "", false
+	}
+	path, ok := paths[root]
+	return path, ok
+}
+
+// servedProto is the sync protocol revision this device advertises.
+//
+// Atomic, not a plain var: it is read on request goroutines while a test
+// writes it, and the race detector is right to object. The value is only ever
+// changed by tests, but "only tests write it" is not a synchronisation
+// argument — the read still happens concurrently.
+var servedProto atomic.Int64
+
+func init() { servedProto.Store(syncengine.ProtoMultiRoot) }
+
+// ServedProto reports the protocol revision advertised to peers.
+func ServedProto() int { return int(servedProto.Load()) }
+
+// SetServedProto overrides the advertised revision and returns the previous
+// value, so a test can restore it.
+//
+// This exists for one reason: lowering it to 0 makes a real daemon answer
+// exactly as a build that predates multi-root does, which is the only way to
+// get an older peer into an end-to-end test. Nothing in the product calls it.
+func SetServedProto(v int) int {
+	return int(servedProto.Swap(int64(v)))
 }

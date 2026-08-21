@@ -95,6 +95,53 @@ type Manifest struct {
 	LatestMtime Milli                `json:"latestMtime"`
 	Files       map[string]FileEntry `json:"files"`
 	Dirs        []string             `json:"dirs"`
+
+	// Extra carries save locations beyond the primary one, keyed by root
+	// name. It is omitted entirely for single-root games, which is nearly
+	// all of them.
+	//
+	// Files and Dirs above always describe the PRIMARY location and nothing
+	// else — deliberately, and it is the property that makes multi-root safe
+	// to put on the wire. A peer that predates this field decodes the same
+	// manifest it always did and syncs the primary folder correctly; it does
+	// not see the extra roots, and crucially it cannot mistake them for
+	// subfolders of the primary one and write a config file into a save
+	// directory. Degrading to a partial sync is recoverable. Scattering
+	// files into the wrong folders is not.
+	Extra map[string]RootManifest `json:"extraRoots,omitempty"`
+}
+
+// RootManifest is one save location's contents, in the same shape the
+// primary location uses.
+type RootManifest struct {
+	Files map[string]FileEntry `json:"files"`
+	Dirs  []string             `json:"dirs"`
+}
+
+// PrimaryRoot is the reserved name of a game's main save location — the one
+// held in Game.SavePath rather than in the roots table.
+const PrimaryRoot = ""
+
+// RootNames lists every location in this manifest, primary first and the
+// rest sorted, so callers iterate in a stable order.
+func (m Manifest) RootNames() []string {
+	names := make([]string, 0, len(m.Extra)+1)
+	names = append(names, PrimaryRoot)
+	for n := range m.Extra {
+		names = append(names, n)
+	}
+	sort.Strings(names[1:])
+	return names
+}
+
+// Root returns one location's contents. An unknown name yields an empty
+// RootManifest rather than an error: a peer naming a root this device has
+// never heard of is an ordinary state, not a failure.
+func (m Manifest) Root(name string) RootManifest {
+	if name == PrimaryRoot {
+		return RootManifest{Files: m.Files, Dirs: m.Dirs}
+	}
+	return m.Extra[name]
 }
 
 // hashBytes returns the lowercase hex SHA-256 of b.
@@ -256,9 +303,29 @@ func BuildManifest(root string) (Manifest, error) {
 // list. Two manifests with identical file contents yield the same hash
 // regardless of mtimes — this is what the watcher and sync engine compare
 // to decide "has anything actually changed".
-func (m Manifest) ManifestHash() string {
-	paths := make([]string, 0, len(m.Files))
-	for p := range m.Files {
+//
+// It covers the PRIMARY location only, and must keep doing so. This value
+// is the merge base two devices record as their last agreed state, and a
+// merge base is only meaningful if both sides compute it over the same
+// thing. Fold extra roots in here and a device that has them would never
+// agree with one that does not — not because the saves differ, but because
+// the two are measuring different amounts of the game. A base that can
+// never be reached is a base that is always behind both sides, which reads
+// as permanent two-way divergence: a conflict on every sync, on saves
+// nobody touched. Each root carries its own base instead; see RootHash.
+//
+// For "has anything on disk changed", which does need to span every
+// location, use ContentHash.
+func (m Manifest) ManifestHash() string { return m.RootHash(PrimaryRoot) }
+
+// RootHash is ManifestHash for one location. Root names are not mixed into
+// the digest, so a root's hash depends only on its contents — the same files
+// under a different name still compare equal, which matters when a device
+// renames a location.
+func (m Manifest) RootHash(name string) string {
+	r := m.Root(name)
+	paths := make([]string, 0, len(r.Files))
+	for p := range r.Files {
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
@@ -267,13 +334,81 @@ func (m Manifest) ManifestHash() string {
 	for _, p := range paths {
 		io.WriteString(h, p)
 		io.WriteString(h, ":")
-		io.WriteString(h, m.Files[p].Hash)
+		io.WriteString(h, r.Files[p].Hash)
 		io.WriteString(h, "\n")
 	}
-	for _, d := range m.Dirs {
+	for _, d := range r.Dirs {
 		io.WriteString(h, "dir:"+d+"\n")
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// ContentHash summarizes every location, for deciding whether anything on
+// this device changed at all — the watcher's "is a snapshot warranted"
+// question. It is never exchanged with a peer or recorded as a merge base;
+// see ManifestHash for why that distinction is load-bearing.
+//
+// For a single-root game it is deliberately identical to ManifestHash, so
+// the value the watcher already stored against existing games stays valid
+// across the upgrade and nobody gets a spurious snapshot on first run.
+func (m Manifest) ContentHash() string {
+	if len(m.Extra) == 0 {
+		return m.ManifestHash()
+	}
+	h := sha256.New()
+	for _, name := range m.RootNames() {
+		io.WriteString(h, name)
+		io.WriteString(h, "=")
+		io.WriteString(h, m.RootHash(name))
+		io.WriteString(h, "\n")
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// BuildMultiManifest builds a manifest spanning a game's primary location
+// and any extra ones, keyed by root name.
+//
+// extra maps root name to this device's path for it, and only mapped roots
+// belong in it — a root this device has no path for is simply absent from
+// the manifest, which is exactly how it should read to a peer: "I do not
+// have that here", not "that is empty here". The difference matters, since
+// the second would propagate as a deletion.
+//
+// A location that cannot be read (drive unplugged, folder deleted since it
+// was configured) is skipped with its error returned alongside the manifest.
+// One missing extra folder must not stop the primary save from syncing —
+// but it also must not be silently reported as empty, for the same reason.
+func BuildMultiManifest(primary string, extra map[string]string) (Manifest, map[string]error, error) {
+	m, err := BuildManifest(primary)
+	if err != nil {
+		return Manifest{}, nil, err
+	}
+	if len(extra) == 0 {
+		return m, nil, nil
+	}
+
+	var failures map[string]error
+	for name, path := range extra {
+		if name == PrimaryRoot || strings.TrimSpace(path) == "" {
+			continue // guarded in the store too; belt and braces
+		}
+		sub, err := BuildManifest(path)
+		if err != nil {
+			if failures == nil {
+				failures = map[string]error{}
+			}
+			failures[name] = err
+			continue
+		}
+		if m.Extra == nil {
+			m.Extra = map[string]RootManifest{}
+		}
+		m.Extra[name] = RootManifest{Files: sub.Files, Dirs: sub.Dirs}
+		if sub.LatestMtime > m.LatestMtime {
+			m.LatestMtime = sub.LatestMtime
+		}
+	}
+	return m, failures, nil
 }
 
 // isDotEntry reports whether any path segment of rel starts with a dot,

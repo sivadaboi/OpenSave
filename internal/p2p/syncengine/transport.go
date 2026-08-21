@@ -27,11 +27,41 @@ type SnapshotInfo struct {
 	Comment   string `json:"comment"`
 }
 
+// ProtoMultiRoot is the protocol revision at which a peer understands games
+// with more than one save location.
+const ProtoMultiRoot = 1
+
 // ManifestResponse is what a peer returns for a manifest request.
 type ManifestResponse struct {
 	Manifest       delta.Manifest `json:"manifest"`
 	ActiveBranch   string         `json:"activeBranch"`
 	LatestSnapshot *SnapshotInfo  `json:"latestSnapshot"`
+
+	// Proto is the responder's sync protocol revision, absent (zero) on every
+	// build that predates it.
+	//
+	// This is the capability gate, and it deliberately is not a version
+	// string. A version tells you what a peer is; this arrives with the
+	// answer itself and tells you what it understood. That matters here
+	// because the block and delete requests carry a root name in a field an
+	// older peer simply ignores — it would then serve the file from the
+	// PRIMARY location instead, and this side would write another location's
+	// contents over the save folder. Asking only peers that answered with a
+	// proto is what stops that.
+	Proto int `json:"proto,omitempty"`
+}
+
+// FileRef identifies one file inside one of a game's save locations.
+//
+// Root and RelPath are passed together rather than as adjacent string
+// arguments on purpose: this is the code that decides where bytes land on
+// disk, and two strings side by side in a parameter list is one transposition
+// away from writing a config file into a save folder.
+type FileRef struct {
+	GameID string
+	// Root is the save location's name; empty means the primary one.
+	Root    string
+	RelPath string
 }
 
 // ManifestQuery carries the game metadata that lets the remote side
@@ -65,8 +95,8 @@ type BlockData struct {
 // tunnels the same requests through the relay WebSocket.
 type Transport interface {
 	FetchManifest(ctx context.Context, peer Peer, gameID string, q ManifestQuery) (ManifestResponse, error)
-	FetchBlocks(ctx context.Context, peer Peer, gameID, relPath string, blockIndices []int, blockSize int) ([]BlockData, error)
-	DeleteRemote(ctx context.Context, peer Peer, gameID, relPath string) error
+	FetchBlocks(ctx context.Context, peer Peer, ref FileRef, blockIndices []int, blockSize int) ([]BlockData, error)
+	DeleteRemote(ctx context.Context, peer Peer, ref FileRef) error
 	TriggerPeerPull(peer Peer, gameID string)
 	// ReportSyncEvent is fire-and-forget progress reporting to the peer.
 	ReportSyncEvent(peer Peer, gameID, eventType string, data map[string]any)

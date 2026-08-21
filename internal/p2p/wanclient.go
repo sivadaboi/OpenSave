@@ -155,6 +155,21 @@ func (w *WanClient) Connect() {
 		return
 	}
 
+	// Last line, and the only one covering OPENSAVE_RELAY_URL: the environment
+	// override is applied inside GetSettings, so it never passes through the
+	// settings route or the CLI where this is otherwise checked. Refusing here
+	// means no configuration path can quietly put save files on the wire in
+	// the clear.
+	if err := store.ValidateRelayURL(settings.RelayURL); err != nil {
+		w.mu.Lock()
+		w.state = "error"
+		w.lastError = err.Error()
+		w.mu.Unlock()
+		w.engine.Log("error", "refusing to use this relay: "+err.Error())
+		w.engine.notifyPeerUpdate()
+		return
+	}
+
 	w.mu.Lock()
 	w.stopped = false
 	w.generation++

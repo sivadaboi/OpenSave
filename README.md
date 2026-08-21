@@ -40,10 +40,13 @@ OpenSave gives **every** game the Steam Cloud experience:
 
 - **Auto-detection** — scans for saves from Steam, emulators (RetroArch, Dolphin, Ryujinx, Yuzu, Citra, PCSX2, RPCS3, PPSSPP, Cemu, Xenia), Steam-emulator repacks (Goldberg/GSE, CODEX, RUNE, Tenoke, EMPRESS, Online-Fix, CPY, SKIDROW, 3DM, …), Epic, GOG, Unity `LocalLow`, and Unreal Engine conventions — plus the community-maintained [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest) covering save paths for tens of thousands of games, whatever store (or no store) they came from.
 - **Track anything** — any folder or single save file, watched live with block-level change detection (SHA-256, 64 KB–2 MB adaptive blocks). Only the blocks that changed are ever transferred.
+- **One tile per game, not one per folder** — a scan finds the same game in several places as a matter of course, and every result shows its file count, size and last-written date so you can tell the save you play from the one an old install left behind. Folders holding no files are hidden. Where a game's save is genuinely split across sibling folders, they are offered together as one game.
+- **A save split across folders is one game** — some titles keep progress in one place and settings or mods in another. Add each folder as a **save location** and all of them sync, snapshot and restore together.
+- **Files that shouldn't sync** — device-specific settings living beside the save can be excluded per game, written like a `.gitignore`, or picked from a list of what is actually in the folder. Excluded files are still captured in every snapshot, so a rule can never be the thing that loses one.
 - **P2P sync** — automatic over LAN (zero-config discovery) or across the internet through a relay **room code** — no port forwarding. A paired-device model means every connection is explicitly approved.
 - **Snapshot history** — every change creates a versioned snapshot. Roll back a whole save or a single file; branches keep parallel playthroughs (and conflict resolutions) safe.
 - **Smart conflict handling** — diverged saves are detected by **sync lineage**, not wall-clock timestamps. Keep yours, keep theirs, or keep both on a new branch.
-- **Cloud backup** — optional mirroring to Google Drive, Dropbox, OneDrive, WebDAV, a webhook, or a local/NAS folder.
+- **Cloud backup** — optional mirroring to Google Drive, Dropbox, OneDrive, WebDAV, a webhook, or a local/NAS folder. Any OAuth provider can use your own app credentials instead of the built-in ones — required for OneDrive, and the fix for Google Drive's weekly re-login.
 - **Cross-device game matching** — the same title tracked under different names on two machines (a Steam install here, a differently-named folder there) can be matched by Steam App ID or linked by hand. App-ID matching is opt-in, so two separate copies of a game are never merged without asking.
 - **A full command line** — `opensave` does everything the app does, for a Steam Deck in Game Mode or a headless server. See [Command line](#command-line).
 - **In-app updates** — one-click update from GitHub releases, pull a newer build straight from a paired device, or `opensave update` from the terminal.
@@ -137,12 +140,14 @@ for immutable systems like stock SteamOS.
 
 ## Quick start
 
-1. **Launch OpenSave** on your first device. It scans for installed games and shows detected saves as cover-art tiles.
-2. **Track a game** — click a detected tile, or add any folder / save file manually.
+1. **Launch OpenSave** on your first device. It scans for installed games and shows one cover-art tile per game, with what each folder holds and when it was last written.
+2. **Track a game** — click a tile, or add any folder / save file manually. A game found in several places says **found in N folders**; open that to see which is which.
 3. **Pair a second device.** On the same network, the other device appears automatically under **Devices** — approve the request. Remote? One device creates a **room code** under **Internet Sync**; the other joins with it.
 4. **Play.** When a save changes, OpenSave snapshots it and syncs it to every paired device. There's nothing else to do.
 
 Need to undo something? Open a game's **history** and roll back a snapshot — the whole save or a single file.
+
+**New to this?** The [Getting Started guide](GETTING_STARTED.md) walks through the whole thing from a fresh install, in plain language, with what to do when something looks wrong.
 
 ## How it works
 
@@ -180,7 +185,12 @@ No account, no token, no server to sign up to.
 </p>
 
 Run `opensave` on its own and it tells you what is happening right now, and what
-to do next. There is a fuller walkthrough on the
+to do next.
+
+**[→ Full CLI guide](docs/CLI.md)** — the daemon model, which machine each
+command belongs on, and worked sequences for pairing, internet sync, running
+headless, snapshots, split saves and scripting. The tables below are the
+summary; that is the walkthrough. There is also one on the
 [website](https://open-save.vercel.app/cli.html).
 
 ### Install
@@ -259,11 +269,14 @@ Every command accepts `--json` for scripting.
 
 | Command | What it does |
 | --- | --- |
-| `scan` | Auto-detect saves: Steam libraries, Proton and Wine prefixes, emulators, 20k+ titles via the Ludusavi manifest |
+| `scan [--all]` | Auto-detect saves: Steam libraries, Proton and Wine prefixes, emulators, 20k+ titles via the Ludusavi manifest. Grouped one game at a time, with each folder's size and last-written date. Empty folders are hidden; `--all` shows them |
 | `add <name> <path>` | Track a save folder or file |
+| `add <number>` | Track the nth result from the last scan |
 | `remove <gameId>` | Stop tracking. Save files and snapshots stay on disk |
 | `untrack-all --yes` | Stop tracking everything (snapshots are kept) |
 | `game <gameId> set <key> <value>` | Per-game settings: `path`, `app-id`, `exe-path`, `cover-url`, `auto-sync`, `max-snapshots` |
+| `locations <gameId> [add\|remove]` | A game's extra save folders, for a save split across more than one place |
+| `ignore <gameId> [add\|remove\|clear\|test]` | Files that shouldn't sync, written like a `.gitignore`. `test` answers "would this sync?" |
 | `launch <gameId>` | Start the game |
 | `status` | Tracked games, branches, peers |
 
@@ -344,7 +357,20 @@ entirely from the terminal.
 opensave daemon status --json | jq .gameCount
 opensave snapshots elden-ring --json | jq -r '.[0].id'
 opensave conflicts --json | jq 'keys'
+
+# Scan results carry what is in each folder and which rows are one game.
+# Everything found in more than one place:
+opensave scan --json | jq -r 'group_by(.groupId)[] | select(length > 1) | .[0].name'
+# Track the freshest folder of every game found, by its listed number:
+opensave scan --json | jq -r 'to_entries[] | select(.value.role=="primary") | .key + 1'
 ```
+
+`scan --json` lists results in the same order the printed listing numbers them,
+so index *n* is what `add n` tracks. Each row carries `fileCount`,
+`totalBytes`, `latestMtime` and `measured`, plus `groupId` and `role`
+(`primary`, `location`, `alternative`, `inside`, `only`) saying which rows are
+one game and what each folder is. `measured: false` means the folder could not
+be read — not that it is empty.
 
 Failures exit non-zero and, with `--json`, print `{"error": "..."}`.
 
@@ -386,7 +412,9 @@ PORT=10000 ./opensave-relay          # custom port
 docker build -f relay/Dockerfile .   # or as a container
 ```
 
-Point **Settings → Internet Sync → Relay server** at your instance. `opensave upnp 8386` forwards the port on UPnP-capable routers.
+Point **Internet Sync → Relay server (self-hostable)** at your instance, on each device, then join the same room code on all of them. `opensave upnp 8386` forwards the port on UPnP-capable routers.
+
+**The relay itself never joins a room** — it has no such command, and nothing to configure beyond the port. Rooms come into existence when your devices ask for them. Full walkthrough, including TLS and the reverse-proxy settings WebSockets need: **[docs/RELAY.md](docs/RELAY.md)**.
 
 ## Architecture
 
@@ -446,7 +474,10 @@ Issues and pull requests are welcome. Please run `go test ./...` before opening 
 
 ## Documentation
 
-- [User Guide](USER_GUIDE.md) — first run, syncing, snapshots, cloud backup, troubleshooting
+- [Getting Started](GETTING_STARTED.md) — start here if OpenSave is new to you. The whole thing from a fresh install, in plain language
+- [User Guide](USER_GUIDE.md) — the reference: every feature, what each setting does, troubleshooting
+- [Command line](docs/CLI.md) — the CLI end to end: the daemon model, which machine each command runs on, task-by-task sequences, scripting
+- [Running your own relay](docs/RELAY.md) — self-hosting, TLS, and the reverse-proxy settings WebSockets need
 - [Changelog](CHANGELOG.md) — release notes
 - [Privacy](PRIVACY.md) — what OpenSave does and doesn't do with your data
 

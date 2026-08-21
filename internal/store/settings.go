@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -18,31 +19,39 @@ type TranslationRule struct {
 
 // Settings is the singleton device configuration row.
 type Settings struct {
-	ID                  int               `db:"id" json:"-"`
-	DeviceName          string            `db:"device_name" json:"deviceName"`
-	NodeID              string            `db:"node_id" json:"nodeId"`
-	DeviceType          string            `db:"device_type" json:"deviceType"`
-	Port                int               `db:"port" json:"port"`
-	SyncInterval        int               `db:"sync_interval" json:"syncInterval"`
-	SyncOnWatch         bool              `db:"sync_on_watch" json:"syncOnWatch"`
-	DataDir             string            `db:"data_dir" json:"dataDir"`
-	BackupsDir          string            `db:"backups_dir" json:"backupsDir"`
-	SyncBackupsDir      string            `db:"sync_backups_dir" json:"syncBackupsDir"`
-	AutoDeleteBackups   bool              `db:"auto_delete_backups" json:"autoDeleteBackups"`
-	AutoDeleteDays      int               `db:"auto_delete_days" json:"autoDeleteDays"`
-	AutoSyncOnTrack     bool              `db:"auto_sync_on_track" json:"autoSyncOnTrack"`
-	MatchByAppID        bool              `db:"match_by_app_id" json:"matchByAppId"`
-	CustomScanPaths     []string          `db:"-" json:"customScanPaths"`
-	ExcludePaths        []string          `db:"-" json:"excludePaths"`
-	PathTranslations    []TranslationRule `db:"-" json:"pathTranslations"`
-	RelayURL            string            `db:"relay_url" json:"relayUrl"`
-	SyncCode            string            `db:"sync_code" json:"syncCode"`
-	HostRelay           bool              `db:"host_relay" json:"hostRelay"`
-	RelayPort           int               `db:"relay_port" json:"relayPort"`
-	StartOnBoot         bool              `db:"start_on_boot" json:"startOnBoot"`
-	SpeedLimitKbps      int               `db:"speed_limit_kbps" json:"speedLimit"`
-	UIMode              string            `db:"ui_mode" json:"uiMode"`
-	DefaultMaxSnapshots int               `db:"default_max_snapshots" json:"defaultMaxSnapshots"`
+	ID                int               `db:"id" json:"-"`
+	DeviceName        string            `db:"device_name" json:"deviceName"`
+	NodeID            string            `db:"node_id" json:"nodeId"`
+	DeviceType        string            `db:"device_type" json:"deviceType"`
+	Port              int               `db:"port" json:"port"`
+	SyncInterval      int               `db:"sync_interval" json:"syncInterval"`
+	SyncOnWatch       bool              `db:"sync_on_watch" json:"syncOnWatch"`
+	DataDir           string            `db:"data_dir" json:"dataDir"`
+	BackupsDir        string            `db:"backups_dir" json:"backupsDir"`
+	SyncBackupsDir    string            `db:"sync_backups_dir" json:"syncBackupsDir"`
+	AutoDeleteBackups bool              `db:"auto_delete_backups" json:"autoDeleteBackups"`
+	AutoDeleteDays    int               `db:"auto_delete_days" json:"autoDeleteDays"`
+	AutoSyncOnTrack   bool              `db:"auto_sync_on_track" json:"autoSyncOnTrack"`
+	MatchByAppID      bool              `db:"match_by_app_id" json:"matchByAppId"`
+	CustomScanPaths   []string          `db:"-" json:"customScanPaths"`
+	ExcludePaths      []string          `db:"-" json:"excludePaths"`
+	PathTranslations  []TranslationRule `db:"-" json:"pathTranslations"`
+	RelayURL          string            `db:"relay_url" json:"relayUrl"`
+	// RelayURLLocked reports that RelayURL came from the environment rather
+	// than the database, so nothing should offer to edit it. Not a column.
+	RelayURLLocked bool   `db:"-" json:"relayUrlLocked"`
+	SyncCode       string `db:"sync_code" json:"syncCode"`
+	// This device's long-lived X25519 identity. Generated once, on first
+	// need; see Store.DeviceIdentity. Never leaves the machine except for the
+	// public half, which is handed to a peer during pairing.
+	DevicePrivateKey    string `db:"device_private_key" json:"-"`
+	DevicePublicKey     string `db:"device_public_key" json:"-"`
+	HostRelay           bool   `db:"host_relay" json:"hostRelay"`
+	RelayPort           int    `db:"relay_port" json:"relayPort"`
+	StartOnBoot         bool   `db:"start_on_boot" json:"startOnBoot"`
+	SpeedLimitKbps      int    `db:"speed_limit_kbps" json:"speedLimit"`
+	UIMode              string `db:"ui_mode" json:"uiMode"`
+	DefaultMaxSnapshots int    `db:"default_max_snapshots" json:"defaultMaxSnapshots"`
 	// DefaultMaxManualSnapshots is the starting manual-snapshot budget for
 	// newly tracked games. 0 means keep them forever.
 	DefaultMaxManualSnapshots int `db:"default_max_manual_snapshots" json:"defaultMaxManualSnapshots"`
@@ -183,6 +192,27 @@ func (s *Store) ImportSettings(settings Settings) error {
 }
 
 // GetSettings returns the current settings row.
+// RelayURLEnv is the environment variable that pins the relay for this
+// device.
+//
+// Provisioning a machine otherwise means running `opensave config set
+// relay-url` by hand after the database exists, which is a poor fit for a
+// container or an image that is rebuilt: the setting lives in SQLite, so a
+// fresh volume loses it. Reading the environment on every load means the
+// answer is the same however the device was created, and a redeploy with a
+// changed URL takes effect rather than being quietly ignored.
+//
+// It is deliberately prefixed. A bare RELAY_URL is a name any number of other
+// things could already be using on a shared box, and silently redirecting
+// someone's sync traffic because of a collision is not a failure worth
+// risking to save eight characters.
+const RelayURLEnv = "OPENSAVE_RELAY_URL"
+
+// relayURLOverride returns the pinned relay URL, if one is set.
+func relayURLOverride() string {
+	return strings.TrimSpace(os.Getenv(RelayURLEnv))
+}
+
 func (s *Store) GetSettings() (Settings, error) {
 	var settings Settings
 	if err := s.db.Get(&settings, `SELECT * FROM settings WHERE id = 1`); err != nil {
@@ -190,6 +220,14 @@ func (s *Store) GetSettings() (Settings, error) {
 	}
 	if err := settings.unmarshalJSONColumns(); err != nil {
 		return Settings{}, err
+	}
+	// Applied here rather than at each call site so every reader — the sync
+	// engine, the CLI, the API feeding the window — agrees on which relay is
+	// in use. A UI showing the stored value while the engine dialled another
+	// would be the worst of both.
+	if url := relayURLOverride(); url != "" {
+		settings.RelayURL = url
+		settings.RelayURLLocked = true
 	}
 	return settings, nil
 }
@@ -199,6 +237,17 @@ func (s *Store) GetSettings() (Settings, error) {
 // creation/import time since peers on other devices key pairing records by
 // it.
 func (s *Store) UpdateSettings(settings Settings) error {
+	// With the environment in charge, the stored value is left exactly as it
+	// was. Every caller does read-modify-write, and GetSettings hands back the
+	// override — so without this, saving any unrelated setting would burn the
+	// environment's value into the database, and unsetting the variable later
+	// would leave the machine pointed somewhere it was never configured to go.
+	if relayURLOverride() != "" {
+		var stored string
+		if err := s.db.Get(&stored, `SELECT relay_url FROM settings WHERE id = 1`); err == nil {
+			settings.RelayURL = stored
+		}
+	}
 	if err := settings.marshalJSONColumns(); err != nil {
 		return err
 	}

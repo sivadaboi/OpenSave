@@ -351,12 +351,54 @@ func cmdExport(d *daemon.Daemon, args []string) int {
 	if err != nil {
 		return fail(asJSON, err)
 	}
+	// A game whose save is split across folders has to export all of them, or
+	// the copy someone made "to be safe" is missing half the game and says
+	// nothing about it.
+	//
+	// Each extra location goes to a SIBLING directory rather than inside the
+	// exported save. A folder named after a location could easily exist in the
+	// save tree already, and merging the two would produce a copy that cannot
+	// be told apart from the original.
+	type exportedLocation struct {
+		Name  string `json:"name"`
+		Path  string `json:"path"`
+		Files int    `json:"files"`
+		Bytes int64  `json:"bytes"`
+	}
+	var locations []exportedLocation
+	var unmapped []string
+	roots, rootsErr := d.Store.ListGameRoots(game.ID)
+	if rootsErr != nil {
+		roots = nil
+	}
+	for _, root := range roots {
+		if !root.Mapped() {
+			unmapped = append(unmapped, root.Name)
+			continue
+		}
+		sub := filepath.Join(args[1], sanitizeFileName(game.Name+" - "+root.Name))
+		files, size, err := copyTree(root.Path, sub)
+		if err != nil {
+			return fail(asJSON, fmt.Errorf("export the %q save location: %w", root.Name, err))
+		}
+		locations = append(locations, exportedLocation{Name: root.Name, Path: sub, Files: files, Bytes: size})
+		copied += files
+		bytes += size
+	}
+
 	if asJSON {
 		return emitJSON(map[string]any{
 			"game": game.Name, "destination": dest, "files": copied, "bytes": bytes,
+			"locations": locations, "unmappedLocations": unmapped,
 		})
 	}
 	fmt.Printf("Exported %d file(s), %s, to %s\n", copied, humanBytes(bytes), dest)
+	for _, loc := range locations {
+		fmt.Printf("  %s: %d file(s) to %s\n", loc.Name, loc.Files, loc.Path)
+	}
+	for _, name := range unmapped {
+		warning("The %q save location has no folder on this device, so it could not be exported.", name)
+	}
 	return 0
 }
 

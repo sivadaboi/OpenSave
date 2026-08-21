@@ -28,9 +28,36 @@ Emit machine\-readable JSON instead of formatted text. Accepted by every
 command, for use in scripts.
 .SH GAMES
 .TP
-.B scan
+.BR scan " [" --all ]
 Auto\-detect game saves on this machine: Steam libraries, Proton prefixes,
-emulators, and thousands of titles from the Ludusavi manifest.
+emulators, and thousands of titles from the Ludusavi manifest. Each result
+shows how many files the folder holds, how big it is, and when it was last
+written \(em which is what tells a save still in use from one an install left
+behind.
+.IP
+Folders holding no files are hidden, since Steam creates one for every game
+you own whether or not saves go there.
+.B --all
+lists them too, for tracking a folder before the game has first saved to it.
+.IP
+Results are listed one game at a time. A game found in more than one place has
+its other folders indented beneath it, each labelled as part of the same save,
+as already inside the folder above, or as another copy \(em usually one an
+install left behind. Every folder still gets its own number, so
+.B add
+takes the one you are looking at; joining several to one game is
+.BR "locations add" .
+.IP
+With
+.BR --json ,
+results come back in that same order \(em index
+.I n
+is what
+.BI "add " n
+tracks \(em each carrying its file count, size, last-written time, and the
+group id and role saying which rows are one game and what each folder is.
+.B measured
+false means the folder could not be read, which is not the same as empty.
 .TP
 .BI "add " "name path"
 Track a save folder or file.
@@ -103,10 +130,15 @@ Show current settings.
 Change a setting. Keys:
 .BR device-name ,
 .BR match-by-app-id ,
+.BR port ,
 .BR snapshot-limit ,
 .BR manual-snapshot-limit ,
 .BR relay-url ,
 .BR update-channel .
+.IP
+.B port
+is the local API and peer-to-peer port, 8383 by default; it takes effect the
+next time the daemon starts.
 .IP
 .B update-channel
 is
@@ -151,10 +183,54 @@ Undo a link, restoring the merged game as its own entry.
 .TP
 .BI "links " gameId
 Show the ids linked to a game.
+.TP
+.BI "ignore " gameId
+List the files excluded from syncing for a game.
+.TP
+.BI "ignore " "gameId add|remove pattern..."
+Stop, or resume, syncing files matching a pattern. Patterns are written like
+a .gitignore: a bare name matches at any depth, a leading / anchors to the top
+of the save folder, a trailing / means a folder and its contents, and a leading
+! re-includes something an earlier line excluded. Matching ignores case.
+.IP
+These rules decide what SYNCS and nothing else \(em excluded files are still
+captured in snapshots and restored by rollbacks, so an exclusion can never be
+the thing that loses one. Each device applies its own list; set the same
+patterns on both.
+.TP
+.BI "ignore " "gameId clear"
+Remove every pattern.
+.TP
+.BI "ignore " "gameId test path..."
+Report whether each path would sync under the current rules.
+.TP
+.BI "locations " gameId
+List a game's save locations \(em its main folder plus any extra ones.
+.TP
+.BI "locations add " "gameId name path"
+Add another folder to a game, for a title whose save is split across more than
+one place: the data in one folder, settings or mods in another. Use the SAME
+.I name
+on your other devices \(em the name is what the two sides match on, since the
+folder lives somewhere different on each machine. A folder that is the game's
+main save, or inside it, is refused: its files are covered already, and two
+locations describing the same files fight over them.
+.TP
+.BI "locations remove " "gameId name"
+Stop covering one. Its files are left exactly where they are.
 .SH SERVICE
 .TP
-.BR "daemon start " [ --port " " \fIN\fR ]
+.BR "daemon start " [ --port " " \fIN\fR | --port " " auto ]
 Run the daemon in the foreground: REST API, save watcher and peer sync.
+Without
+.B --port
+it uses the configured port, 8383 unless changed.
+.B "--port auto"
+takes whatever the system has free, which is the quick way past a clash; the
+port it settles on is written to
+.I ~/.opensave/daemon.addr
+so the CLI still finds it. To move off 8383 for good, use
+.BR "config set port" .
 .TP
 .B daemon status
 Report whether a daemon is running and where.

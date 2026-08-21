@@ -75,20 +75,20 @@ func TestAdversarial_AwkwardFilenamesSurviveASnapshotRoundTrip(t *testing.T) {
 	td := testutil.NewTestDaemon(t, "AwkwardNames")
 
 	files := map[string]string{
-		"plain.sav":                 "plain",
-		"with spaces.sav":           "spaces",
-		"UPPER.SAV":                 "upper",
-		"dots.in.name.sav":          "dots",
-		"dash-and_underscore.sav":   "dashes",
-		"parens(1).sav":             "parens",
-		"unicode-日本語.sav":           "japanese",
-		"emoji-🎮.sav":               "emoji",
-		"accented-café.sav":         "accents",
-		"nested/deep/inner/x.sav":   "nested",
-		"'quoted'.sav":              "quotes",
-		"#hash.sav":                 "hash",
-		"percent%20.sav":            "percent",
-		"plus+sign.sav":             "plus",
+		"plain.sav":               "plain",
+		"with spaces.sav":         "spaces",
+		"UPPER.SAV":               "upper",
+		"dots.in.name.sav":        "dots",
+		"dash-and_underscore.sav": "dashes",
+		"parens(1).sav":           "parens",
+		"unicode-日本語.sav":         "japanese",
+		"emoji-🎮.sav":             "emoji",
+		"accented-café.sav":       "accents",
+		"nested/deep/inner/x.sav": "nested",
+		"'quoted'.sav":            "quotes",
+		"#hash.sav":               "hash",
+		"percent%20.sav":          "percent",
+		"plus+sign.sav":           "plus",
 	}
 	for rel, content := range files {
 		td.WriteSave(rel, content)
@@ -127,9 +127,7 @@ func TestAdversarial_EmptyFilesAndDirectoriesSurvive(t *testing.T) {
 	snapID := snapshotOf(td, gameID, "with empties")
 
 	// Remove everything, then restore.
-	if err := os.RemoveAll(td.SaveDir); err != nil {
-		t.Fatal(err)
-	}
+	testutil.RemoveTree(t, td.SaveDir)
 	td.API(http.MethodPost, "/api/games/"+gameID+"/rollback",
 		map[string]string{"snapshotId": snapID}, nil)
 
@@ -197,9 +195,7 @@ func TestAdversarial_ManyFilesRoundTrip(t *testing.T) {
 	gameID := td.TrackGame("ManyFilesGame")
 	snapID := snapshotOf(td, gameID, "all of them")
 
-	if err := os.RemoveAll(td.SaveDir); err != nil {
-		t.Fatal(err)
-	}
+	testutil.RemoveTree(t, td.SaveDir)
 	td.API(http.MethodPost, "/api/games/"+gameID+"/rollback",
 		map[string]string{"snapshotId": snapID}, nil)
 

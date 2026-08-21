@@ -32,10 +32,14 @@ func (s *Server) routes(r chi.Router) {
 
 	r.Get("/api/games/{gameId}/aliases", s.handleListAliases)
 	r.Post("/api/games/{gameId}/link", s.handleLinkGame)
+	r.Get("/api/games/{gameId}/roots", s.handleListGameRoots)
+	r.Post("/api/games/{gameId}/roots", s.handleAddGameRoot)
+	r.Delete("/api/games/{gameId}/roots/{root}", s.handleRemoveGameRoot)
 	r.Delete("/api/games/{gameId}/alias/{aliasId}", s.handleUnlinkGame)
 
 	r.Post("/api/games/{gameId}/snapshot", s.handleCreateSnapshot)
 	r.Post("/api/games/{gameId}/rollback", s.handleRollback)
+	r.Get("/api/games/{gameId}/save-files", s.handleGameSaveFiles)
 	r.Get("/api/games/{gameId}/snapshot/{snapshotId}/files", s.handleSnapshotFiles)
 	r.Post("/api/games/{gameId}/snapshot/{snapshotId}/restore-file", s.handleRestoreFile)
 	r.Delete("/api/games/{gameId}/snapshot/{snapshotId}", s.handleDeleteSnapshot)
@@ -140,6 +144,23 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if prev, err := s.Daemon.Store.GetSettings(); err == nil {
 		prevSyncCode, prevRelayURL, prevStartOnBoot = prev.SyncCode, prev.RelayURL, prev.StartOnBoot
 		prevHostRelay, prevRelayPort = prev.HostRelay, prev.RelayPort
+	}
+
+	// Refuse a cleartext relay before it is stored, not at the dial: saves
+	// carry no encryption of their own, so ws:// to somewhere public puts the
+	// file itself on the wire in the clear.
+	//
+	// Only when the address actually changes. This screen saves every field at
+	// once, so validating unconditionally would mean somebody who already has
+	// a ws:// relay stored — from a build that let them — could no longer edit
+	// their device name, or anything else, until they noticed the relay was
+	// the real complaint. Grandfathering the stored value keeps the rule on
+	// new input, which is where it belongs.
+	if current.RelayURL != prevRelayURL {
+		if err := store.ValidateRelayURL(current.RelayURL); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	if err := s.Daemon.Store.UpdateSettings(current); err != nil {
@@ -299,6 +320,7 @@ func (s *Server) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 
 	oldSavePath := game.SavePath
 	oldAutoSync := game.AutoSync
+	oldIgnore := game.SyncIgnore
 	if err := readJSON(r, &game); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -309,6 +331,38 @@ func (s *Server) handleUpdateGame(w http.ResponseWriter, r *http.Request) {
 	// AppID — so changing the AppID refreshes the art.
 	if game.CoverURL == "" || isSteamCover(game.CoverURL) {
 		game.CoverURL = daemon.SteamCoverURL(game.AppID)
+	}
+
+	if game.SyncIgnore != oldIgnore {
+		// The merge bases were computed over a save that included files the
+		// new rules exclude, so neither device could ever match them again —
+		// which reads as permanent divergence and prompts a conflict on every
+		// sync, over files nobody is syncing. The next sync re-establishes
+		// agreement over the new view.
+		// Rebased, not cleared. The stored base was a hash of a save that
+		// included files the new rules exclude, so neither device can match it
+		// again — but the two DID agree a moment ago, and taking files out of
+		// consideration leaves them still agreeing on what remains. Writing
+		// today's filtered hash says exactly that.
+		//
+		// Clearing it instead would drop conflict detection onto its
+		// mtime-based fallback, where a device that merely RECEIVED files in
+		// the last sync looks freshly modified — and the first sync after
+		// adding an exclusion would prompt about a divergence that does not
+		// exist.
+		if err := s.Daemon.Store.RebaseAgreedHashesForGame(gameID,
+			s.Daemon.P2P.Sync.FilteredContentHash(gameID, game)); err != nil {
+			s.Daemon.Log.Log("warn", fmt.Sprintf(
+				"could not reset sync agreement for %q after its exclusions changed: %v", game.Name, err))
+		}
+		// The last-snapshot hash goes too, for exactly the same reason: it was
+		// recorded over the old view, and the sync engine compares against it
+		// to decide whether the save holds changes a pull would overwrite. A
+		// value that can never match again makes that check fire on every
+		// pull. Clearing it disables the check until the next snapshot
+		// re-records it, which is the safe direction — it can cost one
+		// unnecessary prompt, never a silent overwrite.
+		game.LastManifestHash = ""
 	}
 
 	if err := s.Daemon.Store.UpdateGame(game); err != nil {
@@ -584,6 +638,14 @@ func (s *Server) handlePresetScan(w http.ResponseWriter, r *http.Request) {
 	}
 	found := s.Daemon.Scanner.Scan(settings.CustomScanPaths)
 	found = presets.FilterExcluded(found, settings.ExcludePaths)
+	// Measured after excluding, so the budget is spent only on locations that
+	// will actually be offered. Empty ones are reported, not dropped: the
+	// client hides them behind a toggle, and deciding that here would take
+	// away the only way to reach a folder a game has not written to yet.
+	presets.Measure(found)
+	// After measuring: which folder of a game is the one to track depends on
+	// which of them hold anything and when they were last written.
+	presets.Group(found)
 	if found == nil {
 		found = []presets.DiscoveredSave{} // never null on the wire
 	}

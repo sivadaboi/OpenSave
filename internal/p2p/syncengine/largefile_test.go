@@ -30,7 +30,7 @@ type instrumentedTransport struct {
 	failFrom int
 }
 
-func (t *instrumentedTransport) FetchBlocks(ctx context.Context, peer Peer, gameID, relPath string,
+func (t *instrumentedTransport) FetchBlocks(ctx context.Context, peer Peer, ref FileRef,
 	blockIndices []int, blockSize int) ([]BlockData, error) {
 
 	t.mu.Lock()
@@ -56,7 +56,7 @@ func (t *instrumentedTransport) FetchBlocks(ctx context.Context, peer Peer, game
 	if t.failFrom > 0 && call >= t.failFrom {
 		return nil, errors.New("peer went away mid-transfer")
 	}
-	return t.fakeTransport.FetchBlocks(ctx, peer, gameID, relPath, blockIndices, blockSize)
+	return t.fakeTransport.FetchBlocks(ctx, peer, ref, blockIndices, blockSize)
 }
 
 // A large save must reach disk as it arrives. The engine used to collect
