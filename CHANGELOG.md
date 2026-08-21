@@ -26,9 +26,10 @@ on the wire readable was accepted without comment. The check meant to stop two
 save locations owning the same file did nothing at all on Linux. And what the
 documentation said a relay could see was not what a relay can see.
 
-Thanks to **u/enigmacarpc**, who tested this release through its betas and
-stayed with each problem until it was actually understood rather than merely
-closed.
+### Thanks
+
+- **u/enigmacarpc** — tested this release through its betas, and stayed with
+  each problem until it was actually understood rather than merely closed.
 
 ### Security / safety
 
