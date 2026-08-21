@@ -281,12 +281,51 @@ if [ -n "$GOOGLE_SECRET_FILE" ]; then
 fi
 
 run systemctl daemon-reload
-run systemctl enable --now opensave-relay
+
+# An upgrade has to RESTART, not merely start.
+#
+# `enable --now` starts a stopped service and does nothing at all to a running
+# one. On a first install that is right. On an upgrade — the same command, the
+# same script, a machine that already has a relay — it leaves the old process
+# serving while the new binary sits on disk unused. The is-active check below
+# then passes, because the old process is perfectly alive, and the script says
+# "Service running" and exits 0.
+#
+# So the one case that most needs to work is the one that silently did not,
+# and nothing about the output gave it away: the only way to notice was to ask
+# the running relay its version from somewhere else. Reported by a maintainer
+# upgrading the public relay from 2.2.2, which went on serving 2.2.2 after a
+# successful-looking install of 2.3.0.
+#
+# Queried on a dry run too. It reads state and changes nothing, and a dry run
+# that always claimed "would start" would misreport the upgrade case — which
+# is the one worth previewing.
+was_running=0
+if systemctl is-active --quiet opensave-relay 2>/dev/null; then
+	was_running=1
+fi
+run systemctl enable opensave-relay
+if [ "$was_running" -eq 1 ]; then
+	say "Restarting the running relay to pick up the new binary"
+	run systemctl restart opensave-relay
+else
+	run systemctl start opensave-relay
+fi
+
 if [ "$DRY" -eq 0 ]; then sleep 1; fi
 if [ "$DRY" -eq 0 ]; then
 	systemctl is-active --quiet opensave-relay ||
 		die "the service did not start. Look at: journalctl -u opensave-relay -n 40"
-	say "Service running"
+	# Report the version actually being served, not the one just written to
+	# disk: those were the same thing right up until they were not, and the
+	# difference is the whole of the bug above.
+	running_version=$(curl -fsS -m 3 "http://127.0.0.1:$PORT/health" 2>/dev/null |
+		sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+	if [ -n "$running_version" ]; then
+		say "Service running (serving v$running_version)"
+	else
+		say "Service running"
+	fi
 fi
 
 # ── TLS, if a name was given ─────────────────────────────────────────
