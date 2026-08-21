@@ -12,7 +12,7 @@
     },
     {
       "source": "/relay.sh",
-      "destination": "https://raw.githubusercontent.com/Liquid-co/OpenSave/dev/packaging/relay/install-relay.sh",
+      "destination": "https://raw.githubusercontent.com/Liquid-co/OpenSave/main/packaging/relay/install-relay.sh",
       "permanent": false
     },
     {
