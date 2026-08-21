@@ -29,8 +29,15 @@ type Section struct {
 
 // Release is one "## [2.2.0] — 2026-07-26" block.
 type Release struct {
-	Version  string    `json:"version"`
-	Date     string    `json:"date,omitempty"`
+	Version string `json:"version"`
+	Date    string `json:"date,omitempty"`
+	// Intro is the prose between the version heading and the first section,
+	// one string per paragraph.
+	//
+	// It is what the release is actually about — every entry underneath is a
+	// detail of it — and it used to be dropped on the floor, so the app showed
+	// a wall of bullets with nothing saying what tied them together.
+	Intro    []string  `json:"intro,omitempty"`
 	Sections []Section `json:"sections"`
 }
 
@@ -70,6 +77,19 @@ func Parse(md string) []Release {
 		pending = nil
 	}
 
+	// Intro prose wraps across lines the same way bullets do, so it
+	// accumulates until a blank line ends the paragraph.
+	var intro *strings.Builder
+	commitIntro := func() {
+		if intro == nil {
+			return
+		}
+		if s := strings.TrimSpace(intro.String()); s != "" && cur != nil {
+			cur.Intro = append(cur.Intro, s)
+		}
+		intro = nil
+	}
+
 	for _, raw := range strings.Split(md, "\n") {
 		line := strings.TrimRight(raw, " \t\r")
 		trimmed := strings.TrimSpace(line)
@@ -77,6 +97,7 @@ func Parse(md string) []Release {
 		switch {
 		case strings.HasPrefix(trimmed, "## "):
 			commitPending()
+			commitIntro()
 			flushRelease()
 			v, date := parseReleaseHeading(strings.TrimPrefix(trimmed, "## "))
 			if v == "" {
@@ -89,6 +110,7 @@ func Parse(md string) []Release {
 				continue
 			}
 			commitPending()
+			commitIntro()
 			flushSection()
 			sec = &Section{Title: strings.TrimSpace(strings.TrimPrefix(trimmed, "### "))}
 
@@ -96,6 +118,9 @@ func Parse(md string) []Release {
 			if cur == nil {
 				continue
 			}
+			// A bullet ends the intro: prose after this point belongs to the
+			// entry above, not to the release.
+			commitIntro()
 			if sec == nil {
 				// Bullets before any "###" — keep them under an unnamed group
 				// rather than losing them.
@@ -106,15 +131,31 @@ func Parse(md string) []Release {
 
 		case trimmed == "":
 			commitPending()
+			commitIntro()
 
 		default:
 			// Wrapped continuation of the bullet above.
 			if pending != nil {
 				pending.Text += " " + trimmed
+				continue
 			}
+			// Prose before this release's first section: the summary saying
+			// what the release is about. Only collected while no section is
+			// open, so prose *inside* a section still belongs to the entry
+			// above and is not mistaken for a second introduction.
+			if cur == nil || sec != nil {
+				continue
+			}
+			if intro == nil {
+				intro = &strings.Builder{}
+			} else {
+				intro.WriteString(" ")
+			}
+			intro.WriteString(trimmed)
 		}
 	}
 	commitPending()
+	commitIntro()
 	flushRelease()
 	return releases
 }
