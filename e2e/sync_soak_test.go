@@ -30,6 +30,7 @@ func TestSoak_ManyAlternatingRoundsNeverConflict(t *testing.T) {
 	const rounds = 8
 	for round := 1; round <= rounds; round++ {
 		// A's turn.
+		testutil.SettleSync(t, gameID, a, b)
 		time.Sleep(syncSettleWindow)
 		want := fmt.Sprintf("a-round-%d", round)
 		a.WriteSave("slot1.sav", want)
@@ -43,6 +44,7 @@ func TestSoak_ManyAlternatingRoundsNeverConflict(t *testing.T) {
 		}
 
 		// B's turn.
+		testutil.SettleSync(t, gameID, a, b)
 		time.Sleep(syncSettleWindow)
 		want = fmt.Sprintf("b-round-%d", round)
 		b.WriteSave("slot1.sav", want)
@@ -92,6 +94,7 @@ func TestSoak_AddingAndDeletingFilesNeverConflicts(t *testing.T) {
 	for round := 1; round <= 4; round++ {
 		name := fmt.Sprintf("slot%d.sav", round)
 
+		testutil.SettleSync(t, gameID, a, b)
 		time.Sleep(syncSettleWindow)
 		a.WriteSave(name, "added by A")
 		if status, _ := syncTo(a, gameID, b.NodeID()); status == "conflict" {
@@ -116,6 +119,7 @@ func TestSoak_AddingAndDeletingFilesNeverConflicts(t *testing.T) {
 
 		// B removes it again; a deletion must propagate rather than being
 		// pulled back by the other side as a "missing" file.
+		testutil.SettleSync(t, gameID, a, b)
 		time.Sleep(syncSettleWindow)
 		b.RemoveSave(name)
 		if status, _ := syncTo(b, gameID, a.NodeID()); status == "conflict" {

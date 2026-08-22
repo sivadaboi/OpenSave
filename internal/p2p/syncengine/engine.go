@@ -128,6 +128,25 @@ func isGameNotFound(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
+// SyncBusy reports whether a sync for this game is running, or queued behind
+// one that is.
+//
+// It exists for tests, which otherwise have no way to know when a sync has
+// finished and resort to sleeping for a duration that looked long enough on
+// the machine it was written on. That duration is not a property of anything:
+// under the race detector the same work takes several times longer, the sleep
+// does not grow with it, and the next step begins while the previous one is
+// still running. The failure then lands somewhere unrelated — a file that
+// "never arrived" because it was still being sent.
+//
+// A queued sync counts as busy. It has not started, but it is going to, and
+// work that follows it would interleave with it exactly the same way.
+func (e *Engine) SyncBusy(gameID string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.activeSyncs[gameID] || e.pendingSyncs[gameID]
+}
+
 func (e *Engine) SyncGame(ctx context.Context, gameID string, onlinePeers []Peer) (map[string]Result, error) {
 	e.mu.Lock()
 	if e.activeSyncs[gameID] {
