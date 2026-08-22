@@ -44,8 +44,13 @@ type Settings struct {
 	// This device's long-lived X25519 identity. Generated once, on first
 	// need; see Store.DeviceIdentity. Never leaves the machine except for the
 	// public half, which is handed to a peer during pairing.
-	DevicePrivateKey    string `db:"device_private_key" json:"-"`
-	DevicePublicKey     string `db:"device_public_key" json:"-"`
+	DevicePrivateKey string `db:"device_private_key" json:"-"`
+	DevicePublicKey  string `db:"device_public_key" json:"-"`
+	// The vault this device belongs to, and which of its keys seals new data.
+	// Empty means no vault yet; see Store.EnsureVault. The keys themselves
+	// live in vault_keys, because a device keeps every key it has ever held.
+	VaultID             string `db:"vault_id" json:"-"`
+	VaultCurrentKeyID   string `db:"vault_current_key_id" json:"-"`
 	HostRelay           bool   `db:"host_relay" json:"hostRelay"`
 	RelayPort           int    `db:"relay_port" json:"relayPort"`
 	StartOnBoot         bool   `db:"start_on_boot" json:"startOnBoot"`

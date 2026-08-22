@@ -371,3 +371,33 @@ func RemoveTree(t *testing.T, path string) {
 	}
 	t.Fatalf("could not remove %s after retrying: %v", path, err)
 }
+
+// WaitSyncIdle blocks until no sync for this game is running or queued on this
+// device, and returns whether it got there.
+//
+// It replaces sleeping for a duration that "looked long enough". A fixed sleep
+// encodes how fast one machine was on one day: under the race detector the
+// same work takes several times longer, the sleep does not grow with it, and
+// the next step starts while the previous one is still in flight. What fails
+// then is not the sleep — it is an assertion further on, about a file that
+// "never arrived" when it was still being sent.
+//
+// Waiting on the condition costs nothing when the machine is quick and as long
+// as it needs when it is not.
+func (td *TestDaemon) WaitSyncIdle(gameID string) bool {
+	return WaitFor(60*time.Second, func() bool {
+		return !td.Daemon.P2P.Sync.SyncBusy(gameID)
+	})
+}
+
+// SettleSync waits for both devices to finish syncing a game, so the next step
+// of a test starts from a quiet system rather than mid-transfer.
+func SettleSync(t *testing.T, gameID string, devices ...*TestDaemon) {
+	t.Helper()
+	for i, d := range devices {
+		if !d.WaitSyncIdle(gameID) {
+			t.Fatalf("device %d still syncing %s after the wait — the previous step never finished, "+
+				"so anything asserted after this would be about a system still in motion", i, gameID)
+		}
+	}
+}

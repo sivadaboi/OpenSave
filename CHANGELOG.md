@@ -3,6 +3,53 @@
 All notable changes to OpenSave are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] — 2026-08-22
+
+Three things reported within a day of 2.3.0, and none of them lost anything —
+which is why they were hard to spot from the outside. A save that was applied
+correctly, a rule that was in force, a sign-in that was configured properly:
+in each case the work happened and the screen said otherwise.
+
+### Fixed
+
+- **Files that shouldn't sync stay on screen after you save them.** Setting
+  exclusions on a game, saving, then reopening Configuration showed an empty
+  box. The rules were never lost: they were stored, and every sync applied
+  them. Only the reply the screen reloads from left the field out, so it read
+  as blank while working exactly as set. The natural response is to type them
+  again, and each re-save wrote the same correct value while still looking
+  like it had failed. Reported on SteamOS.
+
+- **Your own Google OAuth app works with only a client ID entered.** Supplying
+  your own credentials is what we recommend to anyone hitting Google's
+  verification limits, and it failed in the configuration people were most
+  likely to try. Entering a client ID without a secret sent that ID to our
+  relay to be paired with *our* secret — the only one it has — and Google
+  refused the mismatch. The failure surfaced as a token error naming nothing
+  you could act on. Your own client now always goes straight to the provider,
+  and a Google client ID saved without its secret says so, and where to find
+  it.
+
+- **A sync no longer fails to repair a merge-base it could have repaired.**
+  After pushing, this device records what the peer was handed so a later sync
+  can prove the push landed. It was recording its own save as it stood at the
+  end of the sync instead — for a game that writes while it runs, a state the
+  peer was never offered and could never be seen holding. Nothing broke
+  visibly; a recovery simply never ran, and a merge-base stranded by a lost
+  confirmation stayed stranded.
+
+- **Upgrading a self-hosted relay actually replaces the running one.** The
+  installer starts the service if it is stopped, which does nothing to one
+  already running — so an upgrade wrote the new binary, reported success, and
+  left the old one serving. It now restarts a running relay, and reports the
+  version being served rather than the one just written to disk.
+
+### Added
+
+- **The app says what a release is about, not just what changed in it.** The
+  What's New screen listed the bullets and dropped the summary above them, for
+  every release. That summary is the part that explains what the rest is for.
+
 ## [2.3.0] — 2026-08-21
 
 Mostly about saves that were never in one folder to begin with. A game whose

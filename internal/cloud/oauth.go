@@ -56,12 +56,49 @@ func (s *Service) clientID(provider string) (string, error) {
 	return "", fmt.Errorf("no OAuth Client ID available for %q — configure one under Settings > Cloud Backup", provider)
 }
 
-func (s *Service) clientSecret(provider string) string {
+// tokenCreds gathers the credentials for a token request and decides whether
+// it goes through the relay's OAuth proxy or straight to the provider.
+//
+// The proxy exists so the built-in client's secret never ships inside the app:
+// the relay holds it, and pairs it with whatever client id it is handed. That
+// only works for OUR client id. Handed somebody else's, it pairs their id with
+// our secret and the provider rejects the mismatch.
+//
+// The routing therefore has to turn on whether the user supplied their own
+// client, not on whether they also supplied a secret — which is what it used
+// to do. Someone who entered only a client id, reasonably enough since the
+// flow is PKCE, was silently routed through the proxy and had their id paired
+// with our secret. Sign-in then failed inside a token exchange with nothing
+// pointing at the cause, and the workaround we recommend for the verification
+// limits was the thing that did not work.
+func (s *Service) tokenCreds(provider string) (clientID, secret string, viaProxy bool, err error) {
 	cfg, err := s.Store.GetCloudConfig()
 	if err != nil {
-		return ""
+		return "", "", false, err
 	}
-	return strings.TrimSpace(cfg.CustomClientSecrets[provider])
+	custom := strings.TrimSpace(cfg.CustomClientIDs[provider])
+	secret = strings.TrimSpace(cfg.CustomClientSecrets[provider])
+
+	if custom != "" {
+		// Their client. Never the proxy: it cannot serve one.
+		if provider == "google_drive" && secret == "" {
+			return "", "", false, fmt.Errorf(
+				"this device is set to use your own Google OAuth app, but no client secret is saved with it. " +
+					"Google needs both halves to exchange a sign-in for a token. Add the client secret under " +
+					"Settings > Cloud Backup (it is shown beside the client ID in Google Cloud Console, under " +
+					"APIs & Services > Credentials), or clear the client ID to go back to the built-in app")
+		}
+		return custom, secret, false, nil
+	}
+
+	builtin := defaultClientIDs[provider]
+	if builtin == "" {
+		return "", "", false, fmt.Errorf(
+			"no OAuth Client ID available for %q — configure one under Settings > Cloud Backup", provider)
+	}
+	// The built-in client. Any secret saved without a client id cannot belong
+	// to it, so it is left out rather than paired with an id it does not match.
+	return builtin, "", provider == "google_drive", nil
 }
 
 // AuthURL builds the provider's authorization page URL for the PKCE flow.
@@ -106,16 +143,15 @@ type tokenResponse struct {
 // ExchangeAuthCode swaps an authorization code for tokens and persists
 // them (with the account email) to the cloud config.
 func (s *Service) ExchangeAuthCode(provider, code, codeVerifier string) error {
-	clientID, err := s.clientID(provider)
+	clientID, secret, viaProxy, err := s.tokenCreds(provider)
 	if err != nil {
 		return err
 	}
-	secret := s.clientSecret(provider)
 
 	var tok tokenResponse
-	if provider == "google_drive" && secret == "" {
-		// Default Google credentials: exchange through the relay's OAuth
-		// proxy so the client secret stays server-side.
+	if viaProxy {
+		// The built-in Google client: exchange through the relay's OAuth
+		// proxy so its secret stays server-side.
 		tok, err = s.proxyTokenRequest(map[string]any{
 			"provider": provider, "client_id": clientID,
 			"grant_type": "authorization_code", "code": code,
@@ -194,14 +230,13 @@ func (s *Service) getOrRefreshAccessToken(provider string) (string, error) {
 		return "", fmt.Errorf("no refresh token available; re-authentication required")
 	}
 
-	clientID, err := s.clientID(provider)
+	clientID, secret, viaProxy, err := s.tokenCreds(provider)
 	if err != nil {
 		return "", err
 	}
-	secret := s.clientSecret(provider)
 
 	var tok tokenResponse
-	if provider == "google_drive" && secret == "" {
+	if viaProxy {
 		tok, err = s.proxyTokenRequest(map[string]any{
 			"provider": provider, "client_id": clientID,
 			"grant_type": "refresh_token", "refresh_token": cfg.RefreshToken,

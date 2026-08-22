@@ -1,6 +1,9 @@
 package changelog
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const sample = `# Changelog
 
@@ -118,4 +121,100 @@ func containsAny(s, sub string) bool {
 		}
 		return false
 	})()
+}
+
+// The prose under a version heading says what the release is about; the
+// entries beneath are details of it. Dropping it left the app showing a wall
+// of bullets with nothing tying them together.
+func TestParseKeepsReleaseIntro(t *testing.T) {
+	md := `# Changelog
+
+Preamble that belongs to no release and must stay ignored.
+
+## [2.3.0] — 2026-08-21
+
+First paragraph that wraps
+across two source lines.
+
+Second paragraph.
+
+### Fixed
+
+- **A thing.** Details.
+
+## [2.2.0] — 2026-08-01
+
+Older release intro.
+
+### Added
+
+- **Another.** More.
+`
+	rels := Parse(md)
+	if len(rels) != 2 {
+		t.Fatalf("got %d releases, want 2", len(rels))
+	}
+
+	if len(rels[0].Intro) != 2 {
+		t.Fatalf("2.3.0 intro = %#v, want 2 paragraphs", rels[0].Intro)
+	}
+	if want := "First paragraph that wraps across two source lines."; rels[0].Intro[0] != want {
+		t.Errorf("wrapped intro line not joined:\n got %q\nwant %q", rels[0].Intro[0], want)
+	}
+	if rels[0].Intro[1] != "Second paragraph." {
+		t.Errorf("second paragraph = %q", rels[0].Intro[1])
+	}
+	// The file preamble sits before any version heading and is not an intro.
+	for _, p := range rels[0].Intro {
+		if strings.Contains(p, "Preamble") {
+			t.Error("the file preamble leaked into a release intro")
+		}
+	}
+	if len(rels[1].Intro) != 1 || rels[1].Intro[0] != "Older release intro." {
+		t.Errorf("2.2.0 intro = %#v", rels[1].Intro)
+	}
+	// Sections must be unaffected.
+	if len(rels[0].Sections) != 1 || rels[0].Sections[0].Title != "Fixed" {
+		t.Errorf("sections changed: %#v", rels[0].Sections)
+	}
+}
+
+// Prose that wraps a bullet still belongs to that bullet, and prose after a
+// section has started is not a second introduction.
+func TestParseIntroStopsAtFirstSection(t *testing.T) {
+	md := `## [1.0.0] — 2026-01-01
+
+The intro.
+
+### Fixed
+
+- **Lead.** Body text
+  wrapping onward.
+
+  A second paragraph of the same bullet.
+`
+	rels := Parse(md)
+	if len(rels) != 1 {
+		t.Fatalf("got %d releases", len(rels))
+	}
+	if len(rels[0].Intro) != 1 || rels[0].Intro[0] != "The intro." {
+		t.Fatalf("intro = %#v, want just the pre-section prose", rels[0].Intro)
+	}
+	for _, p := range rels[0].Intro {
+		if strings.Contains(p, "second paragraph") {
+			t.Error("prose inside a section was captured as release intro")
+		}
+	}
+}
+
+// A release with no prose must report none rather than an empty string, so
+// the UI can tell "no intro" from "an empty one".
+func TestParseNoIntroIsNil(t *testing.T) {
+	rels := Parse("## [1.0.0] — 2026-01-01\n\n### Fixed\n\n- **A.** B.\n")
+	if len(rels) != 1 {
+		t.Fatalf("got %d releases", len(rels))
+	}
+	if rels[0].Intro != nil {
+		t.Errorf("intro = %#v, want nil", rels[0].Intro)
+	}
 }

@@ -52,5 +52,15 @@ jobs:
       # runner, and the failures that produces look like real regressions:
       # build steps failing in packages the change never touched. Reproduced
       # locally — the same suite passes with -p 1 and fails without it.
+      # The e2e package took 1713s of the 1800s budget on Windows before this
+      # was raised — 95% of it, with a suite whose runtime moves with the
+      # runner. Adding ninety seconds of legitimate waiting to two tests took
+      # it to 1806s and the whole job failed on a six-second overrun, which
+      # says nothing about the change that caused it.
+      #
+      # 2700s is headroom rather than a target. If the suite ever approaches
+      # it the answer is a faster suite, not another raise: this is the second
+      # time the number has moved, and a timeout that only ever grows stops
+      # being a check on anything.
       - name: Test (race detector)
-        run: go test ./... -race -p 2 -timeout 1800s
+        run: go test ./... -race -p 2 -timeout 2700s

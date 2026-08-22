@@ -358,6 +358,7 @@ func (s *Server) gamePayload(g store.Game) map[string]any {
 		"appId":              g.AppID,
 		"exePath":            g.ExePath,
 		"coverUrl":           g.CoverURL,
+		"syncIgnore":         g.SyncIgnore,
 		"branches":           branches,
 		"createdAt":          g.CreatedAt,
 	}

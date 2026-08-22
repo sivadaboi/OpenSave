@@ -27,6 +27,12 @@ type fakeTransport struct {
 	deletedOnPeer []string
 	pullTriggers  int
 	syncEvents    []string
+
+	// onTriggerPull runs when the engine tells the peer to pull. That is the
+	// only moment a test can stand in the gap between "the peer takes our
+	// state" and "this side finishes the sync" — the window a game that saves
+	// continuously writes into.
+	onTriggerPull func()
 }
 
 func (f *fakeTransport) FetchManifest(ctx context.Context, peer Peer, gameID string, q ManifestQuery) (ManifestResponse, error) {
@@ -82,7 +88,11 @@ func (f *fakeTransport) DeleteRemote(ctx context.Context, peer Peer, ref FileRef
 func (f *fakeTransport) TriggerPeerPull(peer Peer, gameID string) {
 	f.mu.Lock()
 	f.pullTriggers++
+	cb := f.onTriggerPull
 	f.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
 }
 
 func (f *fakeTransport) ReportSyncEvent(peer Peer, gameID, eventType string, data map[string]any) {

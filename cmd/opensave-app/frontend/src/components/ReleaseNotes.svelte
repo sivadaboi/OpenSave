@@ -46,6 +46,14 @@
         {#if rel.date}<span class="date">{rel.date}</span>{/if}
       </header>
 
+      {#if rel.intro}
+        <div class="intro">
+          {#each rel.intro as para}
+            <p>{#each segments(para) as seg}{#if seg.code}<code>{seg.value}</code>{:else}{seg.value}{/if}{/each}</p>
+          {/each}
+        </div>
+      {/if}
+
       {#each rel.sections as sec}
         <div class="group">
           {#if sec.title}
@@ -95,6 +103,21 @@
   .date {
     font-size: 0.78rem;
     color: var(--text-faint);
+  }
+  /* The release summary. Set slightly larger and softer than the entries
+     below it: it is the thing to read first, and the bullets are its
+     detail, so it should not compete with them for emphasis. */
+  .intro {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .intro p {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.55;
+    color: var(--text-muted, var(--text-faint));
   }
   .group {
     display: flex;

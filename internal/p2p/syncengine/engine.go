@@ -128,6 +128,25 @@ func isGameNotFound(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
+// SyncBusy reports whether a sync for this game is running, or queued behind
+// one that is.
+//
+// It exists for tests, which otherwise have no way to know when a sync has
+// finished and resort to sleeping for a duration that looked long enough on
+// the machine it was written on. That duration is not a property of anything:
+// under the race detector the same work takes several times longer, the sleep
+// does not grow with it, and the next step begins while the previous one is
+// still running. The failure then lands somewhere unrelated — a file that
+// "never arrived" because it was still being sent.
+//
+// A queued sync counts as busy. It has not started, but it is going to, and
+// work that follows it would interleave with it exactly the same way.
+func (e *Engine) SyncBusy(gameID string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.activeSyncs[gameID] || e.pendingSyncs[gameID]
+}
+
 func (e *Engine) SyncGame(ctx context.Context, gameID string, onlinePeers []Peer) (map[string]Result, error) {
 	e.mu.Lock()
 	if e.activeSyncs[gameID] {
@@ -437,7 +456,30 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	}
 
 	// 9. Trigger a reciprocal pull when we hold newer content.
+	//
+	// handedOver is the state the peer is about to take, captured BEFORE it is
+	// told to pull. It becomes the push record, and it has to be read here
+	// rather than after the sync: the whole point of that record is to be a
+	// hash the peer can later be observed holding, and a save re-read at the
+	// end of the sync has already moved on for any game that writes while it
+	// is running — which is the case the record exists for. A hash this device
+	// reached after the peer had pulled names a state nobody else ever held,
+	// so the repair that looks for it can never fire.
+	//
+	// It costs one extra walk of the save folder, on push syncs only. Reading
+	// it is the only way to be accurate: local files changed in steps 6-8, so
+	// neither the decision-time manifest nor the post-sync one describes what
+	// the peer is being offered.
+	//
+	// Still an approximation — the peer pulls asynchronously and could take a
+	// newer state than this. That direction is safe: a push record that no
+	// longer matches simply fails to redeem the base, whereas the repair only
+	// ever acts on an exact match with what the peer reports holding.
+	var handedOver string
 	if decision.HasPush() {
+		if m, err := delta.BuildManifest(game.SavePath); err == nil {
+			handedOver = m.ManifestHash()
+		}
 		e.Log("info", fmt.Sprintf("local has newer content; triggering %q to pull", peer.Name))
 		e.Transport.TriggerPeerPull(peer, gameID)
 	}
@@ -467,10 +509,17 @@ func (e *Engine) SyncWithPeer(ctx context.Context, gameID string, peer Peer) (Re
 	// every subsequent one-sided edit into a false conflict. So record what
 	// was handed over, and let the next sync prove the push landed by
 	// observing the peer holding exactly it.
-	if !decision.HasPush() &&
-		len(decision.FilesToDeleteOnPeer) == 0 && len(decision.DirsToDeleteOnPeer) == 0 {
+	switch {
+	case !decision.HasPush() &&
+		len(decision.FilesToDeleteOnPeer) == 0 && len(decision.DirsToDeleteOnPeer) == 0:
 		_ = e.Store.SetAgreedHash(gameID, peer.ID, remoteData.Manifest.ManifestHash())
-	} else if freshErr == nil {
+	case handedOver != "":
+		// What the peer was actually offered, from step 9.
+		_ = e.Store.SetPushedHash(gameID, peer.ID, handedOver)
+	case freshErr == nil:
+		// Peer-side deletions with no push: nothing was handed over, so the
+		// state after this sync is the best description of where the peer is
+		// being asked to end up.
 		_ = e.Store.SetPushedHash(gameID, peer.ID, freshManifest.ManifestHash())
 	}
 
