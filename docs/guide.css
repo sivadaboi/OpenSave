@@ -500,3 +500,19 @@
     padding-left: 44px;
   }
 }
+
+/* ---- Plain prose page (no contents sidebar) ---- */
+
+/* Privacy is one column of prose with nothing beside it. The shell above is
+   deliberately wide because its leftover width goes to a sidebar — the comment
+   at --measure explains why constraining the page itself is wrong when there
+   IS one. With no sidebar that leftover has no job, and the prose either runs
+   to 150 characters or sits as a narrow ribbon against a very wide shell.
+   So this narrows the SHELL, and leaves the measure doing its usual work. */
+.guide-plain .guide-wrap {
+  max-width: calc(var(--measure) + 220px);
+}
+.guide-plain .guide-main p,
+.guide-plain .guide-main li {
+  max-width: var(--measure);
+}
