@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy — OpenSave</title>
+  <meta name="description" content="OpenSave has no accounts and no telemetry. What stays on your machine, what leaves it, and why — every outbound request listed in full.">
+  <meta property="og:title" content="Privacy — OpenSave">
+  <meta property="og:description" content="No accounts, no telemetry. Every outbound request OpenSave makes, listed.">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://www.opensave.org/privacy.html">
+  <link rel="canonical" href="https://www.opensave.org/privacy.html">
+  <meta property="og:image" content="https://opensave.org/screenshots/home-library.png">
+  <meta name="theme-color" content="#0c0c0d">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" sizes="48x48" href="favicon-48x48.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192x192.png">
+  <link rel="apple-touch-icon" href="favicon-192x192.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="guide.css?v=6">
+</head>
+<body class="guide-page guide-plain">
+
+  <div class="ambient-layer" aria-hidden="true">
+    <div class="ambient-glow glow-1"></div>
+  </div>
+
+  <header class="navbar">
+    <div class="nav-container">
+      <a class="logo" href="index.html" aria-label="OpenSave home">
+        <img src="icon.png?v=2" alt="" class="logo-img">
+        <span class="logo-text">Open<span>Save</span></span>
+      </a>
+      <nav class="nav-links" id="nav-links">
+        <a href="index.html#features">Features</a>
+        <a href="index.html#how">How it works</a>
+        <a href="index.html#docs">Docs</a>
+        <a href="index.html#faq">FAQ</a>
+        <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="discord-link">
+          <svg viewBox="0 0 24 18" width="16" height="12" aria-hidden="true"><path fill="currentColor" d="M20.32 1.53A19.8 19.8 0 0 0 15.43 0c-.21.38-.46.9-.63 1.31a18.3 18.3 0 0 0-5.6 0C9.03.9 8.77.38 8.56 0A19.74 19.74 0 0 0 3.67 1.53C.57 6.19-.27 10.73.15 15.21A19.9 19.9 0 0 0 6.18 18c.49-.66.92-1.37 1.29-2.11-.71-.27-1.39-.6-2.03-.98.17-.13.34-.26.5-.4a14.2 14.2 0 0 0 12.12 0c.16.14.33.27.5.4-.64.38-1.32.71-2.03.98.37.74.8 1.45 1.29 2.11a19.87 19.87 0 0 0 6.03-2.79c.5-5.19-.84-9.69-3.53-13.68ZM8.02 12.46c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Zm7.96 0c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Z"/></svg>
+          Discord
+        </a>
+        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="donate-link">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-10.2-9.6C.4 8.5 1.7 5 5.1 4.2c2-.5 4 .3 5.1 2 .9-1.7 3-2.5 5-2 3.4.8 4.7 4.3 3.3 7.2C19.5 16.4 12 21 12 21z"/></svg>
+          Donate
+        </a>
+        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener" class="github-link">
+          <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+          GitHub
+        </a>
+        <a href="https://github.com/Liquid-co/OpenSave/releases/latest" target="_blank" rel="noopener" class="nav-cta">Download</a>
+      </nav>
+      <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <div class="guide-wrap">
+
+      <div class="guide-header">
+        <div class="guide-eyebrow">Privacy</div>
+        <h1>What OpenSave does with your data.</h1>
+        <p class="guide-lede">
+          Short version: it runs on your own machines, has no accounts, and collects
+          nothing about you. The detail below is the whole of it.
+        </p>
+      </div>
+
+      <div class="guide-main">
+          <p>
+            OpenSave is designed to be private by default. It is a self-contained tool
+            that runs entirely on your own devices.
+          </p>
+
+          <h2 id="not-done">What OpenSave does not do</h2>
+          <ul>
+            <li><strong>No accounts.</strong> There is no sign-up, login, or user profile.</li>
+            <li><strong>No telemetry.</strong> OpenSave does not collect analytics, usage data, or
+              crash reports, and never phones home with anything about you. It does make a few
+              functional network requests (an update check, and looking up game names and cover
+              art while scanning) — these are listed in full under
+              <a href="#requests">Outbound network requests</a> below.</li>
+            <li><strong>No third-party save storage.</strong> Your saves are never uploaded
+              anywhere unless you explicitly enable Cloud Backup and choose a provider.</li>
+          </ul>
+
+          <h2 id="where">Where your data lives</h2>
+          <ul>
+            <li><strong>Saves &amp; snapshots</strong> stay on your own machine, in the folders you
+              configure under Settings → Storage.</li>
+            <li><strong>Peer-to-peer sync</strong> transfers save data directly between your paired
+              devices — over your LAN, or over the internet through a relay.</li>
+            <li><strong>The relay</strong> (whether the default public relay or one you self-host)
+              only routes WebSocket frames between paired devices. It writes no save to disk and
+              keeps nothing once a device disconnects.</li>
+          </ul>
+          <p>
+            The connection to it is encrypted, but that encryption ends at the relay rather than at
+            your other device: save data is not sealed end-to-end yet, so whoever operates a relay
+            is in a position to read what passes through it. Ours is
+            <code>wss://relay.opensave.org</code>, running on hardware the project rents. If you
+            would rather not take our word for how it behaves, self-hosting one is a single
+            command, and LAN sync never involves a relay at all.
+          </p>
+
+          <h2 id="requests">Outbound network requests</h2>
+          <p>
+            Beyond peer-to-peer sync and any Cloud Backup you enable, OpenSave makes a small number
+            of functional requests. None of them include an account, your name, or the contents of
+            your saves. Some do send a game's Steam <strong>App ID</strong>, which identifies the
+            <em>game</em> (not you) so its name or cover art can be looked up:
+          </p>
+          <ul>
+            <li><strong>Update check</strong> — queries the GitHub Releases API to see whether a
+              newer version exists. Sends nothing about you.</li>
+            <li><strong>Game names (Auto-scan)</strong> — asks Steam's public store API to turn a
+              detected App ID into a display name.</li>
+            <li><strong>Save-path database (Auto-scan)</strong> — downloads the
+              community-maintained Ludusavi manifest (a static file hosted on GitHub) to help
+              locate saves. Sends nothing about you.</li>
+            <li><strong>Cover art</strong> — fetched from Steam's image CDN by App ID and then
+              cached on your device. If your network blocks Steam directly (some campus or office
+              networks do), OpenSave automatically retries through a public image proxy,
+              <a href="https://images.weserv.nl" target="_blank" rel="noopener">images.weserv.nl</a>,
+              which fetches the same public cover image on your behalf — so the App ID is visible
+              to that proxy in that case. Cover art is not your save data.</li>
+          </ul>
+          <p>
+            These happen while you scan for games or view your library, not continuously in the
+            background, and results are cached so they aren't repeated.
+          </p>
+
+          <h2 id="cloud">Optional cloud backup</h2>
+          <p>
+            If you turn on Cloud Backup, snapshots are uploaded to the provider you choose (Google
+            Drive, Dropbox, OneDrive, WebDAV, a webhook, or a local/NAS folder) using credentials
+            you authorize. OAuth tokens are stored locally on your device and are never sent to the
+            OpenSave project. Disconnecting a provider removes its stored tokens.
+          </p>
+
+          <h2 id="pairing">Pairing &amp; trust</h2>
+          <p>
+            Devices only sync after an explicit pairing approval. You can unpair a device at any
+            time from the Devices screen, which stops all sync with it.
+          </p>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <img src="icon.png?v=2" alt="" class="logo-img">
+        <span class="logo-text">Open<span>Save</span></span>
+      </div>
+      <nav class="footer-links">
+        <a href="getting-started.html">Guide</a>
+        <a href="compare.html">Compare</a>
+        <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="footer-discord">Discord</a>
+        <a href="https://opensave.gumroad.com/l/usygu" target="_blank" rel="noopener" class="footer-donate">Donate</a>
+        <a href="https://github.com/Liquid-co/OpenSave" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="cli.html">CLI</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="https://github.com/Liquid-co/OpenSave/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener">Report a bug</a>
+      </nav>
+      <p class="footer-note">MIT licensed. No accounts. No telemetry. Made for people who love their saves.</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

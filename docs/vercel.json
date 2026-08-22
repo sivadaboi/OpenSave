@@ -1,6 +1,11 @@
 {
   "redirects": [
     {
+      "source": "/privacy",
+      "destination": "/privacy.html",
+      "permanent": false
+    },
+    {
       "source": "/install.sh",
       "destination": "https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh",
       "permanent": false

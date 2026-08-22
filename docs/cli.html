@@ -8,17 +8,20 @@
   <meta property="og:title" content="OpenSave CLI — the whole app, without the window">
   <meta property="og:description" content="Auto-detect saves, pair devices, sync, snapshot and resolve conflicts from a terminal. One binary. Perfect for Steam Deck Game Mode and headless servers.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://open-save.vercel.app/cli.html">
-  <meta property="og:image" content="https://open-save.vercel.app/screenshots/home-library.png">
+  <meta property="og:url" content="https://www.opensave.org/cli.html">
+  <link rel="canonical" href="https://www.opensave.org/cli.html">
+  <meta property="og:image" content="https://opensave.org/screenshots/home-library.png">
   <meta name="theme-color" content="#0c0c0d">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="icon" type="image/png" href="icon.png?v=2">
+  <link rel="icon" type="image/png" sizes="48x48" href="favicon-48x48.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192x192.png">
+  <link rel="apple-touch-icon" href="favicon-192x192.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
   <!-- ===== STATUS BANNER: relay moved to its own domain. REMOVE once 2.3.0 has shipped. ===== -->
@@ -61,11 +64,9 @@
         <span class="logo-text">Open<span>Save</span></span>
       </a>
       <nav class="nav-links" id="nav-links">
-        <a href="index.html#showcase">Screenshots</a>
         <a href="index.html#features">Features</a>
         <a href="index.html#how">How it works</a>
-        <a href="getting-started.html">Guide</a>
-        <a href="cli.html" class="is-active">CLI</a>
+        <a href="index.html#docs">Docs</a>
         <a href="index.html#faq">FAQ</a>
         <a href="https://discord.gg/hvBv92DZvn" target="_blank" rel="noopener" class="discord-link">
           <svg viewBox="0 0 24 18" width="16" height="12" aria-hidden="true"><path fill="currentColor" d="M20.32 1.53A19.8 19.8 0 0 0 15.43 0c-.21.38-.46.9-.63 1.31a18.3 18.3 0 0 0-5.6 0C9.03.9 8.77.38 8.56 0A19.74 19.74 0 0 0 3.67 1.53C.57 6.19-.27 10.73.15 15.21A19.9 19.9 0 0 0 6.18 18c.49-.66.92-1.37 1.29-2.11-.71-.27-1.39-.6-2.03-.98.17-.13.34-.26.5-.4a14.2 14.2 0 0 0 12.12 0c.16.14.33.27.5.4-.64.38-1.32.71-2.03.98.37.74.8 1.45 1.29 2.11a19.87 19.87 0 0 0 6.03-2.79c.5-5.19-.84-9.69-3.53-13.68ZM8.02 12.46c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Zm7.96 0c-1.18 0-2.15-1.08-2.15-2.4s.95-2.4 2.15-2.4c1.2 0 2.17 1.09 2.15 2.4 0 1.32-.95 2.4-2.15 2.4Z"/></svg>
@@ -89,7 +90,7 @@
 
   <!-- ===================== HERO ===================== -->
   <section class="hero cli-hero" id="top">
-    <div class="hero-container">
+    <div class="hero-copy">
       <div class="hero-eyebrow">
         <span class="badge-dot"></span> Command line · Windows, Linux &amp; Steam Deck
       </div>
@@ -104,10 +105,13 @@
         <a href="#install" class="btn-primary">Install it</a>
         <a href="#five-minutes" class="btn-secondary">See it work</a>
       </div>
+    </div>
 
-      <!-- Screenshot: `opensave` with no arguments — the status panel. -->
-      <figure class="hero-shot cli-shot">
-        <div class="app-window">
+    <!-- Screenshot: `opensave` with no arguments — the status panel.
+         Outside .hero-copy so it keeps the full width; the copy above it
+         is a 720px centred column. -->
+    <figure class="hero-shot cli-shot">
+      <div class="app-window">
           <div class="win-bar">
             <div class="win-dots"><span></span><span></span><span></span></div>
             <span class="win-title">opensave</span>
@@ -117,8 +121,7 @@
                width="820" height="683" loading="eager">
         </div>
         <figcaption>Type <code>opensave</code> on its own and it tells you what's happening right now, plus what to do next.</figcaption>
-      </figure>
-    </div>
+    </figure>
   </section>
 
   <!-- ===================== WHO IT'S FOR ===================== -->
@@ -135,7 +138,7 @@
 
       <div class="features-grid">
         <article class="feature-card">
-          <div class="feature-icon">🎮</div>
+          <div class="feature-icon">headless</div>
           <h3>A Steam Deck in Game Mode</h3>
           <p>
             Game Mode is not a desktop. Switching out to click a sync button and back again is
@@ -146,7 +149,7 @@
         </article>
 
         <article class="feature-card">
-          <div class="feature-icon">🖥️</div>
+          <div class="feature-icon">server</div>
           <h3>A machine with no screen</h3>
           <p>
             A home server, a NAS, or an old PC acting as the always-on device your laptop and
@@ -156,7 +159,7 @@
         </article>
 
         <article class="feature-card">
-          <div class="feature-icon">⌨️</div>
+          <div class="feature-icon">terminal</div>
           <h3>You just prefer the terminal</h3>
           <p>
             Some people are simply faster in a shell. Every command speaks <code>--json</code>
@@ -230,7 +233,7 @@
           <div class="win-dots"><span></span><span></span><span></span></div>
           <div class="win-title">install — Linux &amp; Steam Deck</div>
         </div>
-        <pre class="terminal-body"><span class="t-prompt">$</span> curl -fsSL https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.sh | sh</pre>
+        <pre class="terminal-body"><span class="t-prompt">$</span> curl -fsSL https://get.opensave.org/install.sh | sh</pre>
       </div>
 
       <h4 class="cli-sub">Windows (PowerShell)</h4>
@@ -239,7 +242,7 @@
           <div class="win-dots"><span></span><span></span><span></span></div>
           <div class="win-title">install — Windows PowerShell</div>
         </div>
-        <pre class="terminal-body"><span class="t-prompt">&gt;</span> irm https://raw.githubusercontent.com/Liquid-co/OpenSave/main/scripts/install.ps1 | iex</pre>
+        <pre class="terminal-body"><span class="t-prompt">&gt;</span> irm https://get.opensave.org/install.ps1 | iex</pre>
       </div>
 
       <p class="cli-note">
@@ -690,7 +693,7 @@
         <a href="https://github.com/Liquid-co/OpenSave/releases" target="_blank" rel="noopener">Releases</a>
         <a href="cli.html">CLI</a>
         <a href="https://github.com/Liquid-co/OpenSave/blob/main/USER_GUIDE.md" target="_blank" rel="noopener">User Guide</a>
-        <a href="https://github.com/Liquid-co/OpenSave/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy</a>
+        <a href="privacy.html">Privacy</a>
         <a href="https://github.com/Liquid-co/OpenSave/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
         <a href="https://github.com/Liquid-co/OpenSave/issues" target="_blank" rel="noopener">Report a bug</a>
       </nav>
@@ -698,6 +701,6 @@
     </div>
   </footer>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>
